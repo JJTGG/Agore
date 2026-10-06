@@ -46,13 +46,17 @@ export async function POST(request: Request) {
       .digest("hex");
 
     const { data: invite, error: inviteError } = await supabase
-      .schema("private")
       .from("platform_invites")
       .select("id, max_uses, uses_count, expires_at, revoked_at")
       .eq("code_hash", codeHash)
       .maybeSingle();
 
     if (inviteError) {
+      console.error(
+        "Agore invite lookup failed:",
+        inviteError,
+      );
+
       return NextResponse.json(
         { error: "Unable to validate invite." },
         { status: 500 },
@@ -75,7 +79,10 @@ export async function POST(request: Request) {
       );
     }
 
-    if (invite.expires_at && new Date(invite.expires_at) <= now) {
+    if (
+      invite.expires_at &&
+      new Date(invite.expires_at) <= now
+    ) {
       return NextResponse.json(
         { error: "This invite has expired." },
         { status: 400 },
