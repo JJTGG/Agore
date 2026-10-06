@@ -1,13 +1,14 @@
 "use client";
 
-import { FormEvent, useState } from "react";
-import { useRouter } from "next/navigation";
+import { FormEvent, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/browser";
 
 type Mode = "signin" | "signup";
 
 export default function AuthPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createClient();
 
   const [mode, setMode] = useState<Mode>("signin");
@@ -17,6 +18,23 @@ export default function AuthPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const callbackError = searchParams.get("error");
+
+    if (callbackError === "verification") {
+      setError(
+        "Email verification could not be completed. Please request a new verification email or try signing in again.",
+      );
+      return;
+    }
+
+    if (callbackError === "invite") {
+      setError(
+        "Your invite could not be confirmed. Please use a valid active invite and try again.",
+      );
+    }
+  }, [searchParams]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -33,13 +51,16 @@ export default function AuthPage() {
           },
           body: JSON.stringify({
             code: inviteCode,
+            email,
           }),
         });
 
         const inviteResult = await inviteResponse.json();
 
         if (!inviteResponse.ok) {
-          throw new Error(inviteResult.error ?? "Invalid invite code.");
+          throw new Error(
+            inviteResult.error ?? "Invalid invite code.",
+          );
         }
 
         const redirectUrl = new URL(
@@ -125,7 +146,9 @@ export default function AuthPage() {
             )}
 
             <label className="block">
-              <span className="mb-2 block text-sm font-medium">Email</span>
+              <span className="mb-2 block text-sm font-medium">
+                Email
+              </span>
               <input
                 required
                 type="email"
@@ -148,7 +171,9 @@ export default function AuthPage() {
                 onChange={(event) => setPassword(event.target.value)}
                 className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 outline-none transition focus:border-[var(--accent)]"
                 autoComplete={
-                  mode === "signin" ? "current-password" : "new-password"
+                  mode === "signin"
+                    ? "current-password"
+                    : "new-password"
                 }
               />
             </label>
