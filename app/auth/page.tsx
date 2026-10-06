@@ -67,9 +67,21 @@ export default function AuthPage() {
           );
         }
 
+        if (
+          typeof inviteResult.assertion !== "string" ||
+          !inviteResult.assertion
+        ) {
+          throw new Error("Invite validation did not return a valid claim.");
+        }
+
         const redirectUrl = new URL(
           "/auth/callback",
           window.location.origin,
+        );
+
+        redirectUrl.searchParams.set(
+          "invite",
+          inviteResult.assertion,
         );
 
         const { error: signupError } = await supabase.auth.signUp({
@@ -129,13 +141,14 @@ export default function AuthPage() {
         window.location.origin,
       );
 
-      const { error: resendError } = await supabase.auth.resend({
-        type: "signup",
-        email: email.trim(),
-        options: {
-          emailRedirectTo: redirectUrl.toString(),
-        },
-      });
+      const { error: resendError } =
+        await supabase.auth.resend({
+          type: "signup",
+          email: email.trim(),
+          options: {
+            emailRedirectTo: redirectUrl.toString(),
+          },
+        });
 
       if (resendError) {
         throw resendError;
@@ -184,7 +197,9 @@ export default function AuthPage() {
                 <input
                   required
                   value={inviteCode}
-                  onChange={(event) => setInviteCode(event.target.value)}
+                  onChange={(event) =>
+                    setInviteCode(event.target.value)
+                  }
                   className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 outline-none transition focus:border-[var(--accent)]"
                   autoComplete="off"
                 />
@@ -214,7 +229,9 @@ export default function AuthPage() {
                 type="password"
                 minLength={8}
                 value={password}
-                onChange={(event) => setPassword(event.target.value)}
+                onChange={(event) =>
+                  setPassword(event.target.value)
+                }
                 className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 outline-none transition focus:border-[var(--accent)]"
                 autoComplete={
                   mode === "signin"
