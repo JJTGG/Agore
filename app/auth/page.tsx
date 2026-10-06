@@ -1,14 +1,13 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/browser";
 
 type Mode = "signin" | "signup";
 
 export default function AuthPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const supabase = createClient();
 
   const [mode, setMode] = useState<Mode>("signin");
@@ -17,25 +16,29 @@ export default function AuthPage() {
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [callbackError, setCallbackError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
 
   useEffect(() => {
-    const callbackError = searchParams.get("error");
+    const params = new URLSearchParams(window.location.search);
+    const currentCallbackError = params.get("error");
 
-    if (callbackError === "verification") {
+    setCallbackError(currentCallbackError);
+
+    if (currentCallbackError === "verification") {
       setError(
         "Email verification could not be completed. You can request a new verification email below.",
       );
       return;
     }
 
-    if (callbackError === "invite") {
+    if (currentCallbackError === "invite") {
       setError(
         "Your invite could not be confirmed. Please use a valid active invite and try again.",
       );
     }
-  }, [searchParams]);
+  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -126,14 +129,13 @@ export default function AuthPage() {
         window.location.origin,
       );
 
-      const { error: resendError } =
-        await supabase.auth.resend({
-          type: "signup",
-          email: email.trim(),
-          options: {
-            emailRedirectTo: redirectUrl.toString(),
-          },
-        });
+      const { error: resendError } = await supabase.auth.resend({
+        type: "signup",
+        email: email.trim(),
+        options: {
+          emailRedirectTo: redirectUrl.toString(),
+        },
+      });
 
       if (resendError) {
         throw resendError;
@@ -253,19 +255,18 @@ export default function AuthPage() {
             </button>
           </form>
 
-          {(error || message) &&
-            searchParams.get("error") === "verification" && (
-              <button
-                type="button"
-                onClick={handleResendVerification}
-                disabled={resending}
-                className="mt-4 w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-5 py-3 text-sm font-medium transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {resending
-                  ? "Requesting email..."
-                  : "Resend verification email"}
-              </button>
-            )}
+          {callbackError === "verification" && (
+            <button
+              type="button"
+              onClick={handleResendVerification}
+              disabled={resending}
+              className="mt-4 w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-5 py-3 text-sm font-medium transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {resending
+                ? "Requesting email..."
+                : "Resend verification email"}
+            </button>
+          )}
 
           <div className="mt-6 text-center text-sm text-[var(--muted)]">
             {mode === "signin" ? (
