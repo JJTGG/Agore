@@ -18,13 +18,14 @@ export default function AuthPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
 
   useEffect(() => {
     const callbackError = searchParams.get("error");
 
     if (callbackError === "verification") {
       setError(
-        "Email verification could not be completed. Please request a new verification email or try signing in again.",
+        "Email verification could not be completed. You can request a new verification email below.",
       );
       return;
     }
@@ -106,6 +107,49 @@ export default function AuthPage() {
       );
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleResendVerification() {
+    if (!email.trim()) {
+      setError("Enter your email address first.");
+      return;
+    }
+
+    setError("");
+    setMessage("");
+    setResending(true);
+
+    try {
+      const redirectUrl = new URL(
+        "/auth/callback",
+        window.location.origin,
+      );
+
+      const { error: resendError } =
+        await supabase.auth.resend({
+          type: "signup",
+          email: email.trim(),
+          options: {
+            emailRedirectTo: redirectUrl.toString(),
+          },
+        });
+
+      if (resendError) {
+        throw resendError;
+      }
+
+      setMessage(
+        "A new verification email has been requested. Check your inbox.",
+      );
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Unable to request a new verification email.",
+      );
+    } finally {
+      setResending(false);
     }
   }
 
@@ -208,6 +252,20 @@ export default function AuthPage() {
                   : "Create account"}
             </button>
           </form>
+
+          {(error || message) &&
+            searchParams.get("error") === "verification" && (
+              <button
+                type="button"
+                onClick={handleResendVerification}
+                disabled={resending}
+                className="mt-4 w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-5 py-3 text-sm font-medium transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {resending
+                  ? "Requesting email..."
+                  : "Resend verification email"}
+              </button>
+            )}
 
           <div className="mt-6 text-center text-sm text-[var(--muted)]">
             {mode === "signin" ? (
