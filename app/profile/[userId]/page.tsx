@@ -7,9 +7,11 @@ import {
   ArrowLeft,
   Ban,
   Check,
+  Edit3,
   MessageCircle,
   UserPlus,
 } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 import ProfilePosts from "./profile-posts";
 
 type Profile = {
@@ -29,8 +31,10 @@ export default function ProfilePage() {
   const router = useRouter();
 
   const userId = params.userId;
+  const supabase = createClient();
 
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [isOwner, setIsOwner] = useState(false);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<
     "follow" | "block" | null
@@ -60,20 +64,27 @@ export default function ProfilePage() {
       }
 
       setProfile(data.profile);
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      setIsOwner(user?.id === data.profile.id);
     } catch {
       setError("Unable to load this profile.");
       setProfile(null);
+      setIsOwner(false);
     } finally {
       setLoading(false);
     }
-  }, [userId]);
+  }, [supabase.auth, userId]);
 
   useEffect(() => {
     void loadProfile();
   }, [loadProfile]);
 
   async function toggleFollow() {
-    if (!profile || actionLoading) return;
+    if (!profile || actionLoading || isOwner) return;
 
     setActionLoading("follow");
     setError("");
@@ -114,7 +125,7 @@ export default function ProfilePage() {
   }
 
   async function toggleBlock() {
-    if (!profile || actionLoading) return;
+    if (!profile || actionLoading || isOwner) return;
 
     setActionLoading("block");
     setError("");
@@ -249,44 +260,60 @@ export default function ProfilePage() {
                   </div>
 
                   <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => void toggleFollow()}
-                      disabled={actionLoading !== null || profile.is_blocked}
-                      className="inline-flex items-center justify-center gap-2 rounded-full bg-[#2148b8] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#183991] disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {profile.is_following ? (
-                        <>
-                          <Check size={16} />
-                          Following
-                        </>
-                      ) : (
-                        <>
-                          <UserPlus size={16} />
-                          Follow
-                        </>
-                      )}
-                    </button>
+                    {isOwner ? (
+                      <Link
+                        href={`/profile/edit?userId=${encodeURIComponent(
+                          profile.id,
+                        )}`}
+                        className="inline-flex items-center justify-center gap-2 rounded-full bg-[#2148b8] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#183991]"
+                      >
+                        <Edit3 size={16} />
+                        Edit profile
+                      </Link>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => void toggleFollow()}
+                          disabled={
+                            actionLoading !== null || profile.is_blocked
+                          }
+                          className="inline-flex items-center justify-center gap-2 rounded-full bg-[#2148b8] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#183991] disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {profile.is_following ? (
+                            <>
+                              <Check size={16} />
+                              Following
+                            </>
+                          ) : (
+                            <>
+                              <UserPlus size={16} />
+                              Follow
+                            </>
+                          )}
+                        </button>
 
-                    <button
-                      type="button"
-                      disabled
-                      className="inline-flex items-center justify-center gap-2 rounded-full border border-[#deddd7] bg-white px-4 py-2.5 text-sm font-semibold text-[#4d535b] disabled:cursor-not-allowed disabled:opacity-55"
-                      title="Messaging will connect here next."
-                    >
-                      <MessageCircle size={16} />
-                      Message
-                    </button>
+                        <button
+                          type="button"
+                          disabled
+                          className="inline-flex items-center justify-center gap-2 rounded-full border border-[#deddd7] bg-white px-4 py-2.5 text-sm font-semibold text-[#4d535b] disabled:cursor-not-allowed disabled:opacity-55"
+                          title="Messaging will connect here next."
+                        >
+                          <MessageCircle size={16} />
+                          Message
+                        </button>
 
-                    <button
-                      type="button"
-                      onClick={() => void toggleBlock()}
-                      disabled={actionLoading !== null}
-                      className="inline-flex items-center justify-center gap-2 rounded-full border border-[#deddd7] bg-white px-4 py-2.5 text-sm font-semibold text-[#4d535b] transition hover:border-[#c9c7c0] hover:bg-[#f8f7f3] disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      <Ban size={16} />
-                      {profile.is_blocked ? "Unblock" : "Block"}
-                    </button>
+                        <button
+                          type="button"
+                          onClick={() => void toggleBlock()}
+                          disabled={actionLoading !== null}
+                          className="inline-flex items-center justify-center gap-2 rounded-full border border-[#deddd7] bg-white px-4 py-2.5 text-sm font-semibold text-[#4d535b] transition hover:border-[#c9c7c0] hover:bg-[#f8f7f3] disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <Ban size={16} />
+                          {profile.is_blocked ? "Unblock" : "Block"}
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
