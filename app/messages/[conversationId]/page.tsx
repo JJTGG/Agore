@@ -11,9 +11,17 @@ import {
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
+  Check,
+  Edit3,
   Loader2,
   MessageCircle,
+  Plus,
+  Search,
   Send,
+  Settings,
+  UserMinus,
+  Users,
+  X,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 
@@ -54,6 +62,22 @@ type Message = {
   updated_at: string;
   deleted_at: string | null;
   sender: Profile | null;
+};
+
+type GroupMember = {
+  userId: string;
+  role: string;
+  joinedAt: string;
+  profile: Profile | null;
+};
+
+type MemberSearchResult = {
+  id: string;
+  display_name: string;
+  username: string;
+  bio: string | null;
+  avatar_path: string | null;
+  created_at: string;
 };
 
 function formatMessageTime(value: string) {
@@ -112,6 +136,24 @@ export default function ConversationPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
 
+  const [groupOpen, setGroupOpen] = useState(false);
+  const [groupLoading, setGroupLoading] = useState(false);
+  const [groupMembers, setGroupMembers] = useState<GroupMember[]>([]);
+  const [currentUserRole, setCurrentUserRole] = useState("member");
+  const [groupName, setGroupName] = useState("");
+  const [groupDescription, setGroupDescription] = useState("");
+  const [savingGroup, setSavingGroup] = useState(false);
+  const [groupActionError, setGroupActionError] = useState("");
+
+  const [memberQuery, setMemberQuery] = useState("");
+  const [memberResults, setMemberResults] = useState<
+    MemberSearchResult[]
+  >([]);
+  const [searchingMembers, setSearchingMembers] = useState(false);
+  const [memberActionLoading, setMemberActionLoading] = useState<
+    string | null
+  >(null);
+
   const title = useMemo(() => {
     if (!conversation) {
       return "Messages";
@@ -130,13 +172,19 @@ export default function ConversationPage() {
     }
 
     if (conversation.type === "group") {
+      if (groupMembers.length > 0) {
+        return `${groupMembers.length} member${
+          groupMembers.length === 1 ? "" : "s"
+        }`;
+      }
+
       return "Group conversation";
     }
 
     return conversation.participant
       ? `@${conversation.participant.username}`
       : "Direct conversation";
-  }, [conversation]);
+  }, [conversation, groupMembers.length]);
 
   const initials = useMemo(() => getInitials(title), [title]);
 
@@ -151,6 +199,11 @@ export default function ConversationPage() {
       });
 
       const data = await response.json();
+
+      if (response.status === 401) {
+        router.push("/auth");
+        return;
+      }
 
       if (!response.ok) {
         setError(data.error ?? "Unable to load this conversation.");
@@ -170,10 +223,12 @@ export default function ConversationPage() {
       }
 
       setConversation(found);
+      setGroupName(found.name ?? "");
+      setGroupDescription(found.description ?? "");
     } catch {
       setError("Unable to load this conversation.");
     }
-  }, [conversationId]);
+  }, [conversationId, router]);
 
   const loadMessages = useCallback(
     async (manual = false) => {
@@ -197,6 +252,11 @@ export default function ConversationPage() {
 
         const data = await response.json();
 
+        if (response.status === 401) {
+          router.push("/auth");
+          return;
+        }
+
         if (!response.ok) {
           setError(data.error ?? "Unable to load messages.");
           return;
@@ -211,8 +271,55 @@ export default function ConversationPage() {
         setRefreshing(false);
       }
     },
-    [conversationId],
+    [conversationId, router],
   );
+
+  const loadGroupMembers = useCallback(async () => {
+    if (
+      !conversationId ||
+      !conversation ||
+      conversation.type !== "group"
+    ) {
+      return;
+    }
+
+    setGroupLoading(true);
+    setGroupActionError("");
+
+    try {
+      const response = await fetch(
+        `/api/conversations/${encodeURIComponent(
+          conversationId,
+        )}/members`,
+        {
+          cache: "no-store",
+        },
+      );
+
+      const data = await response.json();
+
+      if (response.status === 401) {
+        router.push("/auth");
+        return;
+      }
+
+      if (!response.ok) {
+        setGroupActionError(
+          data.error ?? "Unable to load group members.",
+        );
+        return;
+      }
+
+      setGroupMembers(
+        Array.isArray(data.members) ? data.members : [],
+      );
+      setCurrentUserRole(data.currentUserRole ?? "member");
+    } catch {
+      setGroupActionError("Unable to load group members.");
+    } finally {
+      setGroupLoading(false);
+    }
+  }, [conversation, conversationId, router]);
 
   useEffect(() => {
     let active = true;
@@ -286,6 +393,12 @@ export default function ConversationPage() {
     };
   }, [conversationId, loadMessages]);
 
+  useEffect(() => {
+    if (groupOpen && conversation?.type === "group") {
+      void loadGroupMembers();
+    }
+  }, [groupOpen, conversation?.type, loadGroupMembers]);
+
   async function handleSend(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -316,6 +429,11 @@ export default function ConversationPage() {
 
       const data = await response.json();
 
+      if (response.status === 401) {
+        router.push("/auth");
+        return;
+      }
+
       if (!response.ok) {
         setError(data.error ?? "Unable to send the message.");
         return;
@@ -341,6 +459,236 @@ export default function ConversationPage() {
       setError("Unable to send the message.");
     } finally {
       setSending(false);
+    }
+  }
+
+  async function searchMembers(value = memberQuery) {
+    const query = value.trim();
+
+    if (query.length < 2) {
+      setMemberResults([]);
+      return;
+    }
+
+    setSearchingMembers(true);
+    setGroupActionError("");
+
+    try {
+      const response = await fetch(
+        `/api/users/search?q=${encodeURIComponent(query)}&limit=20`,
+        {
+          cache: "no-store",
+        },
+      );
+
+      const data = await response.json();
+
+      if (response.status === 401) {
+        router.push("/auth");
+        return;
+      }
+
+      if (!response.ok) {
+        setGroupActionError(
+          data.error ?? "Unable to search people.",
+        );
+        setMemberResults([]);
+        return;
+      }
+
+      const currentMemberIds = new Set(
+        groupMembers.map((member) => member.userId),
+      );
+
+      setMemberResults(
+        (Array.isArray(data.people) ? data.people : []).filter(
+          (person: MemberSearchResult) =>
+            !currentMemberIds.has(person.id),
+        ),
+      );
+    } catch {
+      setGroupActionError("Unable to search people.");
+      setMemberResults([]);
+    } finally {
+      setSearchingMembers(false);
+    }
+  }
+
+  async function addMember(userId: string) {
+    if (currentUserRole !== "admin" || memberActionLoading) {
+      return;
+    }
+
+    setMemberActionLoading(`add:${userId}`);
+    setGroupActionError("");
+
+    try {
+      const response = await fetch(
+        `/api/conversations/${encodeURIComponent(
+          conversationId,
+        )}/members`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            userId,
+          }),
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setGroupActionError(
+          data.error ?? "Unable to add the member.",
+        );
+        return;
+      }
+
+      setMemberResults((current) =>
+        current.filter((person) => person.id !== userId),
+      );
+
+      await loadGroupMembers();
+    } catch {
+      setGroupActionError("Unable to add the member.");
+    } finally {
+      setMemberActionLoading(null);
+    }
+  }
+
+  async function removeMember(userId: string) {
+    if (
+      memberActionLoading ||
+      (userId !== currentUserId && currentUserRole !== "admin")
+    ) {
+      return;
+    }
+
+    const isSelf = userId === currentUserId;
+    const confirmed = window.confirm(
+      isSelf
+        ? "Leave this group?"
+        : "Remove this member from the group?",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setMemberActionLoading(`remove:${userId}`);
+    setGroupActionError("");
+
+    try {
+      const url =
+        userId === currentUserId
+          ? `/api/conversations/${encodeURIComponent(
+              conversationId,
+            )}/members`
+          : `/api/conversations/${encodeURIComponent(
+              conversationId,
+            )}/members?userId=${encodeURIComponent(userId)}`;
+
+      const response = await fetch(url, {
+        method: "DELETE",
+      });
+
+      const data = await response.json();
+
+      if (response.status === 401) {
+        router.push("/auth");
+        return;
+      }
+
+      if (!response.ok) {
+        setGroupActionError(
+          data.error ?? "Unable to update group membership.",
+        );
+        return;
+      }
+
+      if (isSelf) {
+        router.push("/messages");
+        return;
+      }
+
+      await loadGroupMembers();
+    } catch {
+      setGroupActionError("Unable to update group membership.");
+    } finally {
+      setMemberActionLoading(null);
+    }
+  }
+
+  async function saveGroupSettings(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (currentUserRole !== "admin" || savingGroup) {
+      return;
+    }
+
+    const name = groupName.trim();
+    const description = groupDescription.trim();
+
+    if (!name) {
+      setGroupActionError("Group name cannot be empty.");
+      return;
+    }
+
+    setSavingGroup(true);
+    setGroupActionError("");
+
+    try {
+      const response = await fetch(
+        `/api/conversations/${encodeURIComponent(
+          conversationId,
+        )}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name,
+            description,
+          }),
+        },
+      );
+
+      const data = await response.json();
+
+      if (response.status === 401) {
+        router.push("/auth");
+        return;
+      }
+
+      if (!response.ok) {
+        setGroupActionError(
+          data.error ?? "Unable to update group settings.",
+        );
+        return;
+      }
+
+      if (data.conversation) {
+        setConversation((current) =>
+          current
+            ? {
+                ...current,
+                name: data.conversation.name,
+                description: data.conversation.description,
+                updated_at:
+                  data.conversation.updated_at ??
+                  current.updated_at,
+              }
+            : current,
+        );
+      }
+    } catch {
+      setGroupActionError("Unable to update group settings.");
+    } finally {
+      setSavingGroup(false);
     }
   }
 
@@ -383,6 +731,17 @@ export default function ConversationPage() {
                 {subtitle}
               </p>
             </div>
+
+            {conversation?.type === "group" ? (
+              <button
+                type="button"
+                onClick={() => setGroupOpen(true)}
+                aria-label="Open group settings"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#deddd7] bg-white text-[#5d6269] transition hover:bg-[#f8f7f3]"
+              >
+                <Settings size={17} />
+              </button>
+            ) : null}
 
             <button
               type="button"
@@ -553,6 +912,373 @@ export default function ConversationPage() {
           </form>
         </section>
       </div>
+
+      {groupOpen && conversation?.type === "group" ? (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-[#17191c]/30 px-3 py-3 sm:items-center sm:px-5"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="group-settings-title"
+        >
+          <div className="flex max-h-[92vh] w-full max-w-xl flex-col overflow-hidden rounded-3xl border border-[#deddd7] bg-white shadow-2xl">
+            <header className="flex items-center justify-between border-b border-[#ebeae5] px-5 py-4 sm:px-6">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#2148b8]">
+                  Group
+                </p>
+
+                <h2
+                  id="group-settings-title"
+                  className="mt-1 text-xl font-semibold tracking-[-0.03em]"
+                >
+                  Group details
+                </h2>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setGroupOpen(false);
+                  setGroupActionError("");
+                  setMemberQuery("");
+                  setMemberResults([]);
+                }}
+                aria-label="Close group details"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#deddd7] text-[#666b72] transition hover:bg-[#f8f7f3]"
+              >
+                <X size={17} />
+              </button>
+            </header>
+
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <div className="border-b border-[#ebeae5] px-5 py-5 sm:px-6">
+                <div className="flex items-center gap-4">
+                  <div
+                    aria-hidden="true"
+                    className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-[#e5ebff] text-base font-bold text-[#2148b8]"
+                  >
+                    {initials}
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="truncate text-lg font-semibold">
+                      {title}
+                    </p>
+
+                    <p className="mt-1 text-sm text-[#777b81]">
+                      {groupMembers.length} member
+                      {groupMembers.length === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                </div>
+
+                {currentUserRole === "admin" ? (
+                  <form
+                    onSubmit={saveGroupSettings}
+                    className="mt-6 space-y-4"
+                  >
+                    <label className="block">
+                      <span className="text-sm font-semibold">
+                        Group name
+                      </span>
+
+                      <input
+                        value={groupName}
+                        onChange={(event) =>
+                          setGroupName(event.target.value)
+                        }
+                        maxLength={80}
+                        disabled={savingGroup}
+                        className="mt-2 w-full rounded-2xl border border-[#d9d8d2] bg-white px-4 py-3 text-sm outline-none transition focus:border-[#2148b8] focus:ring-2 focus:ring-[#dce5ff] disabled:bg-[#f1f0eb]"
+                      />
+                    </label>
+
+                    <label className="block">
+                      <span className="text-sm font-semibold">
+                        Description
+                      </span>
+
+                      <textarea
+                        value={groupDescription}
+                        onChange={(event) =>
+                          setGroupDescription(event.target.value)
+                        }
+                        maxLength={500}
+                        rows={3}
+                        disabled={savingGroup}
+                        className="mt-2 w-full resize-none rounded-2xl border border-[#d9d8d2] bg-white px-4 py-3 text-sm leading-6 outline-none transition focus:border-[#2148b8] focus:ring-2 focus:ring-[#dce5ff] disabled:bg-[#f1f0eb]"
+                      />
+                    </label>
+
+                    <button
+                      type="submit"
+                      disabled={savingGroup || !groupName.trim()}
+                      className="inline-flex items-center gap-2 rounded-full bg-[#2148b8] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#183991] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {savingGroup ? (
+                        <Loader2
+                          size={16}
+                          className="animate-spin"
+                        />
+                      ) : (
+                        <Edit3 size={16} />
+                      )}
+                      {savingGroup ? "Saving…" : "Save details"}
+                    </button>
+                  </form>
+                ) : conversation.description ? (
+                  <p className="mt-5 text-sm leading-6 text-[#555a61]">
+                    {conversation.description}
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="border-b border-[#ebeae5] px-5 py-5 sm:px-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Users size={17} className="text-[#2148b8]" />
+                    <p className="text-sm font-semibold">Members</p>
+                  </div>
+
+                  {currentUserRole === "admin" ? (
+                    <span className="text-xs font-medium text-[#7c8085]">
+                      Admin controls enabled
+                    </span>
+                  ) : null}
+                </div>
+
+                {groupLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2
+                      size={20}
+                      className="animate-spin text-[#2148b8]"
+                    />
+                  </div>
+                ) : groupMembers.length === 0 ? (
+                  <p className="mt-4 text-sm text-[#777b81]">
+                    No active members found.
+                  </p>
+                ) : (
+                  <div className="mt-4 space-y-1">
+                    {groupMembers.map((member) => {
+                      const profile = member.profile;
+                      const memberName =
+                        profile?.display_name || "Agoré user";
+                      const isCurrentUser =
+                        member.userId === currentUserId;
+                      const actionLoading =
+                        memberActionLoading ===
+                        `remove:${member.userId}`;
+
+                      return (
+                        <div
+                          key={member.userId}
+                          className="flex items-center gap-3 rounded-2xl px-3 py-3 transition hover:bg-[#f8f7f3]"
+                        >
+                          <div
+                            aria-hidden="true"
+                            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#edf0f8] text-xs font-bold text-[#536071]"
+                          >
+                            {getInitials(memberName)}
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <p className="truncate text-sm font-semibold">
+                                {memberName}
+                              </p>
+
+                              {member.role === "admin" ? (
+                                <span className="shrink-0 rounded-full bg-[#e8edff] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#2148b8]">
+                                  Admin
+                                </span>
+                              ) : null}
+                            </div>
+
+                            <p className="mt-0.5 truncate text-xs text-[#777b81]">
+                              @{profile?.username || "user"}
+                              {isCurrentUser ? " · You" : ""}
+                            </p>
+                          </div>
+
+                          {isCurrentUser ||
+                          currentUserRole === "admin" ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void removeMember(member.userId)
+                              }
+                              disabled={Boolean(memberActionLoading)}
+                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#deddd7] bg-white text-[#8a4646] transition hover:bg-[#fff7f7] disabled:cursor-not-allowed disabled:opacity-50"
+                              aria-label={
+                                isCurrentUser
+                                  ? "Leave group"
+                                  : `Remove ${memberName}`
+                              }
+                            >
+                              {actionLoading ? (
+                                <Loader2
+                                  size={15}
+                                  className="animate-spin"
+                                />
+                              ) : (
+                                <UserMinus size={15} />
+                              )}
+                            </button>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {currentUserRole === "admin" ? (
+                <div className="px-5 py-5 sm:px-6">
+                  <div className="flex items-center gap-2">
+                    <Plus size={17} className="text-[#2148b8]" />
+                    <p className="text-sm font-semibold">
+                      Add members
+                    </p>
+                  </div>
+
+                  <div className="mt-3 flex gap-2">
+                    <div className="relative min-w-0 flex-1">
+                      <Search
+                        size={17}
+                        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#94979c]"
+                      />
+
+                      <input
+                        value={memberQuery}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setMemberQuery(value);
+
+                          if (value.trim().length < 2) {
+                            setMemberResults([]);
+                          }
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            void searchMembers();
+                          }
+                        }}
+                        maxLength={50}
+                        placeholder="Search username or name…"
+                        disabled={searchingMembers}
+                        className="w-full rounded-2xl border border-[#d9d8d2] bg-white py-3 pl-10 pr-4 text-sm outline-none transition placeholder:text-[#9b9da1] focus:border-[#2148b8] focus:ring-2 focus:ring-[#dce5ff] disabled:bg-[#f1f0eb]"
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => void searchMembers()}
+                      disabled={
+                        searchingMembers ||
+                        memberQuery.trim().length < 2
+                      }
+                      className="rounded-2xl bg-[#eef2ff] px-4 text-sm font-semibold text-[#2148b8] transition hover:bg-[#e4eaff] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {searchingMembers ? (
+                        <Loader2
+                          size={17}
+                          className="animate-spin"
+                        />
+                      ) : (
+                        "Search"
+                      )}
+                    </button>
+                  </div>
+
+                  {memberResults.length > 0 ? (
+                    <div className="mt-3 space-y-1 rounded-2xl border border-[#ebeae5] bg-[#fcfcfa] p-2">
+                      {memberResults.map((person) => {
+                        const actionLoading =
+                          memberActionLoading ===
+                          `add:${person.id}`;
+
+                        return (
+                          <button
+                            key={person.id}
+                            type="button"
+                            onClick={() => void addMember(person.id)}
+                            disabled={Boolean(memberActionLoading)}
+                            className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            <div
+                              aria-hidden="true"
+                              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#e5ebff] text-xs font-bold text-[#2148b8]"
+                            >
+                              {getInitials(person.display_name)}
+                            </div>
+
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-semibold">
+                                {person.display_name}
+                              </p>
+
+                              <p className="mt-0.5 truncate text-xs text-[#777b81]">
+                                @{person.username}
+                              </p>
+                            </div>
+
+                            <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#e9edfb] text-[#2148b8]">
+                              {actionLoading ? (
+                                <Loader2
+                                  size={15}
+                                  className="animate-spin"
+                                />
+                              ) : (
+                                <Plus size={15} />
+                              )}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : memberQuery.trim().length >= 2 &&
+                    !searchingMembers ? (
+                    <p className="mt-3 rounded-2xl border border-[#ebeae5] bg-[#fcfcfa] px-4 py-3 text-sm text-[#777b81]">
+                      No available people found.
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="px-5 py-5 sm:px-6">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      currentUserId
+                        ? void removeMember(currentUserId)
+                        : undefined
+                    }
+                    disabled={
+                      Boolean(memberActionLoading) ||
+                      !currentUserId
+                    }
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-[#ead1d1] bg-[#fff7f7] px-4 py-3 text-sm font-semibold text-[#8d2f2f] transition hover:bg-[#fff1f1] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <UserMinus size={16} />
+                    Leave group
+                  </button>
+                </div>
+              )}
+
+              {groupActionError ? (
+                <div className="px-5 pb-5 sm:px-6">
+                  <div className="rounded-2xl border border-[#ead1d1] bg-[#fff7f7] px-4 py-3">
+                    <p className="text-sm font-medium text-[#8d2f2f]">
+                      {groupActionError}
+                    </p>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
