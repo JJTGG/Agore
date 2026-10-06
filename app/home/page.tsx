@@ -22,6 +22,14 @@ export default async function HomePage() {
     redirect("/onboarding");
   }
 
+  async function signOut() {
+    "use server";
+
+    const supabase = await createClient();
+    await supabase.auth.signOut();
+    redirect("/auth");
+  }
+
   return (
     <main className="min-h-screen bg-[var(--background)]">
       <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-5 py-6 sm:px-8">
@@ -35,12 +43,14 @@ export default async function HomePage() {
             </p>
           </div>
 
-          <a
-            href="/"
-            className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-medium transition hover:border-[var(--accent)]"
-          >
-            Exit
-          </a>
+          <form action={signOut}>
+            <button
+              type="submit"
+              className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-medium transition hover:border-[var(--accent)]"
+            >
+              Sign out
+            </button>
+          </form>
         </header>
 
         <section className="flex flex-1 items-center justify-center py-16">
