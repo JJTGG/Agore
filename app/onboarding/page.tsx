@@ -2,7 +2,6 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/browser";
 
 function normalizeUsername(value: string) {
   return value
@@ -13,7 +12,6 @@ function normalizeUsername(value: string) {
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const supabase = createClient();
 
   const [displayName, setDisplayName] = useState("");
   const [username, setUsername] = useState("");
@@ -27,63 +25,24 @@ export default function OnboardingPage() {
     setLoading(true);
 
     try {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-
-      if (userError) {
-        throw userError;
-      }
-
-      if (!user) {
-        router.replace("/auth");
-        return;
-      }
-
-      const normalizedUsername = normalizeUsername(username);
-
-      if (normalizedUsername.length < 3) {
-        throw new Error(
-          "Username must contain at least 3 letters, numbers, or underscores.",
-        );
-      }
-
-      if (!displayName.trim()) {
-        throw new Error("Display name is required.");
-      }
-
-      const { error: profileError } = await supabase.from("profiles").insert({
-        id: user.id,
-        display_name: displayName.trim(),
-        username: normalizedUsername,
-        bio: bio.trim() || null,
+      const response = await fetch("/api/onboarding", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          displayName,
+          username: normalizeUsername(username),
+          bio,
+        }),
       });
 
-      if (profileError) {
-        if (profileError.code === "23505") {
-          throw new Error("That username is already taken.");
-        }
+      const result = await response.json();
 
-        throw profileError;
-      }
-
-      const [{ error: preferencesError }, { error: settingsError }] =
-        await Promise.all([
-          supabase.from("notification_preferences").insert({
-            user_id: user.id,
-          }),
-          supabase.from("user_settings").insert({
-            user_id: user.id,
-          }),
-        ]);
-
-      if (preferencesError) {
-        throw preferencesError;
-      }
-
-      if (settingsError) {
-        throw settingsError;
+      if (!response.ok) {
+        throw new Error(
+          result.error ?? "Unable to complete your profile.",
+        );
       }
 
       router.replace("/home");
@@ -154,7 +113,9 @@ export default function OnboardingPage() {
             </label>
 
             <label className="block">
-              <span className="mb-2 block text-sm font-medium">Bio</span>
+              <span className="mb-2 block text-sm font-medium">
+                Bio
+              </span>
               <textarea
                 maxLength={160}
                 rows={4}
