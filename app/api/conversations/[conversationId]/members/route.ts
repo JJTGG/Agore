@@ -7,6 +7,11 @@ const addMemberSchema = z.object({
   userId: z.string().uuid(),
 });
 
+const updateMemberRoleSchema = z.object({
+  userId: z.string().uuid(),
+  role: z.enum(["admin", "member"]),
+});
+
 type RouteContext = {
   params: Promise<{
     conversationId: string;
@@ -35,10 +40,7 @@ function invalidConversationId() {
   );
 }
 
-export async function GET(
-  request: Request,
-  context: RouteContext,
-) {
+async function getAuthenticatedUser() {
   const supabase = await createClient();
 
   const {
@@ -47,10 +49,80 @@ export async function GET(
   } = await supabase.auth.getUser();
 
   if (userError || !user) {
-    return NextResponse.json(
-      { error: "Authentication required." },
-      { status: 401 },
+    return {
+      user: null,
+      response: NextResponse.json(
+        { error: "Authentication required." },
+        { status: 401 },
+      ),
+    };
+  }
+
+  return {
+    user,
+    response: null,
+  };
+}
+
+async function getGroupConversation(
+  admin: ReturnType<typeof createAdminClient>,
+  conversationId: string,
+) {
+  const { data: conversation, error } = await admin
+    .from("conversations")
+    .select("id, type, created_by")
+    .eq("id", conversationId)
+    .maybeSingle();
+
+  if (error) {
+    console.error(
+      "Failed to load Agore group conversation:",
+      error,
     );
+
+    return {
+      conversation: null,
+      response: NextResponse.json(
+        { error: "Unable to access this group." },
+        { status: 500 },
+      ),
+    };
+  }
+
+  if (!conversation) {
+    return {
+      conversation: null,
+      response: NextResponse.json(
+        { error: "Conversation not found." },
+        { status: 404 },
+      ),
+    };
+  }
+
+  if ((conversation as Conversation).type !== "group") {
+    return {
+      conversation: null,
+      response: NextResponse.json(
+        { error: "This conversation is not a group." },
+        { status: 400 },
+      ),
+    };
+  }
+
+  return {
+    conversation: conversation as Conversation,
+    response: null,
+  };
+}
+
+export async function GET(
+  request: Request,
+  context: RouteContext,
+) {
+  const { user, response } = await getAuthenticatedUser();
+
+  if (!user) {
+    return response;
   }
 
   const { conversationId } = await context.params;
@@ -60,6 +132,15 @@ export async function GET(
   }
 
   const admin = createAdminClient();
+
+  const {
+    conversation,
+    response: conversationResponse,
+  } = await getGroupConversation(admin, conversationId);
+
+  if (!conversation) {
+    return conversationResponse;
+  }
 
   const { data: membership, error: membershipError } = await admin
     .from("conversation_members")
@@ -92,28 +173,8 @@ export async function GET(
 
   if (!membership) {
     return NextResponse.json(
-      { error: "You are not a member of this conversation." },
+      { error: "You are not a member of this group." },
       { status: 403 },
-    );
-  }
-
-  const { data: conversation, error: conversationError } = await admin
-    .from("conversations")
-    .select("id, type, created_by")
-    .eq("id", conversationId)
-    .maybeSingle();
-
-  if (conversationError || !conversation) {
-    return NextResponse.json(
-      { error: "Conversation not found." },
-      { status: 404 },
-    );
-  }
-
-  if ((conversation as Conversation).type !== "group") {
-    return NextResponse.json(
-      { error: "Member management is only available for groups." },
-      { status: 400 },
     );
   }
 
@@ -195,9 +256,9 @@ export async function GET(
 
   return NextResponse.json({
     conversation: {
-      id: (conversation as Conversation).id,
-      type: (conversation as Conversation).type,
-      createdBy: (conversation as Conversation).created_by,
+      id: conversation.id,
+      type: conversation.type,
+      createdBy: conversation.created_by,
     },
     members: result,
     currentUserRole: membership.role,
@@ -208,18 +269,10 @@ export async function POST(
   request: Request,
   context: RouteContext,
 ) {
-  const supabase = await createClient();
+  const { user, response } = await getAuthenticatedUser();
 
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
-
-  if (userError || !user) {
-    return NextResponse.json(
-      { error: "Authentication required." },
-      { status: 401 },
-    );
+  if (!user) {
+    return response;
   }
 
   const { conversationId } = await context.params;
@@ -249,39 +302,15 @@ export async function POST(
   }
 
   const targetUserId = parsedBody.data.userId;
-
   const admin = createAdminClient();
 
-  const { data: conversation, error: conversationError } = await admin
-    .from("conversations")
-    .select("id, type, created_by")
-    .eq("id", conversationId)
-    .maybeSingle();
-
-  if (conversationError) {
-    console.error(
-      "Failed to load Agore group conversation:",
-      conversationError,
-    );
-
-    return NextResponse.json(
-      { error: "Unable to add the member." },
-      { status: 500 },
-    );
-  }
+  const {
+    conversation,
+    response: conversationResponse,
+  } = await getGroupConversation(admin, conversationId);
 
   if (!conversation) {
-    return NextResponse.json(
-      { error: "Conversation not found." },
-      { status: 404 },
-    );
-  }
-
-  if ((conversation as Conversation).type !== "group") {
-    return NextResponse.json(
-      { error: "Members can only be added to groups." },
-      { status: 400 },
-    );
+    return conversationResponse;
   }
 
   const { data: callerMembership, error: callerMembershipError } =
@@ -489,22 +518,201 @@ export async function POST(
   );
 }
 
+export async function PATCH(
+  request: Request,
+  context: RouteContext,
+) {
+  const { user, response } = await getAuthenticatedUser();
+
+  if (!user) {
+    return response;
+  }
+
+  const { conversationId } = await context.params;
+
+  if (!z.string().uuid().safeParse(conversationId).success) {
+    return invalidConversationId();
+  }
+
+  let body: unknown;
+
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      { error: "Invalid JSON body." },
+      { status: 400 },
+    );
+  }
+
+  const parsedBody = updateMemberRoleSchema.safeParse(body);
+
+  if (!parsedBody.success) {
+    return NextResponse.json(
+      {
+        error:
+          parsedBody.error.issues[0]?.message ??
+          "Invalid member role update.",
+      },
+      { status: 400 },
+    );
+  }
+
+  const { userId: targetUserId, role: requestedRole } =
+    parsedBody.data;
+
+  const admin = createAdminClient();
+
+  const {
+    conversation,
+    response: conversationResponse,
+  } = await getGroupConversation(admin, conversationId);
+
+  if (!conversation) {
+    return conversationResponse;
+  }
+
+  const { data: callerMembership, error: callerMembershipError } =
+    await admin
+      .from("conversation_members")
+      .select("role")
+      .eq("conversation_id", conversationId)
+      .eq("user_id", user.id)
+      .is("left_at", null)
+      .maybeSingle();
+
+  if (callerMembershipError) {
+    console.error(
+      "Failed to verify Agore group admin access:",
+      callerMembershipError,
+    );
+
+    return NextResponse.json(
+      { error: "Unable to update member role." },
+      { status: 500 },
+    );
+  }
+
+  if (!callerMembership || callerMembership.role !== "admin") {
+    return NextResponse.json(
+      { error: "Only group admins can change member roles." },
+      { status: 403 },
+    );
+  }
+
+  const { data: targetMembership, error: targetMembershipError } =
+    await admin
+      .from("conversation_members")
+      .select(
+        "conversation_id, user_id, role, joined_at, left_at, last_read_at",
+      )
+      .eq("conversation_id", conversationId)
+      .eq("user_id", targetUserId)
+      .is("left_at", null)
+      .maybeSingle();
+
+  if (targetMembershipError) {
+    console.error(
+      "Failed to load Agore target group membership:",
+      targetMembershipError,
+    );
+
+    return NextResponse.json(
+      { error: "Unable to update member role." },
+      { status: 500 },
+    );
+  }
+
+  if (!targetMembership) {
+    return NextResponse.json(
+      { error: "That user is not an active member of this group." },
+      { status: 404 },
+    );
+  }
+
+  if (targetMembership.role === requestedRole) {
+    return NextResponse.json({
+      member: targetMembership,
+      changed: false,
+    });
+  }
+
+  if (
+    requestedRole === "member" &&
+    targetMembership.role === "admin"
+  ) {
+    const { count: adminCount, error: adminCountError } = await admin
+      .from("conversation_members")
+      .select("user_id", {
+        count: "exact",
+        head: true,
+      })
+      .eq("conversation_id", conversationId)
+      .eq("role", "admin")
+      .is("left_at", null);
+
+    if (adminCountError) {
+      console.error(
+        "Failed to count Agore group admins:",
+        adminCountError,
+      );
+
+      return NextResponse.json(
+        { error: "Unable to update member role." },
+        { status: 500 },
+      );
+    }
+
+    if ((adminCount ?? 0) <= 1) {
+      return NextResponse.json(
+        {
+          error:
+            "The last group admin cannot be demoted. Promote another member first.",
+        },
+        { status: 400 },
+      );
+    }
+  }
+
+  const { data: updatedMembership, error: updateError } = await admin
+    .from("conversation_members")
+    .update({
+      role: requestedRole,
+    })
+    .eq("conversation_id", conversationId)
+    .eq("user_id", targetUserId)
+    .is("left_at", null)
+    .select(
+      "conversation_id, user_id, role, joined_at, left_at, last_read_at",
+    )
+    .single();
+
+  if (updateError || !updatedMembership) {
+    console.error(
+      "Failed to update Agore group member role:",
+      updateError,
+    );
+
+    return NextResponse.json(
+      { error: "Unable to update member role." },
+      { status: 500 },
+    );
+  }
+
+  return NextResponse.json({
+    member: updatedMembership,
+    changed: true,
+  });
+}
+
 export async function DELETE(
   request: Request,
   context: RouteContext,
 ) {
-  const supabase = await createClient();
+  const { user, response } = await getAuthenticatedUser();
 
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
-
-  if (userError || !user) {
-    return NextResponse.json(
-      { error: "Authentication required." },
-      { status: 401 },
-    );
+  if (!user) {
+    return response;
   }
 
   const { conversationId } = await context.params;
@@ -538,24 +746,13 @@ export async function DELETE(
 
   const admin = createAdminClient();
 
-  const { data: conversation, error: conversationError } = await admin
-    .from("conversations")
-    .select("id, type, created_by")
-    .eq("id", conversationId)
-    .maybeSingle();
+  const {
+    conversation,
+    response: conversationResponse,
+  } = await getGroupConversation(admin, conversationId);
 
-  if (conversationError || !conversation) {
-    return NextResponse.json(
-      { error: "Conversation not found." },
-      { status: 404 },
-    );
-  }
-
-  if ((conversation as Conversation).type !== "group") {
-    return NextResponse.json(
-      { error: "Members can only be removed from groups." },
-      { status: 400 },
-    );
+  if (!conversation) {
+    return conversationResponse;
   }
 
   const { data: callerMembership, error: callerMembershipError } =
@@ -626,7 +823,10 @@ export async function DELETE(
   if (targetMembership.role === "admin") {
     const { count: adminCount, error: adminCountError } = await admin
       .from("conversation_members")
-      .select("user_id", { count: "exact", head: true })
+      .select("user_id", {
+        count: "exact",
+        head: true,
+      })
       .eq("conversation_id", conversationId)
       .eq("role", "admin")
       .is("left_at", null);
