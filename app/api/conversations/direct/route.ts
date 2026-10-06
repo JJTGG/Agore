@@ -79,11 +79,11 @@ export async function POST(request: Request) {
     );
   }
 
-  const { data: blockRelationship, error: blockError } = await admin
+  const { data: blockRelationships, error: blockError } = await admin
     .from("blocks")
-    .select("blocker, blocked")
+    .select("blocker_id, blocked_id")
     .or(
-      `and(blocker.eq.${user.id},blocked.eq.${targetUserId}),and(blocker.eq.${targetUserId},blocked.eq.${user.id})`,
+      `and(blocker_id.eq.${user.id},blocked_id.eq.${targetUserId}),and(blocker_id.eq.${targetUserId},blocked_id.eq.${user.id})`,
     )
     .limit(1);
 
@@ -99,7 +99,7 @@ export async function POST(request: Request) {
     );
   }
 
-  if (blockRelationship && blockRelationship.length > 0) {
+  if (blockRelationships && blockRelationships.length > 0) {
     return NextResponse.json(
       { error: "You cannot message this user." },
       { status: 403 },
