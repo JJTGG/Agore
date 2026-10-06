@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import PostFeed from "./post-feed";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function HomePage() {
@@ -53,8 +54,8 @@ export default async function HomePage() {
           </form>
         </header>
 
-        <section className="flex flex-1 items-center justify-center py-16">
-          <div className="w-full max-w-2xl">
+        <section className="py-10 sm:py-14">
+          <div className="mb-10 max-w-2xl">
             <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--accent)]">
               Home
             </p>
@@ -63,28 +64,16 @@ export default async function HomePage() {
               Your social space starts here.
             </h1>
 
-            <p className="mt-4 max-w-xl leading-7 text-[var(--muted)]">
-              The feed, conversations, groups, notifications, and discovery
-              experience will grow from this authenticated foundation.
+            <p className="mt-4 leading-7 text-[var(--muted)]">
+              Share what matters, see what people are saying, and build your
+              social graph from here.
             </p>
-
-            <div className="mt-10 grid gap-4 sm:grid-cols-3">
-              {["Feed", "Messages", "Groups"].map((section) => (
-                <div
-                  key={section}
-                  className="border border-[var(--border)] bg-[var(--surface)] p-5"
-                >
-                  <h2 className="font-semibold">{section}</h2>
-                  <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
-                    Coming into the V0 product surface.
-                  </p>
-                </div>
-              ))}
-            </div>
           </div>
+
+          <PostFeed />
         </section>
 
-        <footer className="border-t border-[var(--border)] pt-5 text-sm text-[var(--muted)]">
+        <footer className="border-t border-[var(--border)] py-5 text-sm text-[var(--muted)]">
           @{profile.username}
         </footer>
       </div>
