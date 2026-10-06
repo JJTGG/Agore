@@ -1,7 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -10,6 +16,8 @@ import {
   Send,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
+
+const supabase = createClient();
 
 type Profile = {
   id: string;
@@ -89,7 +97,6 @@ function getInitials(value: string) {
 export default function ConversationPage() {
   const params = useParams<{ conversationId: string }>();
   const router = useRouter();
-  const supabase = createClient();
 
   const conversationId = params.conversationId;
 
@@ -146,9 +153,7 @@ export default function ConversationPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        setError(
-          data.error ?? "Unable to load this conversation.",
-        );
+        setError(data.error ?? "Unable to load this conversation.");
         return;
       }
 
@@ -229,7 +234,7 @@ export default function ConversationPage() {
     return () => {
       active = false;
     };
-  }, [supabase]);
+  }, []);
 
   useEffect(() => {
     async function initialize() {
@@ -248,6 +253,38 @@ export default function ConversationPage() {
 
     void initialize();
   }, [loadConversation, loadMessages]);
+
+  useEffect(() => {
+    if (!conversationId) {
+      return;
+    }
+
+    const channel = supabase
+      .channel(`messages:${conversationId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        () => {
+          void loadMessages();
+        },
+      )
+      .subscribe((status) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          setError(
+            "Realtime messaging is unavailable. Refresh to reconnect.",
+          );
+        }
+      });
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [conversationId, loadMessages]);
 
   async function handleSend(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -285,7 +322,17 @@ export default function ConversationPage() {
       }
 
       if (data.message) {
-        setMessages((current) => [...current, data.message]);
+        setMessages((current) => {
+          if (
+            current.some(
+              (message) => message.id === data.message.id,
+            )
+          ) {
+            return current;
+          }
+
+          return [...current, data.message];
+        });
       }
 
       setDraft("");
