@@ -9,6 +9,7 @@ import {
   MessageCircle,
   Send,
 } from "lucide-react";
+import { createClient } from "@/lib/supabase/browser";
 
 type Profile = {
   id: string;
@@ -88,6 +89,7 @@ function getInitials(value: string) {
 export default function ConversationPage() {
   const params = useParams<{ conversationId: string }>();
   const router = useRouter();
+  const supabase = createClient();
 
   const conversationId = params.conversationId;
 
@@ -104,7 +106,9 @@ export default function ConversationPage() {
   const [error, setError] = useState("");
 
   const title = useMemo(() => {
-    if (!conversation) return "Messages";
+    if (!conversation) {
+      return "Messages";
+    }
 
     if (conversation.type === "group") {
       return conversation.name?.trim() || "Unnamed group";
@@ -114,7 +118,9 @@ export default function ConversationPage() {
   }, [conversation]);
 
   const subtitle = useMemo(() => {
-    if (!conversation) return "";
+    if (!conversation) {
+      return "";
+    }
 
     if (conversation.type === "group") {
       return "Group conversation";
@@ -128,9 +134,9 @@ export default function ConversationPage() {
   const initials = useMemo(() => getInitials(title), [title]);
 
   const loadConversation = useCallback(async () => {
-    if (!conversationId) return;
-
-    setError("");
+    if (!conversationId) {
+      return;
+    }
 
     try {
       const response = await fetch("/api/conversations?limit=50", {
@@ -166,7 +172,9 @@ export default function ConversationPage() {
 
   const loadMessages = useCallback(
     async (manual = false) => {
-      if (!conversationId) return;
+      if (!conversationId) {
+        return;
+      }
 
       if (manual) {
         setRefreshing(true);
@@ -189,7 +197,9 @@ export default function ConversationPage() {
           return;
         }
 
-        setMessages(Array.isArray(data.messages) ? data.messages : []);
+        setMessages(
+          Array.isArray(data.messages) ? data.messages : [],
+        );
       } catch {
         setError("Unable to load messages.");
       } finally {
@@ -203,28 +213,15 @@ export default function ConversationPage() {
     let active = true;
 
     async function loadCurrentUser() {
-      try {
-        const response = await fetch("/api/auth/me", {
-          cache: "no-store",
-        });
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
-        if (!response.ok) {
-          if (active) {
-            setCurrentUserId(null);
-          }
-          return;
-        }
-
-        const data = await response.json();
-
-        if (active) {
-          setCurrentUserId(data.user?.id ?? null);
-        }
-      } catch {
-        if (active) {
-          setCurrentUserId(null);
-        }
+      if (!active) {
+        return;
       }
+
+      setCurrentUserId(user?.id ?? null);
     }
 
     void loadCurrentUser();
@@ -232,11 +229,12 @@ export default function ConversationPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [supabase]);
 
   useEffect(() => {
     async function initialize() {
       setLoading(true);
+      setError("");
 
       try {
         await Promise.all([
@@ -291,7 +289,6 @@ export default function ConversationPage() {
       }
 
       setDraft("");
-
       void loadConversation();
     } catch {
       setError("Unable to send the message.");
@@ -304,17 +301,21 @@ export default function ConversationPage() {
     <main className="min-h-screen bg-[#f6f5f1] text-[#17191c]">
       <div className="mx-auto flex min-h-screen w-full max-w-3xl flex-col px-4 py-5 sm:px-6">
         <header className="mb-4 flex items-center justify-between">
-          <Link
-            href="/messages"
+          <button
+            type="button"
+            onClick={() => router.push("/messages")}
             className="inline-flex items-center gap-2 rounded-full border border-[#deddd7] bg-white px-4 py-2 text-sm font-medium transition hover:border-[#b9c7ea] hover:bg-[#f9fbff]"
           >
             <ArrowLeft size={16} />
             Messages
-          </Link>
+          </button>
 
-          <span className="text-sm font-semibold tracking-[0.14em] text-[#2148b8]">
+          <Link
+            href="/home"
+            className="text-sm font-semibold tracking-[0.14em] text-[#2148b8]"
+          >
             AGORÉ
-          </span>
+          </Link>
         </header>
 
         <section className="flex min-h-[calc(100vh-7rem)] flex-1 flex-col overflow-hidden rounded-3xl border border-[#deddd7] bg-white">
@@ -388,10 +389,13 @@ export default function ConversationPage() {
             ) : (
               <div className="space-y-4">
                 {messages.map((message, index) => {
-                  const isOwn = message.sender_id === currentUserId;
+                  const isOwn =
+                    message.sender_id === currentUserId;
 
                   const previousMessage = messages[index - 1];
-                  const currentDay = formatMessageDay(message.created_at);
+                  const currentDay = formatMessageDay(
+                    message.created_at,
+                  );
                   const previousDay = previousMessage
                     ? formatMessageDay(previousMessage.created_at)
                     : null;
@@ -408,7 +412,9 @@ export default function ConversationPage() {
 
                       <div
                         className={`flex ${
-                          isOwn ? "justify-end" : "justify-start"
+                          isOwn
+                            ? "justify-end"
+                            : "justify-start"
                         }`}
                       >
                         <div
@@ -435,7 +441,9 @@ export default function ConversationPage() {
                                 : "text-[#85898f]"
                             }`}
                           >
-                            {formatMessageTime(message.created_at)}
+                            {formatMessageTime(
+                              message.created_at,
+                            )}
                           </p>
                         </div>
                       </div>
@@ -500,3 +508,4 @@ export default function ConversationPage() {
       </div>
     </main>
   );
+}
