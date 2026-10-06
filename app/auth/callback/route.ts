@@ -12,6 +12,7 @@ function redirectToAuth(requestUrl: URL, error: string) {
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get("code");
+  const inviteFromLink = requestUrl.searchParams.get("invite");
 
   if (!code) {
     return redirectToAuth(requestUrl, "verification");
@@ -37,7 +38,11 @@ export async function GET(request: Request) {
   }
 
   const cookieStore = await cookies();
-  const assertion = cookieStore.get("agore_invite_assertion")?.value;
+  const inviteFromCookie = cookieStore.get(
+    "agore_invite_assertion",
+  )?.value;
+
+  const assertion = inviteFromLink ?? inviteFromCookie;
 
   if (!assertion) {
     await supabase.auth.signOut();
