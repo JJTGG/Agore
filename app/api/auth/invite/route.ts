@@ -96,6 +96,7 @@ export async function POST(request: Request) {
 
     const response = NextResponse.json({
       valid: true,
+      assertion,
     });
 
     response.cookies.set({
