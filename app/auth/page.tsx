@@ -42,9 +42,17 @@ export default function AuthPage() {
           throw new Error(inviteResult.error ?? "Invalid invite code.");
         }
 
+        const redirectUrl = new URL(
+          "/auth/callback",
+          window.location.origin,
+        );
+
         const { error: signupError } = await supabase.auth.signUp({
           email,
           password,
+          options: {
+            emailRedirectTo: redirectUrl.toString(),
+          },
         });
 
         if (signupError) {
@@ -52,7 +60,7 @@ export default function AuthPage() {
         }
 
         setMessage(
-          "Account created. Check your email to verify your account, then sign in.",
+          "Account created. Check your email to verify your account, then continue through the verification link.",
         );
         return;
       }
