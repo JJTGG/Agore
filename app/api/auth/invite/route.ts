@@ -1,11 +1,35 @@
-import { createHash } from "crypto";
+import { createHash, createHmac } from "crypto";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
 const inviteSchema = z.object({
   code: z.string().trim().min(1).max(128),
+  email: z.string().trim().toLowerCase().email(),
 });
+
+function createInviteAssertion(inviteId: string, email: string) {
+  const secret = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!secret) {
+    throw new Error("SUPABASE_SERVICE_ROLE_KEY is not configured.");
+  }
+
+  const payload = Buffer.from(
+    JSON.stringify({
+      inviteId,
+      email,
+      exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24,
+    }),
+    "utf8",
+  ).toString("base64url");
+
+  const signature = createHmac("sha256", secret)
+    .update(payload)
+    .digest("base64url");
+
+  return `${payload}.${signature}`;
+}
 
 export async function POST(request: Request) {
   try {
@@ -14,7 +38,7 @@ export async function POST(request: Request) {
 
     if (!parsed.success) {
       return NextResponse.json(
-        { error: "Invalid invite code." },
+        { error: "Invalid invite request." },
         { status: 400 },
       );
     }
@@ -46,9 +70,7 @@ export async function POST(request: Request) {
     const { data: invite, error: inviteError } = await supabase
       .schema("private")
       .from("platform_invites")
-      .select(
-        "id, max_uses, uses_count, expires_at, revoked_at",
-      )
+      .select("id, max_uses, uses_count, expires_at, revoked_at")
       .eq("code_hash", codeHash)
       .maybeSingle();
 
@@ -89,37 +111,21 @@ export async function POST(request: Request) {
       );
     }
 
-    const { data: updatedInvite, error: updateError } = await supabase
-      .schema("private")
-      .from("platform_invites")
-      .update({
-        uses_count: invite.uses_count + 1,
-      })
-      .eq("id", invite.id)
-      .eq("uses_count", invite.uses_count)
-      .lt("uses_count", invite.max_uses)
-      .select("id")
-      .maybeSingle();
+    const assertion = createInviteAssertion(
+      invite.id,
+      parsed.data.email,
+    );
 
-    if (updateError) {
-      return NextResponse.json(
-        { error: "Unable to validate invite." },
-        { status: 500 },
-      );
-    }
+    return NextResponse.json({
+      valid: true,
+      assertion,
+    });
+  } catch (error) {
+    console.error("Invite validation failed:", error);
 
-    if (!updatedInvite) {
-      return NextResponse.json(
-        { error: "This invite is no longer available." },
-        { status: 400 },
-      );
-    }
-
-    return NextResponse.json({ valid: true });
-  } catch {
     return NextResponse.json(
-      { error: "Invalid request." },
-      { status: 400 },
+      { error: "Unable to validate invite." },
+      { status: 500 },
     );
   }
 }
