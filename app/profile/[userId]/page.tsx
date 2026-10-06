@@ -8,6 +8,7 @@ import {
   Ban,
   Check,
   Edit3,
+  Loader2,
   MessageCircle,
   UserPlus,
 } from "lucide-react";
@@ -26,10 +27,11 @@ type Profile = {
   is_blocked: boolean;
 };
 
+const supabase = createClient();
+
 export default function ProfilePage() {
   const params = useParams<{ userId: string }>();
   const router = useRouter();
-  const supabase = createClient();
 
   const userId = params.userId;
 
@@ -39,6 +41,7 @@ export default function ProfilePage() {
   const [actionLoading, setActionLoading] = useState<
     "follow" | "block" | null
   >(null);
+  const [messageLoading, setMessageLoading] = useState(false);
   const [error, setError] = useState("");
 
   const loadProfile = useCallback(async () => {
@@ -78,14 +81,14 @@ export default function ProfilePage() {
     } finally {
       setLoading(false);
     }
-  }, [supabase, userId]);
+  }, [userId]);
 
   useEffect(() => {
     void loadProfile();
   }, [loadProfile]);
 
   async function toggleFollow() {
-    if (!profile || actionLoading || isOwner) return;
+    if (!profile || actionLoading || messageLoading || isOwner) return;
 
     setActionLoading("follow");
     setError("");
@@ -126,7 +129,7 @@ export default function ProfilePage() {
   }
 
   async function toggleBlock() {
-    if (!profile || actionLoading || isOwner) return;
+    if (!profile || actionLoading || messageLoading || isOwner) return;
 
     setActionLoading("block");
     setError("");
@@ -172,6 +175,43 @@ export default function ProfilePage() {
       setError("Unable to update block status.");
     } finally {
       setActionLoading(null);
+    }
+  }
+
+  async function startDirectConversation() {
+    if (!profile || isOwner || profile.is_blocked || messageLoading) return;
+
+    setMessageLoading(true);
+    setError("");
+
+    try {
+      const response = await fetch("/api/conversations/direct", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userId: profile.id,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data.error ?? "Unable to start the conversation.");
+        return;
+      }
+
+      if (!data.conversation?.id) {
+        setError("The conversation could not be opened.");
+        return;
+      }
+
+      router.push(`/messages/${encodeURIComponent(data.conversation.id)}`);
+    } catch {
+      setError("Unable to start the conversation.");
+    } finally {
+      setMessageLoading(false);
     }
   }
 
@@ -277,11 +317,15 @@ export default function ProfilePage() {
                           type="button"
                           onClick={() => void toggleFollow()}
                           disabled={
-                            actionLoading !== null || profile.is_blocked
+                            actionLoading !== null ||
+                            messageLoading ||
+                            profile.is_blocked
                           }
                           className="inline-flex items-center justify-center gap-2 rounded-full bg-[#2148b8] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#183991] disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                          {profile.is_following ? (
+                          {actionLoading === "follow" ? (
+                            <Loader2 className="animate-spin" size={16} />
+                          ) : profile.is_following ? (
                             <>
                               <Check size={16} />
                               Following
@@ -296,21 +340,35 @@ export default function ProfilePage() {
 
                         <button
                           type="button"
-                          disabled
-                          className="inline-flex items-center justify-center gap-2 rounded-full border border-[#deddd7] bg-white px-4 py-2.5 text-sm font-semibold text-[#4d535b] disabled:cursor-not-allowed disabled:opacity-55"
-                          title="Messaging will connect here next."
+                          onClick={() => void startDirectConversation()}
+                          disabled={
+                            actionLoading !== null ||
+                            messageLoading ||
+                            profile.is_blocked
+                          }
+                          className="inline-flex items-center justify-center gap-2 rounded-full border border-[#deddd7] bg-white px-4 py-2.5 text-sm font-semibold text-[#4d535b] transition hover:border-[#b9c7ea] hover:bg-[#f9fbff] disabled:cursor-not-allowed disabled:opacity-55"
                         >
-                          <MessageCircle size={16} />
-                          Message
+                          {messageLoading ? (
+                            <Loader2 className="animate-spin" size={16} />
+                          ) : (
+                            <MessageCircle size={16} />
+                          )}
+                          {messageLoading ? "Opening…" : "Message"}
                         </button>
 
                         <button
                           type="button"
                           onClick={() => void toggleBlock()}
-                          disabled={actionLoading !== null}
+                          disabled={
+                            actionLoading !== null || messageLoading
+                          }
                           className="inline-flex items-center justify-center gap-2 rounded-full border border-[#deddd7] bg-white px-4 py-2.5 text-sm font-semibold text-[#4d535b] transition hover:border-[#c9c7c0] hover:bg-[#f8f7f3] disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                          <Ban size={16} />
+                          {actionLoading === "block" ? (
+                            <Loader2 className="animate-spin" size={16} />
+                          ) : (
+                            <Ban size={16} />
+                          )}
                           {profile.is_blocked ? "Unblock" : "Block"}
                         </button>
                       </>
