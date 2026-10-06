@@ -118,7 +118,7 @@ export async function consumeInviteForUser(
   const admin = createAdminClient();
 
   const {
-    data: { user },
+    data: user,
     error: userError,
   } = await admin.auth.admin.getUserById(userId);
 
@@ -146,7 +146,6 @@ export async function consumeInviteForUser(
   }
 
   const { data: inviteRecord, error: inviteError } = await admin
-    .schema("private")
     .from("platform_invites")
     .select("id, max_uses, uses_count, expires_at, revoked_at")
     .eq("id", invite.inviteId)
@@ -180,7 +179,6 @@ export async function consumeInviteForUser(
   }
 
   const { data: updatedInvite, error: updateError } = await admin
-    .schema("private")
     .from("platform_invites")
     .update({
       uses_count: inviteRecord.uses_count + 1,
