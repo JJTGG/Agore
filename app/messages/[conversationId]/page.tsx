@@ -19,6 +19,8 @@ import {
   Search,
   Send,
   Settings,
+  Shield,
+  ShieldOff,
   UserMinus,
   Users,
   X,
@@ -559,6 +561,80 @@ export default function ConversationPage() {
     }
   }
 
+  async function updateMemberRole(
+    userId: string,
+    requestedRole: "admin" | "member",
+  ) {
+    if (
+      currentUserRole !== "admin" ||
+      userId === currentUserId ||
+      memberActionLoading
+    ) {
+      return;
+    }
+
+    const member = groupMembers.find(
+      (item) => item.userId === userId,
+    );
+
+    const memberName =
+      member?.profile?.display_name || "this member";
+
+    const actionLabel =
+      requestedRole === "admin"
+        ? "promote this member to admin"
+        : "remove this member's admin role";
+
+    const confirmed = window.confirm(
+      `Are you sure you want to ${actionLabel}?`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setMemberActionLoading(`role:${userId}`);
+    setGroupActionError("");
+
+    try {
+      const response = await fetch(
+        `/api/conversations/${encodeURIComponent(
+          conversationId,
+        )}/members`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            userId,
+            role: requestedRole,
+          }),
+        },
+      );
+
+      const data = await response.json();
+
+      if (response.status === 401) {
+        router.push("/auth");
+        return;
+      }
+
+      if (!response.ok) {
+        setGroupActionError(
+          data.error ?? `Unable to update ${memberName}'s role.`,
+        );
+        return;
+      }
+
+      await loadGroupMembers();
+    } catch {
+      setGroupActionError("Unable to update the member role.");
+    } finally {
+      setMemberActionLoading(null);
+    }
+  }
+
   async function removeMember(userId: string) {
     if (
       memberActionLoading ||
@@ -1066,65 +1142,123 @@ export default function ConversationPage() {
                         profile?.display_name || "Agoré user";
                       const isCurrentUser =
                         member.userId === currentUserId;
-                      const actionLoading =
+                      const removeLoading =
                         memberActionLoading ===
                         `remove:${member.userId}`;
+                      const roleLoading =
+                        memberActionLoading ===
+                        `role:${member.userId}`;
 
                       return (
                         <div
                           key={member.userId}
-                          className="flex items-center gap-3 rounded-2xl px-3 py-3 transition hover:bg-[#f8f7f3]"
+                          className="rounded-2xl px-3 py-3 transition hover:bg-[#f8f7f3]"
                         >
-                          <div
-                            aria-hidden="true"
-                            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#edf0f8] text-xs font-bold text-[#536071]"
-                          >
-                            {getInitials(memberName)}
-                          </div>
-
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <p className="truncate text-sm font-semibold">
-                                {memberName}
-                              </p>
-
-                              {member.role === "admin" ? (
-                                <span className="shrink-0 rounded-full bg-[#e8edff] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#2148b8]">
-                                  Admin
-                                </span>
-                              ) : null}
+                          <div className="flex items-center gap-3">
+                            <div
+                              aria-hidden="true"
+                              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#edf0f8] text-xs font-bold text-[#536071]"
+                            >
+                              {getInitials(memberName)}
                             </div>
 
-                            <p className="mt-0.5 truncate text-xs text-[#777b81]">
-                              @{profile?.username || "user"}
-                              {isCurrentUser ? " · You" : ""}
-                            </p>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <p className="truncate text-sm font-semibold">
+                                  {memberName}
+                                </p>
+
+                                {member.role === "admin" ? (
+                                  <span className="shrink-0 rounded-full bg-[#e8edff] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#2148b8]">
+                                    Admin
+                                  </span>
+                                ) : null}
+                              </div>
+
+                              <p className="mt-0.5 truncate text-xs text-[#777b81]">
+                                @{profile?.username || "user"}
+                                {isCurrentUser ? " · You" : ""}
+                              </p>
+                            </div>
+
+                            {isCurrentUser ||
+                            currentUserRole === "admin" ? (
+                              <div className="flex shrink-0 items-center gap-1">
+                                {currentUserRole === "admin" &&
+                                !isCurrentUser ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      void updateMemberRole(
+                                        member.userId,
+                                        member.role === "admin"
+                                          ? "member"
+                                          : "admin",
+                                      )
+                                    }
+                                    disabled={
+                                      Boolean(memberActionLoading)
+                                    }
+                                    aria-label={
+                                      member.role === "admin"
+                                        ? `Remove admin role from ${memberName}`
+                                        : `Promote ${memberName} to admin`
+                                    }
+                                    title={
+                                      member.role === "admin"
+                                        ? "Remove admin role"
+                                        : "Make admin"
+                                    }
+                                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#deddd7] bg-white text-[#536071] transition hover:bg-[#eef2ff] hover:text-[#2148b8] disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    {roleLoading ? (
+                                      <Loader2
+                                        size={15}
+                                        className="animate-spin"
+                                      />
+                                    ) : member.role === "admin" ? (
+                                      <ShieldOff size={15} />
+                                    ) : (
+                                      <Shield size={15} />
+                                    )}
+                                  </button>
+                                ) : null}
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    void removeMember(member.userId)
+                                  }
+                                  disabled={
+                                    Boolean(memberActionLoading)
+                                  }
+                                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#deddd7] bg-white text-[#8a4646] transition hover:bg-[#fff7f7] disabled:cursor-not-allowed disabled:opacity-50"
+                                  aria-label={
+                                    isCurrentUser
+                                      ? "Leave group"
+                                      : `Remove ${memberName}`
+                                  }
+                                >
+                                  {removeLoading ? (
+                                    <Loader2
+                                      size={15}
+                                      className="animate-spin"
+                                    />
+                                  ) : (
+                                    <UserMinus size={15} />
+                                  )}
+                                </button>
+                              </div>
+                            ) : null}
                           </div>
 
-                          {isCurrentUser ||
-                          currentUserRole === "admin" ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                void removeMember(member.userId)
-                              }
-                              disabled={Boolean(memberActionLoading)}
-                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#deddd7] bg-white text-[#8a4646] transition hover:bg-[#fff7f7] disabled:cursor-not-allowed disabled:opacity-50"
-                              aria-label={
-                                isCurrentUser
-                                  ? "Leave group"
-                                  : `Remove ${memberName}`
-                              }
-                            >
-                              {actionLoading ? (
-                                <Loader2
-                                  size={15}
-                                  className="animate-spin"
-                                />
-                              ) : (
-                                <UserMinus size={15} />
-                              )}
-                            </button>
+                          {currentUserRole === "admin" &&
+                          !isCurrentUser ? (
+                            <p className="ml-[52px] mt-2 text-[11px] text-[#8a8d92]">
+                              {member.role === "admin"
+                                ? "Tap the shield to remove admin access."
+                                : "Tap the shield to make this member an admin."}
+                            </p>
                           ) : null}
                         </div>
                       );
@@ -1203,7 +1337,9 @@ export default function ConversationPage() {
                           <button
                             key={person.id}
                             type="button"
-                            onClick={() => void addMember(person.id)}
+                            onClick={() =>
+                              void addMember(person.id)
+                            }
                             disabled={Boolean(memberActionLoading)}
                             className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
                           >
