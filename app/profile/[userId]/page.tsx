@@ -11,7 +11,7 @@ import {
   MessageCircle,
   UserPlus,
 } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
+import { createClient } from "@/lib/supabase/browser";
 import ProfilePosts from "./profile-posts";
 
 type Profile = {
@@ -29,9 +29,9 @@ type Profile = {
 export default function ProfilePage() {
   const params = useParams<{ userId: string }>();
   const router = useRouter();
+  const supabase = createClient();
 
   const userId = params.userId;
-  const supabase = createClient();
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isOwner, setIsOwner] = useState(false);
@@ -60,6 +60,7 @@ export default function ProfilePage() {
       if (!response.ok) {
         setError(data.error ?? "Unable to load this profile.");
         setProfile(null);
+        setIsOwner(false);
         return;
       }
 
@@ -77,7 +78,7 @@ export default function ProfilePage() {
     } finally {
       setLoading(false);
     }
-  }, [supabase.auth, userId]);
+  }, [supabase, userId]);
 
   useEffect(() => {
     void loadProfile();
