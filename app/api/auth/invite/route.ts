@@ -1,35 +1,13 @@
-import { createHash, createHmac } from "crypto";
+import { createHash } from "crypto";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import { createInviteAssertion } from "@/lib/auth/invite";
 
 const inviteSchema = z.object({
   code: z.string().trim().min(1).max(128),
   email: z.string().trim().toLowerCase().email(),
 });
-
-function createInviteAssertion(inviteId: string, email: string) {
-  const secret = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!secret) {
-    throw new Error("SUPABASE_SERVICE_ROLE_KEY is not configured.");
-  }
-
-  const payload = Buffer.from(
-    JSON.stringify({
-      inviteId,
-      email,
-      exp: Math.floor(Date.now() / 1000) + 60 * 60,
-    }),
-    "utf8",
-  ).toString("base64url");
-
-  const signature = createHmac("sha256", secret)
-    .update(payload)
-    .digest("base64url");
-
-  return `${payload}.${signature}`;
-}
 
 export async function POST(request: Request) {
   try {
