@@ -19,7 +19,7 @@ function createInviteAssertion(inviteId: string, email: string) {
     JSON.stringify({
       inviteId,
       email,
-      exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24,
+      exp: Math.floor(Date.now() / 1000) + 60 * 60,
     }),
     "utf8",
   ).toString("base64url");
@@ -116,10 +116,21 @@ export async function POST(request: Request) {
       parsed.data.email,
     );
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       valid: true,
-      assertion,
     });
+
+    response.cookies.set({
+      name: "agore_invite_assertion",
+      value: assertion,
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/auth",
+      maxAge: 60 * 60,
+    });
+
+    return response;
   } catch (error) {
     console.error("Invite validation failed:", error);
 
