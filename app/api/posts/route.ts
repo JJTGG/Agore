@@ -14,6 +14,18 @@ const feedQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
 
+const postSelect = `
+  id,
+  author_id,
+  content,
+  created_at,
+  updated_at,
+  profiles!posts_author_id_fkey (
+    display_name,
+    username
+  )
+`;
+
 export async function GET(request: Request) {
   const supabase = await createClient();
 
@@ -44,19 +56,7 @@ export async function GET(request: Request) {
 
   const { data: posts, error: postsError } = await supabase
     .from("posts")
-    .select(
-      `
-        id,
-        author_id,
-        content,
-        created_at,
-        updated_at,
-        profiles (
-          display_name,
-          username
-        )
-      `,
-    )
+    .select(postSelect)
     .order("created_at", { ascending: false })
     .limit(parsedQuery.data.limit);
 
@@ -117,19 +117,7 @@ export async function POST(request: Request) {
       author_id: user.id,
       content: parsedBody.data.content,
     })
-    .select(
-      `
-        id,
-        author_id,
-        content,
-        created_at,
-        updated_at,
-        profiles (
-          display_name,
-          username
-        )
-      `,
-    )
+    .select(postSelect)
     .single();
 
   if (postError) {
