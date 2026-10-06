@@ -1,12 +1,8 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import { NextResponse } from "next/server";
-import { z } from "zod";
+import { cookies } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
-
-const consumeSchema = z.object({
-  assertion: z.string().min(1).max(2048),
-  userId: z.string().uuid(),
-});
+import { createClient } from "@/lib/supabase/server";
 
 function verifyAssertion(assertion: string) {
   const separator = assertion.lastIndexOf(".");
@@ -61,57 +57,74 @@ function verifyAssertion(assertion: string) {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST() {
   try {
-    const body = await request.json();
-    const parsed = consumeSchema.safeParse(body);
+    const cookieStore = await cookies();
+    const assertion = cookieStore.get("agore_invite_assertion")?.value;
 
-    if (!parsed.success) {
+    if (!assertion) {
       return NextResponse.json(
-        { error: "Invalid invite claim." },
+        { error: "No active invite claim." },
         { status: 400 },
       );
     }
 
-    const assertion = verifyAssertion(parsed.data.assertion);
+    const inviteClaim = verifyAssertion(assertion);
 
-    if (!assertion) {
+    if (!inviteClaim) {
       return NextResponse.json(
         { error: "Invalid or expired invite claim." },
         { status: 400 },
       );
     }
 
-    const supabase = createAdminClient();
+    const supabase = await createClient();
 
     const {
       data: { user },
       error: userError,
-    } = await supabase.auth.admin.getUserById(parsed.data.userId);
+    } = await supabase.auth.getUser();
 
     if (userError || !user) {
       return NextResponse.json(
-        { error: "Unable to verify account." },
-        { status: 400 },
+        { error: "Authenticated account required." },
+        { status: 401 },
       );
     }
 
-    if (!user.email || user.email.toLowerCase() !== assertion.email) {
+    if (
+      !user.email ||
+      user.email.toLowerCase() !== inviteClaim.email
+    ) {
       return NextResponse.json(
         { error: "Invite claim does not match this account." },
         { status: 400 },
       );
     }
 
+    const admin = createAdminClient();
+
     if (user.app_metadata?.agore_invite_consumed === true) {
-      return NextResponse.json({ consumed: true });
+      const response = NextResponse.json({ consumed: true });
+
+      response.cookies.set({
+        name: "agore_invite_assertion",
+        value: "",
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/auth",
+        maxAge: 0,
+      });
+
+      return response;
     }
 
-    const { data: invite, error: inviteError } = await supabase
+    const { data: invite, error: inviteError } = await admin
       .schema("private")
       .from("platform_invites")
       .select("id, max_uses, uses_count, expires_at, revoked_at")
-      .eq("id", assertion.inviteId)
+      .eq("id", inviteClaim.inviteId)
       .maybeSingle();
 
     if (inviteError || !invite) {
@@ -128,14 +141,17 @@ export async function POST(request: Request) {
       );
     }
 
-    if (invite.expires_at && new Date(invite.expires_at) <= new Date()) {
+    if (
+      invite.expires_at &&
+      new Date(invite.expires_at) <= new Date()
+    ) {
       return NextResponse.json(
         { error: "This invite has expired." },
         { status: 400 },
       );
     }
 
-    const { data: updatedInvite, error: updateError } = await supabase
+    const { data: updatedInvite, error: updateError } = await admin
       .schema("private")
       .from("platform_invites")
       .update({
@@ -162,10 +178,11 @@ export async function POST(request: Request) {
     }
 
     const { error: metadataError } =
-      await supabase.auth.admin.updateUserById(user.id, {
+      await admin.auth.admin.updateUserById(user.id, {
         app_metadata: {
           ...user.app_metadata,
           agore_invite_consumed: true,
+          agore_invite_id: invite.id,
         },
       });
 
@@ -176,7 +193,19 @@ export async function POST(request: Request) {
       );
     }
 
-    return NextResponse.json({ consumed: true });
+    const response = NextResponse.json({ consumed: true });
+
+    response.cookies.set({
+      name: "agore_invite_assertion",
+      value: "",
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/auth",
+      maxAge: 0,
+    });
+
+    return response;
   } catch (error) {
     console.error("Invite consumption failed:", error);
 
