@@ -118,7 +118,7 @@ export async function consumeInviteForUser(
   const admin = createAdminClient();
 
   const {
-    data: user,
+    data: { user },
     error: userError,
   } = await admin.auth.admin.getUserById(userId);
 
