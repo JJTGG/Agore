@@ -3,7 +3,14 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, Ban, Check, MessageCircle, UserPlus } from "lucide-react";
+import {
+  ArrowLeft,
+  Ban,
+  Check,
+  MessageCircle,
+  UserPlus,
+} from "lucide-react";
+import ProfilePosts from "./profile-posts";
 
 type Profile = {
   id: string;
@@ -37,9 +44,12 @@ export default function ProfilePage() {
     setError("");
 
     try {
-      const response = await fetch(`/api/users/${userId}`, {
-        cache: "no-store",
-      });
+      const response = await fetch(
+        `/api/users/${encodeURIComponent(userId)}`,
+        {
+          cache: "no-store",
+        },
+      );
 
       const data = await response.json();
 
@@ -71,9 +81,12 @@ export default function ProfilePage() {
     try {
       const method = profile.is_following ? "DELETE" : "POST";
 
-      const response = await fetch(`/api/users/${profile.id}/follow`, {
-        method,
-      });
+      const response = await fetch(
+        `/api/users/${encodeURIComponent(profile.id)}/follow`,
+        {
+          method,
+        },
+      );
 
       const data = await response.json();
 
@@ -109,9 +122,12 @@ export default function ProfilePage() {
     try {
       const method = profile.is_blocked ? "DELETE" : "POST";
 
-      const response = await fetch(`/api/users/${profile.id}/block`, {
-        method,
-      });
+      const response = await fetch(
+        `/api/users/${encodeURIComponent(profile.id)}/block`,
+        {
+          method,
+        },
+      );
 
       const data = await response.json();
 
@@ -199,99 +215,109 @@ export default function ProfilePage() {
             </button>
           </section>
         ) : profile ? (
-          <section className="overflow-hidden rounded-3xl border border-[#deddd7] bg-white">
-            <div className="border-b border-[#ebeae5] px-6 pb-6 pt-7 sm:px-8">
-              <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-                <div className="flex items-start gap-4">
-                  <div
-                    aria-hidden="true"
-                    className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-[#e5ebff] text-xl font-bold text-[#2148b8]"
-                  >
-                    {initials || "A"}
+          <>
+            <section className="overflow-hidden rounded-3xl border border-[#deddd7] bg-white">
+              <div className="border-b border-[#ebeae5] px-6 pb-6 pt-7 sm:px-8">
+                <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex items-start gap-4">
+                    <div
+                      aria-hidden="true"
+                      className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-[#e5ebff] text-xl font-bold text-[#2148b8]"
+                    >
+                      {initials || "A"}
+                    </div>
+
+                    <div className="min-w-0">
+                      <h1 className="truncate text-2xl font-semibold tracking-[-0.03em]">
+                        {profile.display_name}
+                      </h1>
+
+                      <p className="mt-1 text-sm text-[#70747b]">
+                        @{profile.username}
+                      </p>
+
+                      {profile.bio ? (
+                        <p className="mt-4 max-w-xl whitespace-pre-wrap text-[15px] leading-6 text-[#30343a]">
+                          {profile.bio}
+                        </p>
+                      ) : (
+                        <p className="mt-4 text-sm text-[#8a8d92]">
+                          No bio yet.
+                        </p>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="min-w-0">
-                    <h1 className="truncate text-2xl font-semibold tracking-[-0.03em]">
-                      {profile.display_name}
-                    </h1>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void toggleFollow()}
+                      disabled={actionLoading !== null || profile.is_blocked}
+                      className="inline-flex items-center justify-center gap-2 rounded-full bg-[#2148b8] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#183991] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {profile.is_following ? (
+                        <>
+                          <Check size={16} />
+                          Following
+                        </>
+                      ) : (
+                        <>
+                          <UserPlus size={16} />
+                          Follow
+                        </>
+                      )}
+                    </button>
 
-                    <p className="mt-1 text-sm text-[#70747b]">
-                      @{profile.username}
-                    </p>
+                    <button
+                      type="button"
+                      disabled
+                      className="inline-flex items-center justify-center gap-2 rounded-full border border-[#deddd7] bg-white px-4 py-2.5 text-sm font-semibold text-[#4d535b] disabled:cursor-not-allowed disabled:opacity-55"
+                      title="Messaging will connect here next."
+                    >
+                      <MessageCircle size={16} />
+                      Message
+                    </button>
 
-                    {profile.bio ? (
-                      <p className="mt-4 max-w-xl whitespace-pre-wrap text-[15px] leading-6 text-[#30343a]">
-                        {profile.bio}
-                      </p>
-                    ) : (
-                      <p className="mt-4 text-sm text-[#8a8d92]">
-                        No bio yet.
-                      </p>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => void toggleBlock()}
+                      disabled={actionLoading !== null}
+                      className="inline-flex items-center justify-center gap-2 rounded-full border border-[#deddd7] bg-white px-4 py-2.5 text-sm font-semibold text-[#4d535b] transition hover:border-[#c9c7c0] hover:bg-[#f8f7f3] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <Ban size={16} />
+                      {profile.is_blocked ? "Unblock" : "Block"}
+                    </button>
                   </div>
                 </div>
+              </div>
 
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void toggleFollow()}
-                    disabled={actionLoading !== null || profile.is_blocked}
-                    className="inline-flex items-center justify-center gap-2 rounded-full bg-[#2148b8] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#183991] disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {profile.is_following ? (
-                      <>
-                        <Check size={16} />
-                        Following
-                      </>
-                    ) : (
-                      <>
-                        <UserPlus size={16} />
-                        Follow
-                      </>
-                    )}
-                  </button>
+              <div className="grid grid-cols-2 divide-x divide-[#ebeae5]">
+                <div className="px-6 py-5 text-center sm:px-8">
+                  <p className="text-xl font-semibold">
+                    {profile.following_count}
+                  </p>
+                  <p className="mt-1 text-sm text-[#74787e]">Following</p>
+                </div>
 
-                  <button
-                    type="button"
-                    disabled
-                    className="inline-flex items-center justify-center gap-2 rounded-full border border-[#deddd7] bg-white px-4 py-2.5 text-sm font-semibold text-[#4d535b] disabled:cursor-not-allowed disabled:opacity-55"
-                    title="Messaging will connect here next."
-                  >
-                    <MessageCircle size={16} />
-                    Message
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => void toggleBlock()}
-                    disabled={actionLoading !== null}
-                    className="inline-flex items-center justify-center gap-2 rounded-full border border-[#deddd7] bg-white px-4 py-2.5 text-sm font-semibold text-[#4d535b] transition hover:border-[#c9c7c0] hover:bg-[#f8f7f3] disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <Ban size={16} />
-                    {profile.is_blocked ? "Unblock" : "Block"}
-                  </button>
+                <div className="px-6 py-5 text-center sm:px-8">
+                  <p className="text-xl font-semibold">
+                    {profile.follower_count}
+                  </p>
+                  <p className="mt-1 text-sm text-[#74787e]">Followers</p>
                 </div>
               </div>
-            </div>
 
-            <div className="grid grid-cols-2 divide-x divide-[#ebeae5]">
-              <div className="px-6 py-5 text-center sm:px-8">
-                <p className="text-xl font-semibold">{profile.following_count}</p>
-                <p className="mt-1 text-sm text-[#74787e]">Following</p>
-              </div>
+              {error ? (
+                <div className="border-t border-[#ebeae5] px-6 py-4 sm:px-8">
+                  <p className="text-sm font-medium text-[#8d2f2f]">
+                    {error}
+                  </p>
+                </div>
+              ) : null}
+            </section>
 
-              <div className="px-6 py-5 text-center sm:px-8">
-                <p className="text-xl font-semibold">{profile.follower_count}</p>
-                <p className="mt-1 text-sm text-[#74787e]">Followers</p>
-              </div>
-            </div>
-
-            {error ? (
-              <div className="border-t border-[#ebeae5] px-6 py-4 sm:px-8">
-                <p className="text-sm font-medium text-[#8d2f2f]">{error}</p>
-              </div>
-            ) : null}
-          </section>
+            <ProfilePosts userId={profile.id} />
+          </>
         ) : null}
       </div>
     </main>
