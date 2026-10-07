@@ -2027,8 +2027,8 @@ export default function ConversationPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
-      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col md:px-4 md:py-4">
+    <main className="h-dvh max-h-dvh overflow-hidden bg-[var(--background)] text-[var(--foreground)]">
+      <div className="mx-auto flex h-full min-h-0 w-full max-w-6xl flex-col md:px-4 md:py-4">
         <header className="flex h-14 shrink-0 items-center justify-between px-3 md:px-1">
           <button
             type="button"
@@ -2053,7 +2053,7 @@ export default function ConversationPage() {
           <div className="w-20 sm:w-28" />
         </header>
 
-        <section className="flex min-h-0 flex-1 flex-col overflow-hidden border-y border-[var(--border)] bg-[var(--surface)] md:min-h-[calc(100vh-5.5rem)] md:rounded-[1.75rem] md:border md:shadow-[0_12px_40px_rgba(0,0,0,0.05)]">
+        <section className="flex h-full min-h-0 flex-1 flex-col overflow-hidden border-y border-[var(--border)] bg-[var(--surface)] md:min-h-0 md:rounded-[1.75rem] md:border md:shadow-[0_12px_40px_rgba(0,0,0,0.05)]">
           <header className="flex shrink-0 items-center gap-3 border-b border-[var(--border)] px-4 py-3 sm:px-5">
             <AgoreAvatar
               avatarPath={
@@ -2116,7 +2116,7 @@ export default function ConversationPage() {
 
           <div
             ref={messagesViewportRef}
-            className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-5 sm:px-5 sm:py-6"
+            className="relative min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-3 py-5 sm:px-5 sm:py-6"
           >
             {loading ? (
               <div className="flex min-h-[50vh] items-center justify-center">
