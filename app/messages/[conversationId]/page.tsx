@@ -12,6 +12,7 @@ import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Check,
+  CornerUpLeft,
   Edit3,
   Loader2,
   MessageCircle,
@@ -65,6 +66,13 @@ type Message = {
   updated_at: string;
   deleted_at: string | null;
   sender: Profile | null;
+  reply_to_message?: {
+    id: string;
+    sender_id: string | null;
+    content: string | null;
+    created_at: string;
+    sender: Profile | null;
+  } | null;
 };
 
 type GroupMember = {
@@ -121,6 +129,20 @@ function getInitials(value: string) {
   );
 }
 
+function truncateMessage(value: string | null | undefined, length = 120) {
+  const text = value?.trim() ?? "";
+
+  if (!text) {
+    return "Message";
+  }
+
+  if (text.length <= length) {
+    return text;
+  }
+
+  return `${text.slice(0, length - 1).trim()}…`;
+}
+
 export default function ConversationPage() {
   const params = useParams<{ conversationId: string }>();
   const router = useRouter();
@@ -133,6 +155,7 @@ export default function ConversationPage() {
   );
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -402,6 +425,23 @@ export default function ConversationPage() {
     }
   }, [groupOpen, conversation?.type, loadGroupMembers]);
 
+  function startReply(message: Message) {
+    setReplyingTo(message);
+    setError("");
+
+    window.setTimeout(() => {
+      const textarea = document.querySelector<HTMLTextAreaElement>(
+        'textarea[placeholder="Write a message…"]',
+      );
+
+      textarea?.focus();
+    }, 0);
+  }
+
+  function cancelReply() {
+    setReplyingTo(null);
+  }
+
   async function handleSend(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -426,6 +466,7 @@ export default function ConversationPage() {
           },
           body: JSON.stringify({
             content,
+            reply_to_message_id: replyingTo?.id ?? null,
           }),
         },
       );
@@ -443,20 +484,33 @@ export default function ConversationPage() {
       }
 
       if (data.message) {
+        const sentMessage = data.message as Message;
+
+        if (replyingTo) {
+          sentMessage.reply_to_message = {
+            id: replyingTo.id,
+            sender_id: replyingTo.sender_id,
+            content: replyingTo.content,
+            created_at: replyingTo.created_at,
+            sender: replyingTo.sender ?? null,
+          };
+        }
+
         setMessages((current) => {
           if (
             current.some(
-              (message) => message.id === data.message.id,
+              (message) => message.id === sentMessage.id,
             )
           ) {
             return current;
           }
 
-          return [...current, data.message];
+          return [...current, sentMessage];
         });
       }
 
       setDraft("");
+      setReplyingTo(null);
       void loadConversation();
     } catch {
       setError("Unable to send the message.");
@@ -885,6 +939,15 @@ export default function ConversationPage() {
                     ? formatMessageDay(previousMessage.created_at)
                     : null;
 
+                  const replyTarget =
+                    message.reply_to_message ??
+                    messages.find(
+                      (candidate) =>
+                        candidate.id ===
+                        message.reply_to_message_id,
+                    ) ??
+                    null;
+
                   return (
                     <div key={message.id}>
                       {currentDay !== previousDay ? (
@@ -902,34 +965,110 @@ export default function ConversationPage() {
                             : "items-start"
                         }`}
                       >
-                        <div
-                          className={`max-w-[82%] rounded-2xl px-4 py-3 ${
-                            isOwn
-                              ? "rounded-br-md bg-[#2148b8] text-white"
-                              : "rounded-bl-md bg-[#f1f0eb] text-[#292d33]"
-                          }`}
-                        >
-                          {!isOwn && message.sender ? (
-                            <p className="mb-1 text-xs font-semibold text-[#5f646b]">
-                              {message.sender.display_name}
-                            </p>
-                          ) : null}
-
-                          <p className="whitespace-pre-wrap text-[15px] leading-6">
-                            {message.content ?? ""}
-                          </p>
-
-                          <p
-                            className={`mt-1 text-[11px] ${
+                        <div className="group relative max-w-[82%]">
+                          <div
+                            className={`rounded-2xl px-4 py-3 ${
                               isOwn
-                                ? "text-white/70"
-                                : "text-[#85898f]"
+                                ? "rounded-br-md bg-[#2148b8] text-white"
+                                : "rounded-bl-md bg-[#f1f0eb] text-[#292d33]"
                             }`}
                           >
-                            {formatMessageTime(
-                              message.created_at,
-                            )}
-                          </p>
+                            {replyTarget ? (
+                              <div
+                                className={`mb-3 rounded-xl border-l-2 px-3 py-2 ${
+                                  isOwn
+                                    ? "border-white/60 bg-white/10"
+                                    : "border-[#2148b8] bg-white"
+                                }`}
+                              >
+                                <p
+                                  className={`text-[11px] font-semibold ${
+                                    isOwn
+                                      ? "text-white/80"
+                                      : "text-[#2148b8]"
+                                  }`}
+                                >
+                                  {replyTarget.sender
+                                    ?.display_name ||
+                                    (replyTarget.sender_id ===
+                                    currentUserId
+                                      ? "You"
+                                      : "Message")}
+                                </p>
+
+                                <p
+                                  className={`mt-1 line-clamp-2 text-xs leading-5 ${
+                                    isOwn
+                                      ? "text-white/80"
+                                      : "text-[#6d7177]"
+                                  }`}
+                                >
+                                  {truncateMessage(
+                                    replyTarget.content,
+                                  )}
+                                </p>
+                              </div>
+                            ) : message.reply_to_message_id ? (
+                              <div
+                                className={`mb-3 rounded-xl border-l-2 px-3 py-2 ${
+                                  isOwn
+                                    ? "border-white/60 bg-white/10"
+                                    : "border-[#2148b8] bg-white"
+                                }`}
+                              >
+                                <p
+                                  className={`text-xs ${
+                                    isOwn
+                                      ? "text-white/70"
+                                      : "text-[#85898f]"
+                                  }`}
+                                >
+                                  Original message unavailable
+                                </p>
+                              </div>
+                            ) : null}
+
+                            {!isOwn && message.sender ? (
+                              <p className="mb-1 text-xs font-semibold text-[#5f646b]">
+                                {message.sender.display_name}
+                              </p>
+                            ) : null}
+
+                            <p className="whitespace-pre-wrap text-[15px] leading-6">
+                              {message.content ?? ""}
+                            </p>
+
+                            <p
+                              className={`mt-1 text-[11px] ${
+                                isOwn
+                                  ? "text-white/70"
+                                  : "text-[#85898f]"
+                              }`}
+                            >
+                              {formatMessageTime(
+                                message.created_at,
+                              )}
+                            </p>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              startReply(message)
+                            }
+                            aria-label={`Reply to ${
+                              message.sender?.display_name ||
+                              "this message"
+                            }`}
+                            title="Reply"
+                            className={`absolute -top-3 ${
+                              isOwn
+                                ? "-left-10"
+                                : "-right-10"
+                            } inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#deddd7] bg-white text-[#656a71] opacity-100 shadow-sm transition hover:border-[#b8c9f3] hover:bg-[#f8faff] hover:text-[#2148b8] sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100`}
+                          >
+                            <CornerUpLeft size={14} />
+                          </button>
                         </div>
 
                         <MessageReactions
@@ -956,6 +1095,38 @@ export default function ConversationPage() {
             onSubmit={handleSend}
             className="border-t border-[#ebeae5] bg-[#fcfcfa] p-3 sm:p-4"
           >
+            {replyingTo ? (
+              <div className="mb-3 flex items-center gap-3 rounded-2xl border border-[#dfe4ef] bg-white px-3 py-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#eaf0ff] text-[#2148b8]">
+                  <CornerUpLeft size={16} />
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold text-[#2148b8]">
+                    Replying to{" "}
+                    {replyingTo.sender_id === currentUserId
+                      ? "yourself"
+                      : replyingTo.sender?.display_name ||
+                        "message"}
+                  </p>
+
+                  <p className="mt-1 truncate text-xs text-[#6f747b]">
+                    {truncateMessage(replyingTo.content)}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={cancelReply}
+                  disabled={sending}
+                  aria-label="Cancel reply"
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[#777b81] transition hover:bg-[#f2f1ec] hover:text-[#292d33] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+            ) : null}
+
             <div className="flex items-end gap-2">
               <textarea
                 value={draft}
@@ -983,7 +1154,11 @@ export default function ConversationPage() {
                   !conversation ||
                   !draft.trim()
                 }
-                aria-label="Send message"
+                aria-label={
+                  replyingTo
+                    ? "Send reply"
+                    : "Send message"
+                }
                 className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#2148b8] text-white transition hover:bg-[#183991] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {sending ? (
