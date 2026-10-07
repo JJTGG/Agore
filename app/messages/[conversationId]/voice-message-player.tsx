@@ -26,7 +26,9 @@ function formatDuration(milliseconds: number) {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
 
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  return `${minutes}:${seconds
+    .toString()
+    .padStart(2, "0")}`;
 }
 
 export default function VoiceMessagePlayer({
@@ -90,30 +92,44 @@ export default function VoiceMessagePlayer({
       return;
     }
 
-    function handleTimeUpdate() {
-      setCurrentMs(audio.currentTime * 1000);
-    }
+    const handleTimeUpdate = () => {
+      const currentAudio = audioRef.current;
 
-    function handlePlay() {
+      if (!currentAudio) {
+        return;
+      }
+
+      setCurrentMs(currentAudio.currentTime * 1000);
+    };
+
+    const handlePlay = () => {
       setPlaying(true);
-    }
+    };
 
-    function handlePause() {
+    const handlePause = () => {
       setPlaying(false);
-    }
+    };
 
-    function handleEnded() {
+    const handleEnded = () => {
+      const currentAudio = audioRef.current;
+
       setPlaying(false);
       setCurrentMs(0);
-      audio.currentTime = 0;
-    }
 
-    function handleError() {
+      if (currentAudio) {
+        currentAudio.currentTime = 0;
+      }
+    };
+
+    const handleError = () => {
       setPlaying(false);
       setError(true);
-    }
+    };
 
-    audio.addEventListener("timeupdate", handleTimeUpdate);
+    audio.addEventListener(
+      "timeupdate",
+      handleTimeUpdate,
+    );
     audio.addEventListener("play", handlePlay);
     audio.addEventListener("pause", handlePause);
     audio.addEventListener("ended", handleEnded);
@@ -125,9 +141,18 @@ export default function VoiceMessagePlayer({
         handleTimeUpdate,
       );
       audio.removeEventListener("play", handlePlay);
-      audio.removeEventListener("pause", handlePause);
-      audio.removeEventListener("ended", handleEnded);
-      audio.removeEventListener("error", handleError);
+      audio.removeEventListener(
+        "pause",
+        handlePause,
+      );
+      audio.removeEventListener(
+        "ended",
+        handleEnded,
+      );
+      audio.removeEventListener(
+        "error",
+        handleError,
+      );
     };
   }, [audioUrl]);
 
@@ -252,9 +277,7 @@ export default function VoiceMessagePlayer({
               : "text-[#85898f]"
           }`}
         >
-          <span>
-            {formatDuration(currentMs)}
-          </span>
+          <span>{formatDuration(currentMs)}</span>
 
           <span>
             {effectiveDurationMs > 0
