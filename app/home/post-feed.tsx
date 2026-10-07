@@ -659,29 +659,30 @@ export default function PostFeed() {
     setNotice("");
 
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const response = await fetch(
+        `/api/posts/${encodeURIComponent(
+          post.id,
+        )}/report`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            reason: "user_report",
+          }),
+        },
+      );
 
-      if (!user) {
+      const data =
+        (await response.json()) as ErrorResponse;
+
+      if (!response.ok) {
         throw new Error(
-          "Authentication required.",
+          data.error ??
+            "Unable to submit the report.",
         );
-      }
-
-      const {
-        error: reportError,
-      } = await supabase
-        .from("reports")
-        .insert({
-          reporter_id: user.id,
-          target_type: "post",
-          target_id: post.id,
-          reason: "user_report",
-        });
-
-      if (reportError) {
-        throw reportError;
       }
 
       setNotice(
@@ -694,7 +695,9 @@ export default function PostFeed() {
       );
 
       setError(
-        "Unable to submit the report.",
+        reportError instanceof Error
+          ? reportError.message
+          : "Unable to submit the report.",
       );
     } finally {
       setActionPostId(null);
