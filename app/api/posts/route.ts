@@ -1,17 +1,29 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+
 import { createClient } from "@/lib/supabase/server";
 
 const createPostSchema = z.object({
   content: z
     .string()
     .trim()
-    .min(1, "Post content is required.")
-    .max(2000, "Post content must be 2000 characters or fewer."),
+    .min(
+      1,
+      "Post content is required.",
+    )
+    .max(
+      2000,
+      "Post content must be 2000 characters or fewer.",
+    ),
 });
 
 const feedQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(50).default(20),
+  limit: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(50)
+    .default(20),
 });
 
 const postSelect = `
@@ -20,9 +32,20 @@ const postSelect = `
   content,
   created_at,
   updated_at,
+  post_media (
+    id,
+    storage_path,
+    mime_type,
+    size_bytes,
+    width,
+    height,
+    sort_order,
+    created_at
+  ),
   profiles!posts_author_id_fkey (
     display_name,
-    username
+    username,
+    avatar_path
   )
 `;
 
@@ -36,41 +59,70 @@ export async function GET(request: Request) {
 
   if (userError || !user) {
     return NextResponse.json(
-      { error: "Authentication required." },
+      {
+        error:
+          "Authentication required.",
+      },
       { status: 401 },
     );
   }
 
-  const { searchParams } = new URL(request.url);
+  const { searchParams } =
+    new URL(request.url);
 
-  const parsedQuery = feedQuerySchema.safeParse({
-    limit: searchParams.get("limit") ?? undefined,
-  });
+  const parsedQuery =
+    feedQuerySchema.safeParse({
+      limit:
+        searchParams.get("limit") ??
+        undefined,
+    });
 
   if (!parsedQuery.success) {
     return NextResponse.json(
-      { error: "Invalid feed parameters." },
+      {
+        error:
+          "Invalid feed parameters.",
+      },
       { status: 400 },
     );
   }
 
-  const { data: posts, error: postsError } = await supabase
+  const {
+    data: posts,
+    error: postsError,
+  } = await supabase
     .from("posts")
     .select(postSelect)
-    .order("created_at", { ascending: false })
+    .order("created_at", {
+      ascending: false,
+    })
     .limit(parsedQuery.data.limit);
 
   if (postsError) {
-    console.error("Failed to load Agore feed:", postsError);
+    console.error(
+      "Failed to load Agore feed:",
+      postsError,
+    );
 
     return NextResponse.json(
-      { error: "Unable to load the feed." },
+      {
+        error:
+          "Unable to load the feed.",
+      },
       { status: 500 },
     );
   }
 
   return NextResponse.json({
-    posts: posts ?? [],
+    posts: (posts ?? []).map((post) => ({
+      ...post,
+      post_media: [...(post.post_media ?? [])].sort(
+        (a, b) =>
+          a.sort_order - b.sort_order ||
+          new Date(a.created_at).getTime() -
+            new Date(b.created_at).getTime(),
+      ),
+    })),
   });
 }
 
@@ -84,7 +136,10 @@ export async function POST(request: Request) {
 
   if (userError || !user) {
     return NextResponse.json(
-      { error: "Authentication required." },
+      {
+        error:
+          "Authentication required.",
+      },
       { status: 401 },
     );
   }
@@ -95,42 +150,69 @@ export async function POST(request: Request) {
     body = await request.json();
   } catch {
     return NextResponse.json(
-      { error: "Invalid JSON body." },
-      { status: 400 },
-    );
-  }
-
-  const parsedBody = createPostSchema.safeParse(body);
-
-  if (!parsedBody.success) {
-    return NextResponse.json(
       {
-        error: parsedBody.error.issues[0]?.message ?? "Invalid post content.",
+        error:
+          "Invalid JSON body.",
       },
       { status: 400 },
     );
   }
 
-  const { data: post, error: postError } = await supabase
+  const parsedBody =
+    createPostSchema.safeParse(body);
+
+  if (!parsedBody.success) {
+    return NextResponse.json(
+      {
+        error:
+          parsedBody.error.issues[0]
+            ?.message ??
+          "Invalid post content.",
+      },
+      { status: 400 },
+    );
+  }
+
+  const {
+    data: post,
+    error: postError,
+  } = await supabase
     .from("posts")
     .insert({
       author_id: user.id,
-      content: parsedBody.data.content,
+      content:
+        parsedBody.data.content,
     })
     .select(postSelect)
     .single();
 
   if (postError) {
-    console.error("Failed to create Agore post:", postError);
+    console.error(
+      "Failed to create Agore post:",
+      postError,
+    );
 
     return NextResponse.json(
-      { error: "Unable to create the post." },
+      {
+        error:
+          "Unable to create the post.",
+      },
       { status: 500 },
     );
   }
 
   return NextResponse.json(
-    { post },
+    {
+      post: {
+        ...post,
+        post_media: [...(post.post_media ?? [])].sort(
+          (a, b) =>
+            a.sort_order - b.sort_order ||
+            new Date(a.created_at).getTime() -
+              new Date(b.created_at).getTime(),
+        ),
+      },
+    },
     { status: 201 },
   );
 }
