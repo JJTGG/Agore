@@ -20,6 +20,7 @@ import {
   MoreHorizontal,
   Paperclip,
   RefreshCw,
+  Repeat2,
   Share2,
   Sparkles,
   X,
@@ -38,6 +39,18 @@ type Profile = {
   avatar_path: string | null;
 };
 
+type FeedContext =
+  | {
+      type: "original";
+    }
+  | {
+      type: "repost";
+      id: string;
+      user_id: string;
+      created_at: string;
+      profiles: Profile | null;
+    };
+
 type Post = {
   id: string;
   author_id: string;
@@ -46,6 +59,8 @@ type Post = {
   updated_at: string;
   post_media: PostMediaItem[];
   profiles: Profile | null;
+  feed_at?: string;
+  feed_context?: FeedContext;
 };
 
 type PostsResponse = {
@@ -173,37 +188,32 @@ function sanitizeFileName(name: string) {
     .replace(/\s+/g, " ")
     .trim();
 
-  return (
-    cleaned.slice(0, 120) ||
-    "attachment"
-  );
+  return cleaned.slice(0, 120) || "attachment";
 }
 
 export default function PostFeed() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [content, setContent] = useState("");
-  const [selectedFiles, setSelectedFiles] =
-    useState<File[]>([]);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
 
-  const [viewerId, setViewerId] = useState<string | null>(
-    null,
-  );
+  const [viewerId, setViewerId] = useState<string | null>(null);
   const [viewerName, setViewerName] = useState("");
   const [viewerAvatarPath, setViewerAvatarPath] =
     useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [publishing, setPublishing] = useState(false);
-  const [uploadingIndex, setUploadingIndex] =
-    useState<number | null>(null);
+  const [uploadingIndex, setUploadingIndex] = useState<number | null>(
+    null,
+  );
 
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
-  const [openPostMenuId, setOpenPostMenuId] =
-    useState<string | null>(null);
-  const [actionPostId, setActionPostId] =
-    useState<string | null>(null);
+  const [openPostMenuId, setOpenPostMenuId] = useState<string | null>(
+    null,
+  );
+  const [actionPostId, setActionPostId] = useState<string | null>(null);
 
   const loadViewer = useCallback(async () => {
     const {
@@ -225,9 +235,7 @@ export default function PostFeed() {
       .maybeSingle();
 
     setViewerName(profile?.display_name ?? "");
-    setViewerAvatarPath(
-      profile?.avatar_path ?? null,
-    );
+    setViewerAvatarPath(profile?.avatar_path ?? null);
   }, []);
 
   const loadPosts = useCallback(async () => {
@@ -235,13 +243,10 @@ export default function PostFeed() {
     setError("");
 
     try {
-      const response = await fetch(
-        "/api/posts?limit=20",
-        {
-          method: "GET",
-          cache: "no-store",
-        },
-      );
+      const response = await fetch("/api/posts?limit=20", {
+        method: "GET",
+        cache: "no-store",
+      });
 
       const data = (await response.json()) as
         | PostsResponse
@@ -256,16 +261,17 @@ export default function PostFeed() {
       }
 
       setPosts(
-        "posts" in data &&
-          Array.isArray(data.posts)
+        "posts" in data && Array.isArray(data.posts)
           ? data.posts.map((post) => ({
               ...post,
-              post_media:
-                Array.isArray(
-                  post.post_media,
-                )
-                  ? post.post_media
-                  : [],
+              post_media: Array.isArray(post.post_media)
+                ? post.post_media
+                : [],
+              feed_at: post.feed_at ?? post.created_at,
+              feed_context:
+                post.feed_context ?? {
+                  type: "original" as const,
+                },
             }))
           : [],
       );
@@ -288,9 +294,7 @@ export default function PostFeed() {
   function handleMediaChange(
     event: React.ChangeEvent<HTMLInputElement>,
   ) {
-    const files = Array.from(
-      event.target.files ?? [],
-    );
+    const files = Array.from(event.target.files ?? []);
 
     event.target.value = "";
 
@@ -302,8 +306,7 @@ export default function PostFeed() {
     setNotice("");
 
     if (
-      selectedFiles.length +
-        files.length >
+      selectedFiles.length + files.length >
       MAX_MEDIA_FILES
     ) {
       setError(
@@ -313,8 +316,7 @@ export default function PostFeed() {
     }
 
     const oversizedFile = files.find(
-      (file) =>
-        file.size > MAX_MEDIA_SIZE,
+      (file) => file.size > MAX_MEDIA_SIZE,
     );
 
     if (oversizedFile) {
@@ -348,8 +350,7 @@ export default function PostFeed() {
 
     setSelectedFiles((current) =>
       current.filter(
-        (_, fileIndex) =>
-          fileIndex !== index,
+        (_, fileIndex) => fileIndex !== index,
       ),
     );
   }
@@ -378,27 +379,21 @@ export default function PostFeed() {
 
         setUploadingIndex(index);
 
-        const safeName =
-          sanitizeFileName(file.name);
+        const safeName = sanitizeFileName(file.name);
 
         const storagePath =
           `${postId}/${crypto.randomUUID()}-${safeName}`;
 
-        const {
-          error: uploadError,
-        } = await supabase.storage
-          .from("post-media")
-          .upload(
-            storagePath,
-            file,
-            {
+        const { error: uploadError } =
+          await supabase.storage
+            .from("post-media")
+            .upload(storagePath, file, {
               contentType:
                 file.type ||
                 "application/octet-stream",
               cacheControl: "3600",
               upsert: false,
-            },
-          );
+            });
 
         if (uploadError) {
           throw uploadError;
@@ -407,8 +402,7 @@ export default function PostFeed() {
         uploadedPaths.push(storagePath);
 
         uploadedItems.push({
-          storage_path:
-            storagePath,
+          storage_path: storagePath,
           mime_type:
             file.type ||
             "application/octet-stream",
@@ -420,14 +414,11 @@ export default function PostFeed() {
       }
 
       const response = await fetch(
-        `/api/posts/${encodeURIComponent(
-          postId,
-        )}/media`,
+        `/api/posts/${encodeURIComponent(postId)}/media`,
         {
           method: "POST",
           headers: {
-            "Content-Type":
-              "application/json",
+            "Content-Type": "application/json",
           },
           body: JSON.stringify({
             media: uploadedItems,
@@ -445,9 +436,7 @@ export default function PostFeed() {
         );
       }
 
-      if (
-        !Array.isArray(data.media)
-      ) {
+      if (!Array.isArray(data.media)) {
         throw new Error(
           "The media response was invalid.",
         );
@@ -472,13 +461,9 @@ export default function PostFeed() {
   ) {
     event.preventDefault();
 
-    const trimmedContent =
-      content.trim();
+    const trimmedContent = content.trim();
 
-    if (
-      !trimmedContent ||
-      publishing
-    ) {
+    if (!trimmedContent || publishing) {
       return;
     }
 
@@ -488,19 +473,15 @@ export default function PostFeed() {
     setOpenPostMenuId(null);
 
     try {
-      const response = await fetch(
-        "/api/posts",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-          body: JSON.stringify({
-            content: trimmedContent,
-          }),
+      const response = await fetch("/api/posts", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        body: JSON.stringify({
+          content: trimmedContent,
+        }),
+      });
 
       const data =
         (await response.json()) as CreatedPostResponse;
@@ -518,14 +499,17 @@ export default function PostFeed() {
         );
       }
 
-      let finalPost = {
+      let finalPost: Post = {
         ...data.post,
-        post_media:
-          Array.isArray(
-            data.post.post_media,
-          )
-            ? data.post.post_media
-            : [],
+        post_media: Array.isArray(
+          data.post.post_media,
+        )
+          ? data.post.post_media
+          : [],
+        feed_at: data.post.created_at,
+        feed_context: {
+          type: "original",
+        },
       };
 
       if (selectedFiles.length > 0) {
@@ -600,17 +584,15 @@ export default function PostFeed() {
         navigator.share
       ) {
         await navigator.share({
-          title: `${post.profiles?.display_name ?? "Agoré user"} on Agoré`,
-          text: post.content.slice(
-            0,
-            140,
-          ),
+          title: `${
+            post.profiles?.display_name ??
+            "Agoré user"
+          } on Agoré`,
+          text: post.content.slice(0, 140),
           url: shareUrl,
         });
 
-        setNotice(
-          "Post shared.",
-        );
+        setNotice("Post shared.");
       } else if (
         typeof navigator !== "undefined" &&
         navigator.clipboard
@@ -619,9 +601,7 @@ export default function PostFeed() {
           shareUrl,
         );
 
-        setNotice(
-          "Post link copied.",
-        );
+        setNotice("Post link copied.");
       } else {
         setNotice(
           "Post link is ready to share.",
@@ -635,9 +615,7 @@ export default function PostFeed() {
         return;
       }
 
-      setError(
-        "Unable to share this post.",
-      );
+      setError("Unable to share this post.");
     } finally {
       setActionPostId(null);
     }
@@ -646,10 +624,9 @@ export default function PostFeed() {
   async function reportPost(post: Post) {
     setOpenPostMenuId(null);
 
-    const confirmed =
-      window.confirm(
-        "Report this post to Agoré moderation?",
-      );
+    const confirmed = window.confirm(
+      "Report this post to Agoré moderation?",
+    );
 
     if (!confirmed) {
       return;
@@ -667,8 +644,7 @@ export default function PostFeed() {
         {
           method: "POST",
           headers: {
-            "Content-Type":
-              "application/json",
+            "Content-Type": "application/json",
           },
           body: JSON.stringify({
             reason: "user_report",
@@ -714,8 +690,7 @@ export default function PostFeed() {
         post.id === postId
           ? {
               ...post,
-              content:
-                updatedContent,
+              content: updatedContent,
               updated_at:
                 new Date().toISOString(),
             }
@@ -724,13 +699,10 @@ export default function PostFeed() {
     );
   }
 
-  function handlePostDeleted(
-    postId: string,
-  ) {
+  function handlePostDeleted(postId: string) {
     setPosts((currentPosts) =>
       currentPosts.filter(
-        (post) =>
-          post.id !== postId,
+        (post) => post.id !== postId,
       ),
     );
   }
@@ -833,9 +805,7 @@ export default function PostFeed() {
                           index,
                         ) => {
                           const Icon =
-                            getFileIcon(
-                              file,
-                            );
+                            getFileIcon(file);
 
                           return (
                             <div
@@ -843,9 +813,7 @@ export default function PostFeed() {
                               className="flex min-w-0 items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5"
                             >
                               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent)]">
-                                <Icon
-                                  size={16}
-                                />
+                                <Icon size={16} />
                               </span>
 
                               <div className="min-w-0 flex-1">
@@ -867,15 +835,11 @@ export default function PostFeed() {
                                     index,
                                   )
                                 }
-                                disabled={
-                                  publishing
-                                }
+                                disabled={publishing}
                                 className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[var(--muted)] transition hover:bg-[var(--background)] hover:text-[var(--foreground)] disabled:opacity-40"
                                 aria-label={`Remove ${file.name}`}
                               >
-                                <X
-                                  size={14}
-                                />
+                                <X size={14} />
                               </button>
                             </div>
                           );
@@ -905,12 +869,8 @@ export default function PostFeed() {
                       multiple
                       accept="*/*"
                       className="sr-only"
-                      onChange={
-                        handleMediaChange
-                      }
-                      disabled={
-                        publishing
-                      }
+                      onChange={handleMediaChange}
+                      disabled={publishing}
                     />
 
                     <span className="hidden items-center gap-1.5 rounded-full bg-[var(--background)] px-3 py-1.5 text-xs font-medium text-[var(--muted)] sm:inline-flex">
@@ -936,8 +896,7 @@ export default function PostFeed() {
                         ? uploadingIndex !==
                           null
                           ? `Uploading ${
-                              uploadingIndex +
-                              1
+                              uploadingIndex + 1
                             }/${selectedFiles.length}…`
                           : "Publishing…"
                         : "Put it out there"}
@@ -956,9 +915,7 @@ export default function PostFeed() {
 
           <button
             type="button"
-            onClick={() =>
-              setError("")
-            }
+            onClick={() => setError("")}
             className="shrink-0 rounded-full p-1 text-[var(--danger)] transition hover:bg-[var(--danger)]/10"
             aria-label="Dismiss error"
           >
@@ -973,9 +930,7 @@ export default function PostFeed() {
 
           <button
             type="button"
-            onClick={() =>
-              setNotice("")
-            }
+            onClick={() => setNotice("")}
             className="shrink-0 rounded-full p-1 text-[var(--success)] transition hover:bg-[var(--success)]/10"
             aria-label="Dismiss notice"
           >
@@ -1002,9 +957,7 @@ export default function PostFeed() {
 
           <button
             type="button"
-            onClick={() =>
-              void loadPosts()
-            }
+            onClick={() => void loadPosts()}
             disabled={loading}
             className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2 text-sm font-medium text-[var(--muted)] transition hover:border-[var(--accent)] hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-50"
           >
@@ -1025,31 +978,29 @@ export default function PostFeed() {
 
         {loading ? (
           <div className="space-y-4">
-            {[0, 1, 2].map(
-              (item) => (
-                <article
-                  key={item}
-                  className="rounded-[1.75rem] border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6"
-                >
-                  <div className="animate-pulse space-y-5">
-                    <div className="flex gap-3">
-                      <div className="h-11 w-11 rounded-full bg-[var(--surface-muted)]" />
-
-                      <div className="space-y-2">
-                        <div className="h-3 w-28 rounded-full bg-[var(--surface-muted)]" />
-                        <div className="h-3 w-20 rounded-full bg-[var(--surface-muted)]" />
-                      </div>
-                    </div>
+            {[0, 1, 2].map((item) => (
+              <article
+                key={item}
+                className="rounded-[1.75rem] border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6"
+              >
+                <div className="animate-pulse space-y-5">
+                  <div className="flex gap-3">
+                    <div className="h-11 w-11 rounded-full bg-[var(--surface-muted)]" />
 
                     <div className="space-y-2">
-                      <div className="h-3 w-full rounded-full bg-[var(--surface-muted)]" />
-                      <div className="h-3 w-5/6 rounded-full bg-[var(--surface-muted)]" />
-                      <div className="h-3 w-2/3 rounded-full bg-[var(--surface-muted)]" />
+                      <div className="h-3 w-28 rounded-full bg-[var(--surface-muted)]" />
+                      <div className="h-3 w-20 rounded-full bg-[var(--surface-muted)]" />
                     </div>
                   </div>
-                </article>
-              ),
-            )}
+
+                  <div className="space-y-2">
+                    <div className="h-3 w-full rounded-full bg-[var(--surface-muted)]" />
+                    <div className="h-3 w-5/6 rounded-full bg-[var(--surface-muted)]" />
+                    <div className="h-3 w-2/3 rounded-full bg-[var(--surface-muted)]" />
+                  </div>
+                </div>
+              </article>
+            ))}
           </div>
         ) : posts.length === 0 ? (
           <div className="overflow-hidden rounded-[1.75rem] border border-dashed border-[var(--border)] bg-[var(--surface)]">
@@ -1070,218 +1021,247 @@ export default function PostFeed() {
           </div>
         ) : (
           <div className="space-y-4">
-            {posts.map(
-              (post) => {
-                const isOwner =
-                  viewerId !==
-                  null &&
-                  viewerId ===
-                    post.author_id;
+            {posts.map((post) => {
+              const feedContext =
+                post.feed_context ?? {
+                  type: "original" as const,
+                };
 
-                const authorName =
-                  post.profiles
-                    ?.display_name ??
-                  "Agoré user";
+              const isRepost =
+                feedContext.type === "repost";
 
-                const authorUsername =
-                  post.profiles
-                    ?.username ??
-                  "unknown";
+              const isOwner =
+                viewerId !== null &&
+                viewerId === post.author_id;
 
-                const postPath =
-                  `/post/${encodeURIComponent(
-                    post.id,
-                  )}`;
+              const authorName =
+                post.profiles?.display_name ??
+                "Agoré user";
 
-                return (
-                  <article
-                    id={`post-${post.id}`}
-                    key={post.id}
-                    className="group relative overflow-visible rounded-[1.75rem] border border-[var(--border)] bg-[var(--surface)] transition hover:border-[var(--accent)]/30"
-                  >
-                    <div className="px-5 pt-5 sm:px-6 sm:pt-6">
-                      <header className="flex items-start justify-between gap-4">
-                        <Link
-                          href={`/profile/${encodeURIComponent(
-                            post.author_id,
-                          )}`}
-                          className="flex min-w-0 items-center gap-3"
-                        >
-                          <AgoreAvatar
-                            avatarPath={
-                              post
-                                .profiles
-                                ?.avatar_path
-                            }
-                            name={
-                              authorName
-                            }
-                            className="h-11 w-11 transition group-hover:scale-[1.02]"
-                            textClassName="text-sm"
-                          />
+              const authorUsername =
+                post.profiles?.username ??
+                "unknown";
 
-                          <span className="min-w-0">
-                            <span className="block truncate text-sm font-semibold">
-                              {
-                                authorName
-                              }
-                            </span>
+              const postPath =
+                `/post/${encodeURIComponent(post.id)}`;
 
-                            <span className="mt-0.5 block truncate text-xs text-[var(--muted)]">
-                              @
-                              {
-                                authorUsername
-                              }
-                            </span>
-                          </span>
-                        </Link>
+              const feedItemKey = isRepost
+                ? `repost-${feedContext.id}`
+                : `post-${post.id}`;
 
-                        <div className="relative flex shrink-0 items-center gap-2">
-                          <time
-                            dateTime={
-                              post.created_at
-                            }
-                            className="hidden text-right text-xs text-[var(--muted)] sm:block"
+              const feedItemId = isRepost
+                ? `feed-repost-${feedContext.id}`
+                : `post-${post.id}`;
+
+              const repostedByName =
+                isRepost
+                  ? feedContext.profiles
+                      ?.display_name ??
+                    "Agoré user"
+                  : "";
+
+              return (
+                <article
+                  id={feedItemId}
+                  key={feedItemKey}
+                  className="group relative overflow-visible rounded-[1.75rem] border border-[var(--border)] bg-[var(--surface)] transition hover:border-[var(--accent)]/30"
+                >
+                  {isRepost ? (
+                    <div className="px-5 pt-4 sm:px-6 sm:pt-5">
+                      <div className="flex items-center gap-2 text-xs text-[var(--muted)]">
+                        <Repeat2
+                          size={14}
+                          className="shrink-0 text-[var(--accent)]"
+                        />
+
+                        <span>Reposted by</span>
+
+                        {feedContext.profiles ? (
+                          <Link
+                            href={`/profile/${encodeURIComponent(
+                              feedContext.user_id,
+                            )}`}
+                            className="truncate font-semibold text-[var(--foreground)] transition hover:text-[var(--accent)]"
                           >
-                            {formatPostDate(
-                              post.created_at,
-                            )}
-                          </time>
+                            {repostedByName}
+                          </Link>
+                        ) : (
+                          <span className="truncate font-semibold text-[var(--foreground)]">
+                            {repostedByName}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
 
-                          {!isOwner ? (
-                            <>
-                              <button
-                                type="button"
-                                aria-label="Post actions"
-                                aria-expanded={
-                                  openPostMenuId ===
-                                  post.id
-                                }
-                                onClick={() =>
-                                  setOpenPostMenuId(
-                                    (
-                                      current,
-                                    ) =>
-                                      current ===
-                                      post.id
-                                        ? null
-                                        : post.id,
-                                  )
-                                }
-                                className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--muted)] transition hover:bg-[var(--background)] hover:text-[var(--foreground)]"
-                              >
-                                {actionPostId ===
-                                post.id ? (
-                                  <Loader2
-                                    size={16}
-                                    className="animate-spin"
-                                  />
-                                ) : (
-                                  <MoreHorizontal
-                                    size={17}
-                                  />
-                                )}
-                              </button>
-
-                              {openPostMenuId ===
-                              post.id ? (
-                                <>
-                                  <button
-                                    type="button"
-                                    aria-label="Close post actions"
-                                    className="fixed inset-0 z-10 cursor-default"
-                                    onClick={() =>
-                                      setOpenPostMenuId(
-                                        null,
-                                      )
-                                    }
-                                  />
-
-                                  <div className="absolute right-0 top-full z-20 mt-2 w-48 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-1.5 shadow-[0_12px_35px_rgba(0,0,0,0.12)]">
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        void sharePost(
-                                          post,
-                                        )
-                                      }
-                                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm transition hover:bg-[var(--background)]"
-                                    >
-                                      <Share2
-                                        size={15}
-                                      />
-                                      Share post
-                                    </button>
-
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        void reportPost(
-                                          post,
-                                        )
-                                      }
-                                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-[var(--danger)] transition hover:bg-[var(--danger-soft)]"
-                                    >
-                                      <FileText
-                                        size={15}
-                                      />
-                                      Report post
-                                    </button>
-                                  </div>
-                                </>
-                              ) : null}
-                            </>
-                          ) : null}
-                        </div>
-                      </header>
-
+                  <div
+                    className={`px-5 sm:px-6 ${
+                      isRepost
+                        ? "pt-3"
+                        : "pt-5"
+                    }`}
+                  >
+                    <header className="flex items-start justify-between gap-4">
                       <Link
-                        href={postPath}
-                        aria-label={`Open post by ${authorName}`}
-                        className="mt-5 block rounded-[1rem] outline-none transition focus-visible:ring-4 focus-visible:ring-[var(--accent-soft)]"
+                        href={`/profile/${encodeURIComponent(
+                          post.author_id,
+                        )}`}
+                        className="flex min-w-0 items-center gap-3"
                       >
-                        <p className="whitespace-pre-wrap text-[15px] leading-7 text-[var(--foreground)] transition group-hover:text-[var(--accent)] sm:text-base sm:leading-7">
-                          {post.content}
-                        </p>
+                        <AgoreAvatar
+                          avatarPath={
+                            post.profiles
+                              ?.avatar_path
+                          }
+                          name={authorName}
+                          className="h-11 w-11 transition group-hover:scale-[1.02]"
+                          textClassName="text-sm"
+                        />
+
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-semibold">
+                            {authorName}
+                          </span>
+
+                          <span className="mt-0.5 block truncate text-xs text-[var(--muted)]">
+                            @{authorUsername}
+                          </span>
+                        </span>
                       </Link>
 
-                      <PostMedia
-                        media={
-                          post.post_media
-                        }
-                      />
-                    </div>
+                      <div className="relative flex shrink-0 items-center gap-2">
+                        <time
+                          dateTime={post.created_at}
+                          className="hidden text-right text-xs text-[var(--muted)] sm:block"
+                        >
+                          {formatPostDate(
+                            post.created_at,
+                          )}
+                        </time>
 
-                    <div className="px-5 pb-2 sm:px-6">
-                      <PostInteractions
-                        postId={post.id}
-                        initialContent={
-                          post.content
-                        }
-                        isOwner={
-                          isOwner
-                        }
-                        onPostUpdated={
-                          handlePostUpdated
-                        }
-                        onPostDeleted={
-                          handlePostDeleted
-                        }
-                      />
-                    </div>
+                        {!isOwner ? (
+                          <>
+                            <button
+                              type="button"
+                              aria-label="Post actions"
+                              aria-expanded={
+                                openPostMenuId ===
+                                post.id
+                              }
+                              onClick={() =>
+                                setOpenPostMenuId(
+                                  (current) =>
+                                    current ===
+                                    post.id
+                                      ? null
+                                      : post.id,
+                                )
+                              }
+                              className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--muted)] transition hover:bg-[var(--background)] hover:text-[var(--foreground)]"
+                            >
+                              {actionPostId ===
+                              post.id ? (
+                                <Loader2
+                                  size={16}
+                                  className="animate-spin"
+                                />
+                              ) : (
+                                <MoreHorizontal
+                                  size={17}
+                                />
+                              )}
+                            </button>
 
-                    {post.updated_at !==
-                    post.created_at ? (
-                      <div className="px-5 pb-4 sm:px-6">
-                        <p className="text-[11px] text-[var(--muted)]">
-                          Edited
-                        </p>
+                            {openPostMenuId ===
+                            post.id ? (
+                              <>
+                                <button
+                                  type="button"
+                                  aria-label="Close post actions"
+                                  className="fixed inset-0 z-10 cursor-default"
+                                  onClick={() =>
+                                    setOpenPostMenuId(
+                                      null,
+                                    )
+                                  }
+                                />
+
+                                <div className="absolute right-0 top-full z-20 mt-2 w-48 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-1.5 shadow-[0_12px_35px_rgba(0,0,0,0.12)]">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      void sharePost(
+                                        post,
+                                      )
+                                    }
+                                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm transition hover:bg-[var(--background)]"
+                                  >
+                                    <Share2
+                                      size={15}
+                                    />
+                                    Share post
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      void reportPost(
+                                        post,
+                                      )
+                                    }
+                                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-[var(--danger)] transition hover:bg-[var(--danger-soft)]"
+                                  >
+                                    <FileText
+                                      size={15}
+                                    />
+                                    Report post
+                                  </button>
+                                </div>
+                              </>
+                            ) : null}
+                          </>
+                        ) : null}
                       </div>
-                    ) : null}
-                  </article>
-                );
-              },
-            )}
+                    </header>
+
+                    <Link
+                      href={postPath}
+                      aria-label={`Open post by ${authorName}`}
+                      className="mt-5 block rounded-[1rem] outline-none transition focus-visible:ring-4 focus-visible:ring-[var(--accent-soft)]"
+                    >
+                      <p className="whitespace-pre-wrap text-[15px] leading-7 text-[var(--foreground)] transition group-hover:text-[var(--accent)] sm:text-base sm:leading-7">
+                        {post.content}
+                      </p>
+                    </Link>
+
+                    <PostMedia media={post.post_media} />
+                  </div>
+
+                  <div className="px-5 pb-2 sm:px-6">
+                    <PostInteractions
+                      postId={post.id}
+                      initialContent={post.content}
+                      isOwner={isOwner}
+                      onPostUpdated={
+                        handlePostUpdated
+                      }
+                      onPostDeleted={
+                        handlePostDeleted
+                      }
+                    />
+                  </div>
+
+                  {post.updated_at !==
+                  post.created_at ? (
+                    <div className="px-5 pb-4 sm:px-6">
+                      <p className="text-[11px] text-[var(--muted)]">
+                        Edited
+                      </p>
+                    </div>
+                  ) : null}
+                </article>
+              );
+            })}
           </div>
         )}
       </section>
