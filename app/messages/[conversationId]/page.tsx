@@ -31,6 +31,7 @@ import { createClient } from "@/lib/supabase/browser";
 import AgoreAvatar from "@/components/agore-avatar";
 import MessageActionMenu from "./message-action-menu";
 import MessageReactions from "./message-reactions";
+import MessageStatus from "./message-status";
 import MessageMediaContent from "./message-media-content";
 import MediaMessageComposer from "./media-message-composer";
 import VoiceMessagePlayer from "./voice-message-player";
@@ -622,9 +623,17 @@ function MessageBubble({
               </span>
 
               {isOwn ? (
-                <span aria-label="Sent">
-                  ✓
-                </span>
+                <MessageStatus
+                  conversationId={
+                    message.conversation_id
+                  }
+                  senderId={
+                    message.sender_id
+                  }
+                  createdAt={
+                    message.created_at
+                  }
+                />
               ) : null}
             </div>
           </div>
