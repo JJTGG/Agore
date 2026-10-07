@@ -31,6 +31,8 @@ import { createClient } from "@/lib/supabase/browser";
 import AgoreAvatar from "@/components/agore-avatar";
 import MessageActionMenu from "./message-action-menu";
 import MessageReactions from "./message-reactions";
+import MessageMediaContent from "./message-media-content";
+import MediaMessageComposer from "./media-message-composer";
 import VoiceMessagePlayer from "./voice-message-player";
 import VoiceNoteComposer from "./voice-note-composer";
 
@@ -326,6 +328,12 @@ function MessageBubble({
       media.media_type === "audio",
   );
 
+  const visualMedia = message.media.filter(
+    (media) =>
+      media.media_type === "image" ||
+      media.media_type === "file",
+  );
+
   const senderName =
     message.sender?.display_name ??
     "Agoré user";
@@ -516,7 +524,44 @@ function MessageBubble({
               </div>
             ) : null}
 
-            {audioMedia.length > 0 ? (
+            {visualMedia.length > 0 ? (
+              <div
+                className={
+                  audioMedia.length > 0 ||
+                  hasText
+                    ? "space-y-3"
+                    : undefined
+                }
+              >
+                <MessageMediaContent
+                  media={visualMedia}
+                  isOwn={isOwn}
+                />
+
+                {audioMedia.length > 0 ? (
+                  <div className="space-y-3">
+                    {audioMedia.map((media) => (
+                      <VoiceMessagePlayer
+                        key={media.id}
+                        storagePath={
+                          media.storage_path
+                        }
+                        durationMs={
+                          media.duration_ms
+                        }
+                        isOwn={isOwn}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+
+                {hasText ? (
+                  <p className="whitespace-pre-wrap break-words text-[15px] leading-6">
+                    {message.content}
+                  </p>
+                ) : null}
+              </div>
+            ) : audioMedia.length > 0 ? (
               <div
                 className={
                   hasText
@@ -1614,6 +1659,21 @@ export default function ConversationPage() {
     setError(message);
   }
 
+  function handleMediaSent() {
+    setError("");
+    nearBottomRef.current =
+      true;
+    setShowJumpToLatest(false);
+    void loadMessages();
+    void loadConversation();
+  }
+
+  function handleMediaError(
+    message: string,
+  ) {
+    setError(message);
+  }
+
   async function searchMembers(
     value = memberQuery,
   ) {
@@ -2026,6 +2086,18 @@ export default function ConversationPage() {
     }
   }
 
+  function handleComposerKeyDown(
+    event: React.KeyboardEvent<HTMLTextAreaElement>,
+  ) {
+    if (
+      event.key === "Enter" &&
+      (event.ctrlKey || event.metaKey)
+    ) {
+      event.preventDefault();
+      event.currentTarget.form?.requestSubmit();
+    }
+  }
+
   return (
     <main className="h-dvh max-h-dvh overflow-hidden bg-[var(--background)] text-[var(--foreground)]">
       <div className="mx-auto flex h-full min-h-0 w-full max-w-6xl flex-col md:px-4 md:py-4">
@@ -2340,6 +2412,22 @@ export default function ConversationPage() {
               ) : null}
 
               <div className="flex items-end gap-2">
+                <MediaMessageComposer
+                  conversationId={
+                    conversationId
+                  }
+                  disabled={
+                    sending ||
+                    !conversation
+                  }
+                  onSent={
+                    handleMediaSent
+                  }
+                  onError={
+                    handleMediaError
+                  }
+                />
+
                 <div className="min-w-0 flex-1 rounded-[1.35rem] border border-[var(--border)] bg-[var(--surface)] transition focus-within:border-[var(--accent)]/50 focus-within:ring-2 focus-within:ring-[var(--accent)]/10">
                   <textarea
                     value={draft}
@@ -2349,24 +2437,18 @@ export default function ConversationPage() {
                           .value,
                       )
                     }
+                    onKeyDown={
+                      handleComposerKeyDown
+                    }
                     maxLength={5000}
                     rows={1}
                     disabled={
                       sending ||
                       !conversation
                     }
-                    onKeyDown={(event) => {
-                      if (
-                        event.key ===
-                          "Enter" &&
-                        !event.shiftKey
-                      ) {
-                        event.preventDefault();
-                        event.currentTarget.form?.requestSubmit();
-                      }
-                    }}
                     placeholder="Write a message…"
-                    className="max-h-36 min-h-11 w-full resize-none bg-transparent px-4 py-3 text-sm leading-5 outline-none placeholder:text-[var(--muted)] disabled:cursor-not-allowed disabled:opacity-50"
+                    aria-label="Write a message"
+                    className="max-h-36 min-h-11 w-full resize-none overflow-y-auto bg-transparent px-4 py-3 text-sm leading-5 outline-none placeholder:text-[var(--muted)] disabled:cursor-not-allowed disabled:opacity-50"
                   />
                 </div>
 
@@ -2414,8 +2496,8 @@ export default function ConversationPage() {
                 </button>
               </div>
 
-              <p className="mt-2 hidden px-1 text-[10px] text-[var(--muted)] sm:block">
-                Enter to send · Shift + Enter for a new line
+              <p className="mt-2 px-1 text-[10px] text-[var(--muted)]">
+                Enter for a new line · Ctrl/Cmd + Enter to send
               </p>
             </div>
           </form>
