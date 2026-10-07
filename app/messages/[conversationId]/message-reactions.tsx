@@ -191,7 +191,7 @@ export default function MessageReactions({
   return (
     <div className="relative mt-2">
       {loading ? (
-        <div className="inline-flex h-7 items-center gap-1.5 rounded-full bg-[#f3f2ed] px-2.5 text-[11px] text-[#85898f]">
+        <div className="inline-flex h-7 items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 text-[11px] text-[var(--muted)]">
           <Loader2 size={12} className="animate-spin" />
           Loading reactions
         </div>
@@ -210,14 +210,12 @@ export default function MessageReactions({
                 type="button"
                 onClick={() => void handleReaction(option.type)}
                 disabled={pending}
-                aria-label={`${option.label}: ${count}${
-                  count === 1 ? "" : ""
-                }`}
+                aria-label={`${option.label}: ${count}`}
                 aria-pressed={selected}
                 className={`inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${
                   selected
-                    ? "border-[#b8c9f3] bg-[#eaf0ff] text-[#2148b8]"
-                    : "border-[#e4e3de] bg-white text-[#62676e] hover:border-[#cbd4ea] hover:bg-[#f8faff]"
+                    ? "border-[var(--accent)]/35 bg-[var(--accent-soft)] text-[var(--accent)]"
+                    : "border-[var(--border)] bg-[var(--surface)] text-[var(--muted-strong)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-soft)] hover:text-[var(--foreground)]"
                 }`}
                 title={option.label}
               >
@@ -233,7 +231,7 @@ export default function MessageReactions({
             disabled={pending}
             aria-label="Add reaction"
             aria-expanded={open}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-dashed border-[#d8d7d1] bg-white text-[#777b81] transition hover:border-[#b8c9f3] hover:bg-[#f8faff] hover:text-[#2148b8] disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-dashed border-[var(--border-strong)] bg-[var(--surface)] text-[var(--muted)] transition hover:border-[var(--accent)]/45 hover:bg-[var(--accent-soft)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
           >
             <SmilePlus size={13} />
           </button>
@@ -247,7 +245,7 @@ export default function MessageReactions({
           disabled={pending}
           aria-label="Add reaction"
           aria-expanded={open}
-          className="inline-flex h-7 items-center gap-1.5 rounded-full border border-dashed border-[#d8d7d1] bg-white px-2.5 text-[11px] font-medium text-[#777b81] transition hover:border-[#b8c9f3] hover:bg-[#f8faff] hover:text-[#2148b8] disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex h-7 items-center gap-1.5 rounded-full border border-dashed border-[var(--border-strong)] bg-[var(--surface)] px-2.5 text-[11px] font-medium text-[var(--muted)] transition hover:border-[var(--accent)]/45 hover:bg-[var(--accent-soft)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
         >
           <Heart size={12} />
           React
@@ -255,7 +253,7 @@ export default function MessageReactions({
       ) : null}
 
       {open ? (
-        <div className="absolute bottom-full left-0 z-20 mb-2 flex max-w-[calc(100vw-2rem)] flex-wrap items-center gap-1 rounded-2xl border border-[#deddd7] bg-white p-2 shadow-lg">
+        <div className="absolute bottom-full left-0 z-20 mb-2 flex max-w-[calc(100vw-2rem)] flex-wrap items-center gap-1 rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)] p-2 shadow-xl">
           {reactionOptions.map((option) => {
             const selected =
               state.myReaction === option.type;
@@ -271,8 +269,8 @@ export default function MessageReactions({
                 title={option.label}
                 className={`inline-flex h-9 w-9 items-center justify-center rounded-xl text-lg transition disabled:cursor-not-allowed disabled:opacity-60 ${
                   selected
-                    ? "bg-[#e8eeff] ring-1 ring-[#b8c9f3]"
-                    : "hover:bg-[#f5f4ef]"
+                    ? "bg-[var(--accent-soft)] ring-1 ring-[var(--accent)]/35"
+                    : "hover:bg-[var(--surface-muted)]"
                 }`}
               >
                 <span aria-hidden="true">{option.emoji}</span>
@@ -283,7 +281,7 @@ export default function MessageReactions({
       ) : null}
 
       {error ? (
-        <p className="mt-1 text-[11px] font-medium text-[#8d2f2f]">
+        <p className="mt-1 text-[11px] font-medium text-[var(--danger)]">
           {error}
         </p>
       ) : null}
