@@ -20,6 +20,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+
 import { createClient } from "@/lib/supabase/browser";
 
 type ReactionType =
@@ -62,7 +63,10 @@ type PostInteractionsProps = {
   postId: string;
   initialContent: string;
   isOwner: boolean;
-  onPostUpdated?: (postId: string, content: string) => void;
+  onPostUpdated?: (
+    postId: string,
+    content: string,
+  ) => void;
   onPostDeleted?: (postId: string) => void;
 };
 
@@ -83,7 +87,9 @@ const REACTIONS: Array<{
 const supabase = createClient();
 
 function getReaction(type: ReactionType) {
-  return REACTIONS.find((reaction) => reaction.type === type);
+  return REACTIONS.find(
+    (reaction) => reaction.type === type,
+  );
 }
 
 function getCommentProfile(comment: Comment) {
@@ -112,8 +118,6 @@ export default function PostInteractions({
   onPostUpdated,
   onPostDeleted,
 }: PostInteractionsProps) {
-  const [viewerId, setViewerId] = useState<string | null>(null);
-
   const [reactionCounts, setReactionCounts] = useState<
     Record<ReactionType, number>
   >({
@@ -138,13 +142,14 @@ export default function PostInteractions({
   const [commentsOpen, setCommentsOpen] = useState(false);
 
   const [comments, setComments] = useState<Comment[]>([]);
-  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentsLoading, setCommentsLoading] =
+    useState(false);
   const [commentPublishing, setCommentPublishing] =
     useState(false);
-  const [commentContent, setCommentContent] = useState("");
-  const [replyingTo, setReplyingTo] = useState<Comment | null>(
-    null,
-  );
+  const [commentContent, setCommentContent] =
+    useState("");
+  const [replyingTo, setReplyingTo] =
+    useState<Comment | null>(null);
 
   const [reactionLoading, setReactionLoading] =
     useState(false);
@@ -155,7 +160,8 @@ export default function PostInteractions({
   const [editContent, setEditContent] =
     useState(initialContent);
   const [editLoading, setEditLoading] = useState(false);
-  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteLoading, setDeleteLoading] =
+    useState(false);
 
   const [error, setError] = useState("");
 
@@ -172,98 +178,112 @@ export default function PostInteractions({
     ? getReaction(myReaction)
     : null;
 
-  const loadInteractionState = useCallback(async () => {
-    setError("");
+  const visibleReactionSummary = REACTIONS.filter(
+    (reaction) => reactionCounts[reaction.type] > 0,
+  );
 
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+  const loadInteractionState = useCallback(
+    async () => {
+      setError("");
 
-      if (!user) {
-        setViewerId(null);
-        return;
-      }
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
 
-      setViewerId(user.id);
-
-      const [
-        reactionsResult,
-        repostsResult,
-        commentCountResult,
-      ] = await Promise.all([
-        supabase
-          .from("post_reactions")
-          .select("reaction_type, user_id")
-          .eq("post_id", postId),
-
-        supabase
-          .from("reposts")
-          .select("id, user_id")
-          .eq("post_id", postId),
-
-        supabase
-          .from("comments")
-          .select("id", {
-            count: "exact",
-            head: true,
-          })
-          .eq("post_id", postId),
-      ]);
-
-      if (reactionsResult.error) {
-        throw reactionsResult.error;
-      }
-
-      if (repostsResult.error) {
-        throw repostsResult.error;
-      }
-
-      if (commentCountResult.error) {
-        throw commentCountResult.error;
-      }
-
-      const nextCounts: Record<ReactionType, number> = {
-        like: 0,
-        love: 0,
-        laugh: 0,
-        care: 0,
-        wow: 0,
-        sad: 0,
-        angry: 0,
-      };
-
-      let nextMyReaction: ReactionType | null = null;
-
-      for (const reaction of (reactionsResult.data ??
-        []) as ReactionRow[]) {
-        nextCounts[reaction.reaction_type] += 1;
-
-        if (reaction.user_id === user.id) {
-          nextMyReaction = reaction.reaction_type;
+        if (!user) {
+          return;
         }
+
+        const [
+          reactionsResult,
+          repostsResult,
+          commentCountResult,
+        ] = await Promise.all([
+          supabase
+            .from("post_reactions")
+            .select("reaction_type, user_id")
+            .eq("post_id", postId),
+
+          supabase
+            .from("reposts")
+            .select("id, user_id")
+            .eq("post_id", postId),
+
+          supabase
+            .from("comments")
+            .select("id", {
+              count: "exact",
+              head: true,
+            })
+            .eq("post_id", postId),
+        ]);
+
+        if (reactionsResult.error) {
+          throw reactionsResult.error;
+        }
+
+        if (repostsResult.error) {
+          throw repostsResult.error;
+        }
+
+        if (commentCountResult.error) {
+          throw commentCountResult.error;
+        }
+
+        const nextCounts: Record<
+          ReactionType,
+          number
+        > = {
+          like: 0,
+          love: 0,
+          laugh: 0,
+          care: 0,
+          wow: 0,
+          sad: 0,
+          angry: 0,
+        };
+
+        let nextMyReaction: ReactionType | null =
+          null;
+
+        for (const reaction of (reactionsResult.data ??
+          []) as ReactionRow[]) {
+          nextCounts[reaction.reaction_type] += 1;
+
+          if (reaction.user_id === user.id) {
+            nextMyReaction =
+              reaction.reaction_type;
+          }
+        }
+
+        const repostRows =
+          repostsResult.data ?? [];
+
+        setReactionCounts(nextCounts);
+        setMyReaction(nextMyReaction);
+        setRepostCount(repostRows.length);
+        setHasReposted(
+          repostRows.some(
+            (repost) => repost.user_id === user.id,
+          ),
+        );
+        setCommentCount(
+          commentCountResult.count ?? 0,
+        );
+      } catch (requestError) {
+        console.error(
+          "Failed to load Agore post interactions:",
+          requestError,
+        );
+
+        setError(
+          "Unable to load post interactions.",
+        );
       }
-
-      const repostRows = repostsResult.data ?? [];
-
-      setReactionCounts(nextCounts);
-      setMyReaction(nextMyReaction);
-      setRepostCount(repostRows.length);
-      setHasReposted(
-        repostRows.some(
-          (repost) => repost.user_id === user.id,
-        ),
-      );
-      setCommentCount(commentCountResult.count ?? 0);
-    } catch (requestError) {
-      console.error(
-        "Failed to load Agore post interactions:",
-        requestError,
-      );
-
-      setError("Unable to load post interactions.");
-    }
-  }, [postId]);
+    },
+    [postId],
+  );
 
   useEffect(() => {
     void loadInteractionState();
@@ -299,7 +319,9 @@ export default function PostInteractions({
           },
         );
 
-        const data = await response.json().catch(() => null);
+        const data = await response
+          .json()
+          .catch(() => null);
 
         if (!response.ok) {
           throw new Error(
@@ -315,6 +337,7 @@ export default function PostInteractions({
             current[reactionType] - 1,
           ),
         }));
+
         setMyReaction(null);
 
         return;
@@ -335,7 +358,9 @@ export default function PostInteractions({
         },
       );
 
-      const data = await response.json();
+      const data = await response
+        .json()
+        .catch(() => null);
 
       if (!response.ok) {
         throw new Error(
@@ -383,7 +408,9 @@ export default function PostInteractions({
     setError("");
 
     try {
-      const method = hasReposted ? "DELETE" : "POST";
+      const method = hasReposted
+        ? "DELETE"
+        : "POST";
 
       const response = await fetch(
         `/api/posts/${encodeURIComponent(
@@ -394,7 +421,9 @@ export default function PostInteractions({
         },
       );
 
-      const data = await response.json().catch(() => null);
+      const data = await response
+        .json()
+        .catch(() => null);
 
       if (!response.ok) {
         throw new Error(
@@ -406,6 +435,7 @@ export default function PostInteractions({
       }
 
       setHasReposted((current) => !current);
+
       setRepostCount((current) =>
         hasReposted
           ? Math.max(0, current - 1)
@@ -440,7 +470,8 @@ export default function PostInteractions({
 
       if (!response.ok) {
         throw new Error(
-          data.error ?? "Unable to load comments.",
+          data.error ??
+            "Unable to load comments.",
         );
       }
 
@@ -475,9 +506,13 @@ export default function PostInteractions({
   ) {
     event.preventDefault();
 
-    const trimmedContent = commentContent.trim();
+    const trimmedContent =
+      commentContent.trim();
 
-    if (!trimmedContent || commentPublishing) {
+    if (
+      !trimmedContent ||
+      commentPublishing
+    ) {
       return;
     }
 
@@ -496,7 +531,8 @@ export default function PostInteractions({
           },
           body: JSON.stringify({
             content: trimmedContent,
-            parentCommentId: replyingTo?.id ?? null,
+            parentCommentId:
+              replyingTo?.id ?? null,
           }),
         },
       );
@@ -520,6 +556,7 @@ export default function PostInteractions({
         ...current,
         data.comment as Comment,
       ]);
+
       setCommentContent("");
       setReplyingTo(null);
       setCommentsOpen(true);
@@ -536,9 +573,14 @@ export default function PostInteractions({
   }
 
   async function savePostEdit() {
-    const trimmedContent = editContent.trim();
+    const trimmedContent =
+      editContent.trim();
 
-    if (!trimmedContent || editLoading || !isOwner) {
+    if (
+      !trimmedContent ||
+      editLoading ||
+      !isOwner
+    ) {
       return;
     }
 
@@ -547,7 +589,9 @@ export default function PostInteractions({
 
     try {
       const response = await fetch(
-        `/api/posts/${encodeURIComponent(postId)}`,
+        `/api/posts/${encodeURIComponent(
+          postId,
+        )}`,
         {
           method: "PATCH",
           headers: {
@@ -571,7 +615,10 @@ export default function PostInteractions({
       setEditing(false);
       setEditContent(trimmedContent);
 
-      onPostUpdated?.(postId, trimmedContent);
+      onPostUpdated?.(
+        postId,
+        trimmedContent,
+      );
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -601,13 +648,17 @@ export default function PostInteractions({
 
     try {
       const response = await fetch(
-        `/api/posts/${encodeURIComponent(postId)}`,
+        `/api/posts/${encodeURIComponent(
+          postId,
+        )}`,
         {
           method: "DELETE",
         },
       );
 
-      const data = await response.json().catch(() => null);
+      const data = await response
+        .json()
+        .catch(() => null);
 
       if (!response.ok) {
         throw new Error(
@@ -628,39 +679,55 @@ export default function PostInteractions({
     }
   }
 
-  const visibleReactionSummary = REACTIONS.filter(
-    (reaction) => reactionCounts[reaction.type] > 0,
-  );
-
   return (
-    <div className="mt-5 border-t border-[var(--border)] pt-4">
+    <div className="mt-5">
       {totalReactionCount > 0 ||
       repostCount > 0 ||
       commentCount > 0 ? (
-        <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-[var(--muted)]">
-          {totalReactionCount > 0 ? (
-            <div className="flex items-center gap-1">
-              {visibleReactionSummary
-                .slice(0, 3)
-                .map((reaction) => (
-                  <span
-                    key={reaction.type}
-                    title={reaction.label}
-                    aria-label={`${reaction.label}: ${reactionCounts[reaction.type]}`}
-                  >
-                    {reaction.emoji}
-                  </span>
-                ))}
+        <div className="mb-3 flex min-h-6 items-center justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-2">
+            {totalReactionCount > 0 ? (
+              <div className="flex items-center gap-1.5">
+                <div className="flex -space-x-1">
+                  {visibleReactionSummary
+                    .slice(0, 3)
+                    .map((reaction) => (
+                      <span
+                        key={reaction.type}
+                        title={reaction.label}
+                        aria-label={`${reaction.label}: ${reactionCounts[reaction.type]}`}
+                        className="flex h-5 w-5 items-center justify-center rounded-full border border-[var(--surface)] bg-[var(--background)] text-[11px]"
+                      >
+                        {reaction.emoji}
+                      </span>
+                    ))}
+                </div>
 
-              <span>{totalReactionCount}</span>
-            </div>
-          ) : null}
+                <span className="text-xs text-[var(--muted)]">
+                  {totalReactionCount}
+                </span>
+              </div>
+            ) : null}
+
+            {repostCount > 0 ? (
+              <button
+                type="button"
+                onClick={toggleRepost}
+                className="text-xs text-[var(--muted)] transition hover:text-[var(--foreground)]"
+              >
+                {repostCount}{" "}
+                {repostCount === 1
+                  ? "repost"
+                  : "reposts"}
+              </button>
+            ) : null}
+          </div>
 
           {commentCount > 0 ? (
             <button
               type="button"
               onClick={() => void toggleComments()}
-              className="transition hover:text-[var(--foreground)]"
+              className="shrink-0 text-xs text-[var(--muted)] transition hover:text-[var(--foreground)]"
             >
               {commentCount}{" "}
               {commentCount === 1
@@ -668,28 +735,21 @@ export default function PostInteractions({
                 : "comments"}
             </button>
           ) : null}
-
-          {repostCount > 0 ? (
-            <span>
-              {repostCount}{" "}
-              {repostCount === 1
-                ? "repost"
-                : "reposts"}
-            </span>
-          ) : null}
         </div>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="relative flex items-center gap-1 border-t border-[var(--border)] pt-3">
         <div className="relative">
           <button
             type="button"
             onClick={() =>
-              setReactionPickerOpen((current) => !current)
+              setReactionPickerOpen(
+                (current) => !current,
+              )
             }
             disabled={reactionLoading}
             className={`inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-sm font-medium transition ${
-              myReaction
+              selectedReaction
                 ? "bg-[var(--accent)]/10 text-[var(--accent)]"
                 : "text-[var(--muted)] hover:bg-[var(--background)] hover:text-[var(--foreground)]"
             } disabled:cursor-not-allowed disabled:opacity-50`}
@@ -700,39 +760,56 @@ export default function PostInteractions({
                 className="animate-spin"
               />
             ) : selectedReaction ? (
-              <span>{selectedReaction.emoji}</span>
+              <span>
+                {selectedReaction.emoji}
+              </span>
             ) : (
               <Heart size={15} />
             )}
 
-            {selectedReaction?.label ?? "React"}
+            <span className="hidden xs:inline">
+              {selectedReaction?.label ??
+                "React"}
+            </span>
 
             <ChevronDown size={13} />
           </button>
 
           {reactionPickerOpen ? (
-            <div className="absolute bottom-full left-0 z-20 mb-2 flex max-w-[calc(100vw-2rem)] flex-wrap gap-1 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-2 shadow-lg">
-              {REACTIONS.map((reaction) => (
-                <button
-                  key={reaction.type}
-                  type="button"
-                  onClick={() =>
-                    void chooseReaction(
-                      reaction.type,
-                    )
-                  }
-                  title={reaction.label}
-                  aria-label={reaction.label}
-                  className={`flex h-9 w-9 items-center justify-center rounded-xl text-lg transition hover:bg-[var(--background)] ${
-                    myReaction === reaction.type
-                      ? "bg-[var(--accent)]/10"
-                      : ""
-                  }`}
-                >
-                  {reaction.emoji}
-                </button>
-              ))}
-            </div>
+            <>
+              <button
+                type="button"
+                aria-label="Close reaction picker"
+                className="fixed inset-0 z-10 cursor-default"
+                onClick={() =>
+                  setReactionPickerOpen(false)
+                }
+              />
+
+              <div className="absolute bottom-full left-0 z-20 mb-2 flex flex-wrap gap-1 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-2 shadow-[0_12px_35px_rgba(0,0,0,0.12)]">
+                {REACTIONS.map((reaction) => (
+                  <button
+                    key={reaction.type}
+                    type="button"
+                    onClick={() =>
+                      void chooseReaction(
+                        reaction.type,
+                      )
+                    }
+                    title={reaction.label}
+                    aria-label={reaction.label}
+                    className={`flex h-9 w-9 items-center justify-center rounded-xl text-lg transition hover:scale-110 hover:bg-[var(--background)] ${
+                      myReaction ===
+                      reaction.type
+                        ? "bg-[var(--accent)]/10"
+                        : ""
+                    }`}
+                  >
+                    {reaction.emoji}
+                  </button>
+                ))}
+              </div>
+            </>
           ) : null}
         </div>
 
@@ -746,7 +823,7 @@ export default function PostInteractions({
           }`}
         >
           <MessageCircle size={15} />
-          Comment
+          <span>Comment</span>
         </button>
 
         <button
@@ -768,7 +845,11 @@ export default function PostInteractions({
             <Repeat2 size={15} />
           )}
 
-          {hasReposted ? "Reposted" : "Repost"}
+          <span className="hidden sm:inline">
+            {hasReposted
+              ? "Reposted"
+              : "Repost"}
+          </span>
         </button>
 
         {isOwner ? (
@@ -777,7 +858,7 @@ export default function PostInteractions({
               <MoreHorizontal size={17} />
             </summary>
 
-            <div className="absolute right-0 top-full z-20 mt-2 w-44 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-1.5 shadow-lg">
+            <div className="absolute right-0 top-full z-30 mt-2 w-44 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-1.5 shadow-[0_12px_35px_rgba(0,0,0,0.12)]">
               <button
                 type="button"
                 onClick={() => {
@@ -803,6 +884,7 @@ export default function PostInteractions({
                 ) : (
                   <Trash2 size={15} />
                 )}
+
                 Delete post
               </button>
             </div>
@@ -812,6 +894,22 @@ export default function PostInteractions({
 
       {editing && isOwner ? (
         <div className="mt-4 rounded-2xl border border-[var(--border)] bg-[var(--background)] p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold">
+                Edit post
+              </p>
+
+              <p className="mt-1 text-xs text-[var(--muted)]">
+                Update what you shared.
+              </p>
+            </div>
+
+            <span className="text-xs tabular-nums text-[var(--muted)]">
+              {editContent.length}/2000
+            </span>
+          </div>
+
           <textarea
             value={editContent}
             onChange={(event) =>
@@ -819,7 +917,7 @@ export default function PostInteractions({
             }
             maxLength={2000}
             rows={5}
-            className="w-full resize-none border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm leading-6 outline-none transition focus:border-[var(--accent)]"
+            className="w-full resize-none rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm leading-6 outline-none transition focus:border-[var(--accent)]"
           />
 
           <div className="mt-3 flex items-center justify-end gap-2">
@@ -827,7 +925,9 @@ export default function PostInteractions({
               type="button"
               onClick={() => {
                 setEditing(false);
-                setEditContent(initialContent);
+                setEditContent(
+                  initialContent,
+                );
               }}
               disabled={editLoading}
               className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-sm font-medium text-[var(--muted)] transition hover:bg-[var(--surface)]"
@@ -838,9 +938,12 @@ export default function PostInteractions({
 
             <button
               type="button"
-              onClick={() => void savePostEdit()}
+              onClick={() =>
+                void savePostEdit()
+              }
               disabled={
-                editLoading || !editContent.trim()
+                editLoading ||
+                !editContent.trim()
               }
               className="inline-flex items-center gap-1.5 rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -862,12 +965,13 @@ export default function PostInteractions({
         <section className="mt-4 rounded-2xl border border-[var(--border)] bg-[var(--background)] p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h3 className="text-sm font-semibold">
-                Comments
-              </h3>
+              <p className="text-sm font-semibold">
+                Conversation
+              </p>
 
               <p className="mt-1 text-xs text-[var(--muted)]">
-                Join the conversation.
+                Reply to the post or join an existing
+                thread.
               </p>
             </div>
 
@@ -875,72 +979,97 @@ export default function PostInteractions({
               type="button"
               onClick={() => void loadComments()}
               disabled={commentsLoading}
-              className="text-xs font-semibold text-[var(--accent)] disabled:opacity-50"
+              className="rounded-full px-2.5 py-1.5 text-xs font-semibold text-[var(--accent)] transition hover:bg-[var(--surface)] disabled:opacity-50"
             >
               Refresh
             </button>
           </div>
 
           {commentsLoading ? (
-            <div className="mt-4 flex items-center gap-2 text-sm text-[var(--muted)]">
+            <div className="mt-4 flex items-center gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-4 text-sm text-[var(--muted)]">
               <Loader2
                 size={15}
                 className="animate-spin"
               />
-              Loading comments…
+              Loading conversation…
             </div>
           ) : comments.length === 0 ? (
-            <p className="mt-4 text-sm text-[var(--muted)]">
-              No comments yet. Be the first to respond.
-            </p>
+            <div className="mt-4 rounded-2xl border border-dashed border-[var(--border)] bg-[var(--surface)] px-4 py-5">
+              <p className="text-sm font-medium">
+                No comments yet.
+              </p>
+
+              <p className="mt-1 text-xs leading-5 text-[var(--muted)]">
+                Start the conversation with your
+                own response.
+              </p>
+            </div>
           ) : (
-            <div className="mt-4 space-y-3">
+            <div className="mt-4 space-y-2.5">
               {comments.map((comment) => {
-                const commentProfile =
-                  getCommentProfile(comment);
+                const profile =
+                  getCommentProfile(
+                    comment,
+                  );
 
                 const isReply =
-                  comment.parent_comment_id !== null;
+                  comment.parent_comment_id !==
+                  null;
 
                 return (
                   <article
                     key={comment.id}
-                    className={`rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-3 ${
-                      isReply ? "ml-6" : ""
+                    className={`rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-3.5 ${
+                      isReply ? "ml-5 sm:ml-8" : ""
                     }`}
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold">
-                          {commentProfile?.display_name ??
-                            "Agoré user"}
-                        </p>
+                    <div className="flex items-start gap-3">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--accent-soft)] text-[10px] font-bold text-[var(--accent)]">
+                        {(
+                          profile?.display_name ??
+                          "Agore user"
+                        )
+                          .slice(0, 1)
+                          .toUpperCase()}
+                      </span>
 
-                        <p className="mt-0.5 text-xs text-[var(--muted)]">
-                          @
-                          {commentProfile?.username ??
-                            "unknown"}{" "}
-                          ·{" "}
-                          {formatCommentDate(
-                            comment.created_at,
-                          )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold">
+                              {profile?.display_name ??
+                                "Agoré user"}
+                            </p>
+
+                            <p className="mt-0.5 truncate text-[11px] text-[var(--muted)]">
+                              @
+                              {profile?.username ??
+                                "unknown"}{" "}
+                              ·{" "}
+                              {formatCommentDate(
+                                comment.created_at,
+                              )}
+                            </p>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setReplyingTo(
+                                comment,
+                              )
+                            }
+                            className="shrink-0 rounded-full px-2.5 py-1.5 text-xs font-semibold text-[var(--accent)] transition hover:bg-[var(--background)]"
+                          >
+                            Reply
+                          </button>
+                        </div>
+
+                        <p className="mt-3 whitespace-pre-wrap text-sm leading-6">
+                          {comment.content}
                         </p>
                       </div>
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setReplyingTo(comment)
-                        }
-                        className="shrink-0 rounded-full px-2.5 py-1.5 text-xs font-semibold text-[var(--accent)] transition hover:bg-[var(--background)]"
-                      >
-                        Reply
-                      </button>
                     </div>
-
-                    <p className="mt-3 whitespace-pre-wrap text-sm leading-6">
-                      {comment.content}
-                    </p>
                   </article>
                 );
               })}
@@ -957,15 +1086,19 @@ export default function PostInteractions({
                   Replying to{" "}
                   <span className="font-semibold text-[var(--foreground)]">
                     @
-                    {getCommentProfile(replyingTo)
-                      ?.username ?? "user"}
+                    {getCommentProfile(
+                      replyingTo,
+                    )?.username ?? "user"}
                   </span>
                 </p>
 
                 <button
                   type="button"
-                  onClick={() => setReplyingTo(null)}
+                  onClick={() =>
+                    setReplyingTo(null)
+                  }
                   className="shrink-0 text-[var(--muted)] transition hover:text-[var(--foreground)]"
+                  aria-label="Cancel reply"
                 >
                   <X size={15} />
                 </button>
@@ -976,7 +1109,9 @@ export default function PostInteractions({
               <textarea
                 value={commentContent}
                 onChange={(event) =>
-                  setCommentContent(event.target.value)
+                  setCommentContent(
+                    event.target.value,
+                  )
                 }
                 maxLength={1000}
                 rows={2}
@@ -994,7 +1129,7 @@ export default function PostInteractions({
                   commentPublishing ||
                   !commentContent.trim()
                 }
-                className="inline-flex h-11 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] px-4 text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                 aria-label={
                   replyingTo
                     ? "Send reply"
@@ -1010,6 +1145,12 @@ export default function PostInteractions({
                   <Send size={16} />
                 )}
               </button>
+            </div>
+
+            <div className="mt-2 flex justify-end">
+              <span className="text-[11px] tabular-nums text-[var(--muted)]">
+                {commentContent.length}/1000
+              </span>
             </div>
           </form>
         </section>
