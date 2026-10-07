@@ -1,7 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -20,6 +25,9 @@ import {
   X,
 } from "lucide-react";
 import AgoreAvatar from "@/components/agore-avatar";
+import { createClient } from "@/lib/supabase/browser";
+
+const supabase = createClient();
 
 type Profile = {
   id: string;
@@ -130,6 +138,7 @@ export default function MessagesPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const [realtimeNotice, setRealtimeNotice] = useState("");
 
   const [groupOpen, setGroupOpen] = useState(false);
   const [groupName, setGroupName] = useState("");
@@ -149,14 +158,16 @@ export default function MessagesPage() {
   const [directError, setDirectError] = useState("");
 
   const loadConversations = useCallback(
-    async (manual = false) => {
+    async (manual = false, background = false) => {
       if (manual) {
         setRefreshing(true);
-      } else {
+      } else if (!background) {
         setLoading(true);
       }
 
-      setError("");
+      if (!background) {
+        setError("");
+      }
 
       try {
         const response = await fetch("/api/conversations?limit=30", {
@@ -171,20 +182,33 @@ export default function MessagesPage() {
         }
 
         if (!response.ok) {
-          setError(data.error ?? "Unable to load your conversations.");
-          setConversations([]);
+          if (!background) {
+            setError(
+              data.error ?? "Unable to load your conversations.",
+            );
+          }
           return;
         }
 
         setConversations(
-          Array.isArray(data.conversations) ? data.conversations : [],
+          Array.isArray(data.conversations)
+            ? data.conversations
+            : [],
         );
+
+        if (background) {
+          setRealtimeNotice("");
+        }
       } catch {
-        setError("Unable to load your conversations.");
-        setConversations([]);
+        if (!background) {
+          setError("Unable to load your conversations.");
+        }
       } finally {
-        setLoading(false);
-        setRefreshing(false);
+        if (manual) {
+          setRefreshing(false);
+        } else if (!background) {
+          setLoading(false);
+        }
       }
     },
     [router],
@@ -192,6 +216,52 @@ export default function MessagesPage() {
 
   useEffect(() => {
     void loadConversations();
+  }, [loadConversations]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("messages-hub")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+        },
+        () => {
+          void loadConversations(false, true);
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "messages",
+        },
+        () => {
+          void loadConversations(false, true);
+        },
+      )
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          setRealtimeNotice("");
+          return;
+        }
+
+        if (
+          status === "CHANNEL_ERROR" ||
+          status === "TIMED_OUT"
+        ) {
+          setRealtimeNotice(
+            "Live updates are paused. Refresh to reconnect.",
+          );
+        }
+      });
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
   }, [loadConversations]);
 
   async function searchMembers(value = memberQuery) {
@@ -221,7 +291,9 @@ export default function MessagesPage() {
       }
 
       if (!response.ok) {
-        setGroupError(data.error ?? "Unable to search people.");
+        setGroupError(
+          data.error ?? "Unable to search people.",
+        );
         setMemberResults([]);
         return;
       }
@@ -264,7 +336,9 @@ export default function MessagesPage() {
       }
 
       if (!response.ok) {
-        setDirectError(data.error ?? "Unable to search people.");
+        setDirectError(
+          data.error ?? "Unable to search people.",
+        );
         setDirectResults([]);
         return;
       }
@@ -314,7 +388,9 @@ export default function MessagesPage() {
       }
 
       if (!data.conversation?.id) {
-        setDirectError("The conversation could not be opened.");
+        setDirectError(
+          "The conversation could not be opened.",
+        );
         return;
       }
 
@@ -343,7 +419,9 @@ export default function MessagesPage() {
       }
 
       if (current.length >= 49) {
-        setGroupError("A group can have at most 50 members.");
+        setGroupError(
+          "A group can have at most 50 members.",
+        );
         return current;
       }
 
@@ -353,7 +431,9 @@ export default function MessagesPage() {
 
   function removeSelectedMember(personId: string) {
     setSelectedMembers((current) =>
-      current.filter((member) => member.id !== personId),
+      current.filter(
+        (member) => member.id !== personId,
+      ),
     );
   }
 
@@ -402,7 +482,9 @@ export default function MessagesPage() {
     }
 
     if (selectedMembers.length < 1) {
-      setGroupError("Select at least one other member.");
+      setGroupError(
+        "Select at least one other member.",
+      );
       return;
     }
 
@@ -410,17 +492,22 @@ export default function MessagesPage() {
     setGroupError("");
 
     try {
-      const response = await fetch("/api/conversations/group", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const response = await fetch(
+        "/api/conversations/group",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name,
+            description,
+            memberIds: selectedMembers.map(
+              (member) => member.id,
+            ),
+          }),
         },
-        body: JSON.stringify({
-          name,
-          description,
-          memberIds: selectedMembers.map((member) => member.id),
-        }),
-      });
+      );
 
       const data = await response.json();
 
@@ -431,7 +518,8 @@ export default function MessagesPage() {
 
       if (!response.ok) {
         setGroupError(
-          data.error ?? "Unable to create the group.",
+          data.error ??
+            "Unable to create the group.",
         );
         return;
       }
@@ -447,7 +535,9 @@ export default function MessagesPage() {
       resetGroupForm();
 
       router.push(
-        `/messages/${encodeURIComponent(data.conversation.id)}`,
+        `/messages/${encodeURIComponent(
+          data.conversation.id,
+        )}`,
       );
     } catch {
       setGroupError("Unable to create the group.");
@@ -485,7 +575,10 @@ export default function MessagesPage() {
             </div>
 
             <div className="hidden items-center gap-2 sm:flex">
-              <Link href="/home" className={navigationClass}>
+              <Link
+                href="/home"
+                className={navigationClass}
+              >
                 <Home size={15} />
                 Home
               </Link>
@@ -527,7 +620,10 @@ export default function MessagesPage() {
           </div>
 
           <div className="mt-3 flex gap-2 overflow-x-auto pb-1 sm:hidden">
-            <Link href="/home" className={navigationClass}>
+            <Link
+              href="/home"
+              className={navigationClass}
+            >
               <Home size={14} />
               Home
             </Link>
@@ -573,6 +669,12 @@ export default function MessagesPage() {
                 Continue a direct conversation or move a group
                 conversation forward.
               </p>
+
+              {realtimeNotice ? (
+                <p className="mt-2 text-xs font-medium text-[var(--muted)]">
+                  {realtimeNotice}
+                </p>
+              ) : null}
             </div>
 
             <div className="flex flex-wrap gap-2">
@@ -860,52 +962,46 @@ export default function MessagesPage() {
 
               {directResults.length > 0 ? (
                 <div className="mt-4 space-y-1">
-                  {directResults.map((person) => {
-                    const initials = getInitials(
-                      person.display_name,
-                    );
-
-                    return (
-                      <button
-                        key={person.id}
-                        type="button"
-                        onClick={() =>
-                          void startDirectConversation(person)
-                        }
-                        disabled={openingDirect}
-                        className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-60"
+                  {directResults.map((person) => (
+                    <button
+                      key={person.id}
+                      type="button"
+                      onClick={() =>
+                        void startDirectConversation(person)
+                      }
+                      disabled={openingDirect}
+                      className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <div
+                        aria-hidden="true"
+                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--accent-soft)] text-xs font-bold text-[var(--accent)]"
                       >
-                        <div
-                          aria-hidden="true"
-                          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--accent-soft)] text-xs font-bold text-[var(--accent)]"
-                        >
-                          {initials}
-                        </div>
+                        {getInitials(person.display_name)}
+                      </div>
 
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-semibold">
-                            {person.display_name}
-                          </p>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold">
+                          {person.display_name}
+                        </p>
 
-                          <p className="mt-0.5 truncate text-xs text-[var(--muted)]">
-                            @{person.username}
-                          </p>
-                        </div>
+                        <p className="mt-0.5 truncate text-xs text-[var(--muted)]">
+                          @{person.username}
+                        </p>
+                      </div>
 
-                        {openingDirect ? (
-                          <Loader2
-                            size={16}
-                            className="shrink-0 animate-spin text-[var(--accent)]"
-                          />
-                        ) : (
-                          <MessageCircle
-                            size={16}
-                            className="shrink-0 text-[var(--muted)]"
-                          />
-                        )}
-                      </button>
-                    );
-                  })}
+                      {openingDirect ? (
+                        <Loader2
+                          size={16}
+                          className="shrink-0 animate-spin text-[var(--accent)]"
+                        />
+                      ) : (
+                        <MessageCircle
+                          size={16}
+                          className="shrink-0 text-[var(--muted)]"
+                        />
+                      )}
+                    </button>
+                  ))}
                 </div>
               ) : directQuery.trim().length >= 2 &&
                 !searchingDirect ? (
