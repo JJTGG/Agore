@@ -19,7 +19,6 @@ import {
   Loader2,
   MoreHorizontal,
   Paperclip,
-  PenLine,
   RefreshCw,
   Share2,
   Sparkles,
@@ -590,7 +589,9 @@ export default function PostFeed() {
 
     const shareUrl =
       typeof window !== "undefined"
-        ? `${window.location.origin}/home#post-${post.id}`
+        ? `${window.location.origin}/post/${encodeURIComponent(
+            post.id,
+          )}`
         : "";
 
     try {
@@ -1087,6 +1088,11 @@ export default function PostFeed() {
                     ?.username ??
                   "unknown";
 
+                const postPath =
+                  `/post/${encodeURIComponent(
+                    post.id,
+                  )}`;
+
                 return (
                   <article
                     id={`post-${post.id}`}
@@ -1229,11 +1235,15 @@ export default function PostFeed() {
                         </div>
                       </header>
 
-                      <div className="mt-5">
-                        <p className="whitespace-pre-wrap text-[15px] leading-7 text-[var(--foreground)] sm:text-base sm:leading-7">
+                      <Link
+                        href={postPath}
+                        aria-label={`Open post by ${authorName}`}
+                        className="mt-5 block rounded-[1rem] outline-none transition focus-visible:ring-4 focus-visible:ring-[var(--accent-soft)]"
+                      >
+                        <p className="whitespace-pre-wrap text-[15px] leading-7 text-[var(--foreground)] transition group-hover:text-[var(--accent)] sm:text-base sm:leading-7">
                           {post.content}
                         </p>
-                      </div>
+                      </Link>
 
                       <PostMedia
                         media={
