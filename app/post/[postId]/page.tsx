@@ -16,6 +16,7 @@ import PostMedia, {
   type PostMediaItem,
 } from "@/components/post-media";
 import PostInteractions from "@/app/post-interactions";
+import { createClient } from "@/lib/supabase/browser";
 
 type Profile = {
   display_name: string;
@@ -38,9 +39,7 @@ type PostResponse = {
   error?: string;
 };
 
-type Params = {
-  postId: string;
-};
+const supabase = createClient();
 
 function formatPostDate(value: string) {
   return new Intl.DateTimeFormat(undefined, {
@@ -51,12 +50,16 @@ function formatPostDate(value: string) {
 
 export default function PostPage() {
   const [post, setPost] = useState<Post | null>(null);
+  const [viewerId, setViewerId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
     const postId =
-      window.location.pathname.split("/").filter(Boolean).at(-1) ?? "";
+      window.location.pathname
+        .split("/")
+        .filter(Boolean)
+        .at(-1) ?? "";
 
     if (!postId) {
       setError("This post could not be identified.");
@@ -66,18 +69,26 @@ export default function PostPage() {
 
     let cancelled = false;
 
-    async function loadPost() {
+    async function loadPostPage() {
       setLoading(true);
       setError("");
 
       try {
-        const response = await fetch(
-          `/api/posts/${encodeURIComponent(postId)}`,
+        const [
           {
-            method: "GET",
-            cache: "no-store",
+            data: { user },
           },
-        );
+          response,
+        ] = await Promise.all([
+          supabase.auth.getUser(),
+          fetch(
+            `/api/posts/${encodeURIComponent(postId)}`,
+            {
+              method: "GET",
+              cache: "no-store",
+            },
+          ),
+        ]);
 
         const data =
           (await response.json()) as PostResponse;
@@ -96,6 +107,8 @@ export default function PostPage() {
         }
 
         if (!cancelled) {
+          setViewerId(user?.id ?? null);
+
           setPost({
             ...data.post,
             post_media:
@@ -121,7 +134,7 @@ export default function PostPage() {
       }
     }
 
-    void loadPost();
+    void loadPostPage();
 
     return () => {
       cancelled = true;
@@ -210,7 +223,10 @@ export default function PostPage() {
                       post.author_id,
                     )}`}
                     className="shrink-0"
-                    aria-label={`Open ${post.profiles?.display_name ?? "user"}'s profile`}
+                    aria-label={`Open ${
+                      post.profiles?.display_name ??
+                      "user"
+                    }'s profile`}
                   >
                     <AgoreAvatar
                       avatarPath={
@@ -243,7 +259,9 @@ export default function PostPage() {
                           "unknown"}
                       </span>
 
-                      <span aria-hidden="true">·</span>
+                      <span aria-hidden="true">
+                        ·
+                      </span>
 
                       <span className="inline-flex items-center gap-1">
                         <Clock3 size={12} />
@@ -289,7 +307,11 @@ export default function PostPage() {
                 <PostInteractions
                   postId={post.id}
                   initialContent={post.content}
-                  isOwner={false}
+                  isOwner={
+                    viewerId !== null &&
+                    viewerId === post.author_id
+                  }
+                  commentsOpenByDefault
                   onPostUpdated={(
                     postId,
                     updatedContent,
@@ -330,12 +352,12 @@ export default function PostPage() {
                 </p>
 
                 <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em]">
-                  Join the conversation
+                  The conversation lives here.
                 </h2>
 
                 <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--muted)]">
-                  Open the comment area above to read replies and add your
-                  own response.
+                  Read the replies, respond to the post, or continue an
+                  existing thread.
                 </p>
               </div>
             </section>
