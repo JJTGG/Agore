@@ -342,7 +342,10 @@ export async function POST(
       .endsWith(`.${expectedExtension}`)
   ) {
     return NextResponse.json(
-      { error: "Voice message file type does not match its MIME type." },
+      {
+        error:
+          "Voice message file type does not match its MIME type.",
+      },
       { status: 400 },
     );
   }
@@ -445,7 +448,10 @@ export async function POST(
     );
 
     return NextResponse.json(
-      { error: "Unable to verify the uploaded voice message." },
+      {
+        error:
+          "Unable to verify the uploaded voice message.",
+      },
       { status: 500 },
     );
   }
@@ -619,7 +625,7 @@ export async function DELETE(
   const { data: message, error: messageError } =
     await admin
       .from("messages")
-      .select("id, sender_id")
+      .select("id, sender_id, content")
       .eq("id", parsedMessageId.data)
       .eq("conversation_id", conversationId)
       .maybeSingle();
@@ -631,7 +637,10 @@ export async function DELETE(
     );
 
     return NextResponse.json(
-      { error: "Unable to clean up the voice message." },
+      {
+        error:
+          "Unable to clean up the voice message.",
+      },
       { status: 500 },
     );
   }
@@ -643,22 +652,68 @@ export async function DELETE(
     );
   }
 
-  const { data: media } = await admin
-    .from("message_media")
-    .select("storage_path")
-    .eq("message_id", parsedMessageId.data)
-    .eq("media_type", "audio")
-    .maybeSingle();
+  const { data: media, error: mediaLookupError } =
+    await admin
+      .from("message_media")
+      .select("storage_path")
+      .eq("message_id", parsedMessageId.data)
+      .eq("media_type", "audio")
+      .maybeSingle();
+
+  if (mediaLookupError) {
+    console.error(
+      "Failed to load Agore voice cleanup media:",
+      mediaLookupError,
+    );
+  }
+
+  const storagePaths = new Set<string>();
 
   if (media?.storage_path) {
+    const expectedPrefix = `${parsedMessageId.data}/`;
+
+    if (media.storage_path.startsWith(expectedPrefix)) {
+      storagePaths.add(media.storage_path);
+    }
+  }
+
+  if (storagePaths.size === 0 && message.content === null) {
+    const {
+      data: orphanedFiles,
+      error: orphanedFilesError,
+    } = await admin.storage
+      .from("message-media")
+      .list(parsedMessageId.data, {
+        limit: 20,
+      });
+
+    if (orphanedFilesError) {
+      console.error(
+        "Failed to list abandoned Agore voice objects:",
+        orphanedFilesError,
+      );
+    } else {
+      for (const file of orphanedFiles ?? []) {
+        if (!file.name || file.id === null) {
+          continue;
+        }
+
+        storagePaths.add(
+          `${parsedMessageId.data}/${file.name}`,
+        );
+      }
+    }
+  }
+
+  if (storagePaths.size > 0) {
     const { error: storageRemoveError } =
       await admin.storage
         .from("message-media")
-        .remove([media.storage_path]);
+        .remove([...storagePaths]);
 
     if (storageRemoveError) {
       console.error(
-        "Failed to remove abandoned Agore voice object:",
+        "Failed to remove abandoned Agore voice objects:",
         storageRemoveError,
       );
     }
@@ -685,7 +740,8 @@ export async function DELETE(
         deleted_at: new Date().toISOString(),
       })
       .eq("id", parsedMessageId.data)
-      .eq("sender_id", user.id);
+      .eq("sender_id", user.id)
+      .is("deleted_at", null);
 
   if (messageDeleteError) {
     console.error(
@@ -694,7 +750,10 @@ export async function DELETE(
     );
 
     return NextResponse.json(
-      { error: "Unable to clean up the voice message." },
+      {
+        error:
+          "Unable to clean up the voice message.",
+      },
       { status: 500 },
     );
   }
