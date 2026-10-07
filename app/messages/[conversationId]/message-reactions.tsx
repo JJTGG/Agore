@@ -1,0 +1,292 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { Heart, Loader2, SmilePlus } from "lucide-react";
+
+type ReactionType =
+  | "like"
+  | "love"
+  | "laugh"
+  | "care"
+  | "wow"
+  | "sad"
+  | "angry";
+
+type ReactionState = {
+  myReaction: ReactionType | null;
+  reactions: Record<ReactionType, number>;
+};
+
+type MessageReactionsProps = {
+  conversationId: string;
+  messageId: string;
+};
+
+const reactionOptions: Array<{
+  type: ReactionType;
+  emoji: string;
+  label: string;
+}> = [
+  { type: "like", emoji: "👍", label: "Like" },
+  { type: "love", emoji: "❤️", label: "Love" },
+  { type: "laugh", emoji: "😂", label: "Laugh" },
+  { type: "care", emoji: "🥹", label: "Care" },
+  { type: "wow", emoji: "😮", label: "Wow" },
+  { type: "sad", emoji: "😢", label: "Sad" },
+  { type: "angry", emoji: "😡", label: "Angry" },
+];
+
+const emptyReactions: Record<ReactionType, number> = {
+  like: 0,
+  love: 0,
+  laugh: 0,
+  care: 0,
+  wow: 0,
+  sad: 0,
+  angry: 0,
+};
+
+export default function MessageReactions({
+  conversationId,
+  messageId,
+}: MessageReactionsProps) {
+  const [state, setState] = useState<ReactionState>({
+    myReaction: null,
+    reactions: emptyReactions,
+  });
+
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+
+  const activeReactions = useMemo(
+    () =>
+      reactionOptions.filter(
+        (option) => state.reactions[option.type] > 0,
+      ),
+    [state.reactions],
+  );
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadReactions() {
+      setLoading(true);
+      setError("");
+
+      try {
+        const response = await fetch(
+          `/api/conversations/${encodeURIComponent(
+            conversationId,
+          )}/messages/${encodeURIComponent(messageId)}/reaction`,
+          {
+            cache: "no-store",
+          },
+        );
+
+        const data = await response.json();
+
+        if (!active) {
+          return;
+        }
+
+        if (!response.ok) {
+          setError(
+            data.error ?? "Unable to load message reactions.",
+          );
+          return;
+        }
+
+        const reactions =
+          data?.reactions && typeof data.reactions === "object"
+            ? data.reactions
+            : {};
+
+        setState({
+          myReaction: data.myReaction ?? null,
+          reactions: {
+            ...emptyReactions,
+            ...reactions,
+          },
+        });
+      } catch {
+        if (active) {
+          setError("Unable to load message reactions.");
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void loadReactions();
+
+    return () => {
+      active = false;
+    };
+  }, [conversationId, messageId]);
+
+  async function handleReaction(type: ReactionType) {
+    if (pending) {
+      return;
+    }
+
+    setPending(true);
+    setError("");
+
+    try {
+      const isRemoving = state.myReaction === type;
+
+      const response = await fetch(
+        `/api/conversations/${encodeURIComponent(
+          conversationId,
+        )}/messages/${encodeURIComponent(messageId)}/reaction`,
+        {
+          method: isRemoving ? "DELETE" : "POST",
+          headers: isRemoving
+            ? undefined
+            : {
+                "Content-Type": "application/json",
+              },
+          body: isRemoving
+            ? undefined
+            : JSON.stringify({
+                reactionType: type,
+              }),
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(
+          data.error ?? "Unable to update the reaction.",
+        );
+        return;
+      }
+
+      const reactions =
+        data?.reactions && typeof data.reactions === "object"
+          ? data.reactions
+          : {};
+
+      setState({
+        myReaction: data.myReaction ?? null,
+        reactions: {
+          ...emptyReactions,
+          ...reactions,
+        },
+      });
+
+      setOpen(false);
+    } catch {
+      setError("Unable to update the reaction.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="relative mt-2">
+      {loading ? (
+        <div className="inline-flex h-7 items-center gap-1.5 rounded-full bg-[#f3f2ed] px-2.5 text-[11px] text-[#85898f]">
+          <Loader2 size={12} className="animate-spin" />
+          Loading reactions
+        </div>
+      ) : null}
+
+      {!loading && activeReactions.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {activeReactions.map((option) => {
+            const count = state.reactions[option.type];
+            const selected =
+              state.myReaction === option.type;
+
+            return (
+              <button
+                key={option.type}
+                type="button"
+                onClick={() => void handleReaction(option.type)}
+                disabled={pending}
+                aria-label={`${option.label}: ${count}${
+                  count === 1 ? "" : ""
+                }`}
+                aria-pressed={selected}
+                className={`inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                  selected
+                    ? "border-[#b8c9f3] bg-[#eaf0ff] text-[#2148b8]"
+                    : "border-[#e4e3de] bg-white text-[#62676e] hover:border-[#cbd4ea] hover:bg-[#f8faff]"
+                }`}
+                title={option.label}
+              >
+                <span aria-hidden="true">{option.emoji}</span>
+                <span>{count}</span>
+              </button>
+            );
+          })}
+
+          <button
+            type="button"
+            onClick={() => setOpen((current) => !current)}
+            disabled={pending}
+            aria-label="Add reaction"
+            aria-expanded={open}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-dashed border-[#d8d7d1] bg-white text-[#777b81] transition hover:border-[#b8c9f3] hover:bg-[#f8faff] hover:text-[#2148b8] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <SmilePlus size={13} />
+          </button>
+        </div>
+      ) : null}
+
+      {!loading && activeReactions.length === 0 ? (
+        <button
+          type="button"
+          onClick={() => setOpen((current) => !current)}
+          disabled={pending}
+          aria-label="Add reaction"
+          aria-expanded={open}
+          className="inline-flex h-7 items-center gap-1.5 rounded-full border border-dashed border-[#d8d7d1] bg-white px-2.5 text-[11px] font-medium text-[#777b81] transition hover:border-[#b8c9f3] hover:bg-[#f8faff] hover:text-[#2148b8] disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <Heart size={12} />
+          React
+        </button>
+      ) : null}
+
+      {open ? (
+        <div className="absolute bottom-full left-0 z-20 mb-2 flex max-w-[calc(100vw-2rem)] flex-wrap items-center gap-1 rounded-2xl border border-[#deddd7] bg-white p-2 shadow-lg">
+          {reactionOptions.map((option) => {
+            const selected =
+              state.myReaction === option.type;
+
+            return (
+              <button
+                key={option.type}
+                type="button"
+                onClick={() => void handleReaction(option.type)}
+                disabled={pending}
+                aria-label={option.label}
+                aria-pressed={selected}
+                title={option.label}
+                className={`inline-flex h-9 w-9 items-center justify-center rounded-xl text-lg transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                  selected
+                    ? "bg-[#e8eeff] ring-1 ring-[#b8c9f3]"
+                    : "hover:bg-[#f5f4ef]"
+                }`}
+              >
+                <span aria-hidden="true">{option.emoji}</span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+
+      {error ? (
+        <p className="mt-1 text-[11px] font-medium text-[#8d2f2f]">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
