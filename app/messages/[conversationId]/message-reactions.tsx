@@ -26,29 +26,12 @@ type ReactionState = {
   reactions: Record<ReactionType, number>;
 };
 
-type MessageMetadata = {
-  sender_id: string | null;
-  created_at: string;
-};
-
-type ReadReceiptSnapshot = {
-  conversationType: "direct" | "group";
-  currentUserId: string;
-  readers: Array<{
-    userId: string;
-    lastReadAt: string | null;
-  }>;
-};
-
 type MessageReactionsProps = {
   conversationId: string;
   messageId: string;
 };
 
 type ReactionRealtimeCallback = () => void;
-type ReadReceiptCallback = (
-  snapshot: ReadReceiptSnapshot,
-) => void;
 
 type ReactionChannelEntry = {
   channel: ReturnType<
@@ -60,23 +43,11 @@ type ReactionChannelEntry = {
   >;
 };
 
-type ReadReceiptEntry = {
-  snapshot: ReadReceiptSnapshot | null;
-  subscribers: Set<ReadReceiptCallback>;
-  intervalId: number;
-  refreshing: boolean;
-};
-
 const supabase = createClient();
 
 const reactionChannels = new Map<
   string,
   ReactionChannelEntry
->();
-
-const readReceiptEntries = new Map<
-  string,
-  ReadReceiptEntry
 >();
 
 const reactionOptions: Array<{
@@ -156,14 +127,18 @@ function notifyReactionSubscribers(
   messageId: string,
 ) {
   const entry =
-    reactionChannels.get(conversationId);
+    reactionChannels.get(
+      conversationId,
+    );
 
   if (!entry) {
     return;
   }
 
   const callbacks =
-    entry.subscribers.get(messageId);
+    entry.subscribers.get(
+      messageId,
+    );
 
   if (!callbacks) {
     return;
@@ -178,7 +153,9 @@ function ensureReactionChannel(
   conversationId: string,
 ) {
   const existing =
-    reactionChannels.get(conversationId);
+    reactionChannels.get(
+      conversationId,
+    );
 
   if (existing) {
     return existing;
@@ -324,7 +301,9 @@ function subscribeToReactionEvents(
       return;
     }
 
-    currentCallbacks.delete(callback);
+    currentCallbacks.delete(
+      callback,
+    );
 
     if (currentCallbacks.size === 0) {
       currentEntry.subscribers.delete(
@@ -346,307 +325,6 @@ function subscribeToReactionEvents(
   };
 }
 
-function parseReadReceiptSnapshot(
-  value: unknown,
-): ReadReceiptSnapshot | null {
-  if (
-    !value ||
-    typeof value !== "object"
-  ) {
-    return null;
-  }
-
-  const data =
-    value as Record<string, unknown>;
-
-  const conversationType =
-    data.conversation_type;
-
-  if (
-    conversationType !== "direct" &&
-    conversationType !== "group"
-  ) {
-    return null;
-  }
-
-  const currentUserId =
-    typeof data.current_user_id ===
-    "string"
-      ? data.current_user_id
-      : "";
-
-  if (!currentUserId) {
-    return null;
-  }
-
-  const readers = Array.isArray(
-    data.readers,
-  )
-    ? data.readers
-        .filter(
-          (reader) =>
-            reader &&
-            typeof reader ===
-              "object",
-        )
-        .map((reader) => {
-          const item =
-            reader as Record<
-              string,
-              unknown
-            >;
-
-          const userId =
-            typeof item.user_id ===
-            "string"
-              ? item.user_id
-              : "";
-
-          const lastReadAt =
-            item.last_read_at ===
-              null ||
-            typeof item.last_read_at ===
-              "string"
-              ? (item.last_read_at as
-                  | string
-                  | null)
-              : null;
-
-          return {
-            userId,
-            lastReadAt,
-          };
-        })
-        .filter(
-          (reader) =>
-            Boolean(reader.userId),
-        )
-    : [];
-
-  return {
-    conversationType,
-    currentUserId,
-    readers,
-  };
-}
-
-async function refreshReadReceiptEntry(
-  conversationId: string,
-  entry: ReadReceiptEntry,
-) {
-  if (
-    entry.refreshing ||
-    entry.subscribers.size === 0
-  ) {
-    return;
-  }
-
-  entry.refreshing = true;
-
-  try {
-    const response =
-      await fetch(
-        `/api/conversations/${encodeURIComponent(
-          conversationId,
-        )}/read-status`,
-        {
-          cache: "no-store",
-        },
-      );
-
-    if (!response.ok) {
-      return;
-    }
-
-    const data =
-      await response.json();
-
-    const snapshot =
-      parseReadReceiptSnapshot(
-        data,
-      );
-
-    if (!snapshot) {
-      return;
-    }
-
-    entry.snapshot = snapshot;
-
-    entry.subscribers.forEach(
-      (callback) => {
-        callback(snapshot);
-      },
-    );
-  } catch {
-    // Read receipts are non-critical UI state.
-  } finally {
-    entry.refreshing = false;
-  }
-}
-
-function ensureReadReceiptEntry(
-  conversationId: string,
-) {
-  const existing =
-    readReceiptEntries.get(
-      conversationId,
-    );
-
-  if (existing) {
-    return existing;
-  }
-
-  const entry: ReadReceiptEntry = {
-    snapshot: null,
-    subscribers:
-      new Set<ReadReceiptCallback>(),
-    intervalId: 0,
-    refreshing: false,
-  };
-
-  readReceiptEntries.set(
-    conversationId,
-    entry,
-  );
-
-  void refreshReadReceiptEntry(
-    conversationId,
-    entry,
-  );
-
-  entry.intervalId =
-    window.setInterval(() => {
-      void refreshReadReceiptEntry(
-        conversationId,
-        entry,
-      );
-    }, 2500);
-
-  return entry;
-}
-
-function subscribeToReadReceipts(
-  conversationId: string,
-  callback: ReadReceiptCallback,
-) {
-  const entry =
-    ensureReadReceiptEntry(
-      conversationId,
-    );
-
-  entry.subscribers.add(callback);
-
-  if (entry.snapshot) {
-    callback(entry.snapshot);
-  }
-
-  return () => {
-    const currentEntry =
-      readReceiptEntries.get(
-        conversationId,
-      );
-
-    if (!currentEntry) {
-      return;
-    }
-
-    currentEntry.subscribers.delete(
-      callback,
-    );
-
-    if (
-      currentEntry.subscribers.size ===
-      0
-    ) {
-      window.clearInterval(
-        currentEntry.intervalId,
-      );
-
-      readReceiptEntries.delete(
-        conversationId,
-      );
-    }
-  };
-}
-
-function getReadState(
-  message: MessageMetadata | null,
-  snapshot: ReadReceiptSnapshot | null,
-) {
-  if (
-    !message ||
-    !snapshot ||
-    message.sender_id !==
-      snapshot.currentUserId
-  ) {
-    return null;
-  }
-
-  const createdAt =
-    new Date(
-      message.created_at,
-    ).getTime();
-
-  if (!Number.isFinite(createdAt)) {
-    return {
-      label: "Sent",
-      symbol: "✓",
-      read: false,
-    };
-  }
-
-  const minimumReaderCount =
-    snapshot.conversationType ===
-    "direct"
-      ? 1
-      : snapshot.readers.length > 0
-        ? 1
-        : 0;
-
-  if (
-    snapshot.readers.length <
-    minimumReaderCount
-  ) {
-    return {
-      label: "Sent",
-      symbol: "✓",
-      read: false,
-    };
-  }
-
-  const read =
-    snapshot.readers.every(
-      (reader) => {
-        if (!reader.lastReadAt) {
-          return false;
-        }
-
-        const lastReadAt =
-          new Date(
-            reader.lastReadAt,
-          ).getTime();
-
-        return (
-          Number.isFinite(
-            lastReadAt,
-          ) &&
-          lastReadAt >=
-            createdAt
-        );
-      },
-    );
-
-  return {
-    label: read
-      ? "Read"
-      : "Sent",
-    symbol: read
-      ? "✓✓"
-      : "✓",
-    read,
-  };
-}
-
 export default function MessageReactions({
   conversationId,
   messageId,
@@ -656,20 +334,6 @@ export default function MessageReactions({
       myReaction: null,
       reactions: emptyReactions,
     });
-
-  const [
-    messageMetadata,
-    setMessageMetadata,
-  ] = useState<MessageMetadata | null>(
-    null,
-  );
-
-  const [
-    readSnapshot,
-    setReadSnapshot,
-  ] = useState<ReadReceiptSnapshot | null>(
-    null,
-  );
 
   const [open, setOpen] =
     useState(false);
@@ -694,18 +358,6 @@ export default function MessageReactions({
         ),
       [state.reactions],
     );
-
-  const readState = useMemo(
-    () =>
-      getReadState(
-        messageMetadata,
-        readSnapshot,
-      ),
-    [
-      messageMetadata,
-      readSnapshot,
-    ],
-  );
 
   useEffect(() => {
     let active = true;
@@ -762,29 +414,6 @@ export default function MessageReactions({
             ...reactions,
           },
         });
-
-        const message =
-          data?.message;
-
-        if (
-          message &&
-          typeof message ===
-            "object" &&
-          typeof message.created_at ===
-            "string" &&
-          (
-            typeof message.sender_id ===
-              "string" ||
-            message.sender_id === null
-          )
-        ) {
-          setMessageMetadata({
-            sender_id:
-              message.sender_id,
-            created_at:
-              message.created_at,
-          });
-        }
       } catch {
         if (active) {
           setError(
@@ -820,15 +449,6 @@ export default function MessageReactions({
     conversationId,
     messageId,
   ]);
-
-  useEffect(() => {
-    return subscribeToReadReceipts(
-      conversationId,
-      (snapshot) => {
-        setReadSnapshot(snapshot);
-      },
-    );
-  }, [conversationId]);
 
   async function handleReaction(
     type: ReactionType,
@@ -909,121 +529,101 @@ export default function MessageReactions({
 
   return (
     <div className="relative mt-2">
-      <div className="flex w-full items-start gap-2">
-        <div className="min-w-0 flex-1">
-          {loading ? (
-            <div className="inline-flex h-7 items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 text-[11px] text-[var(--muted)]">
-              <Loader2
-                size={12}
-                className="animate-spin"
-              />
-              Loading reactions
-            </div>
-          ) : null}
-
-          {!loading &&
-          activeReactions.length > 0 ? (
-            <div className="flex flex-wrap items-center gap-1.5">
-              {activeReactions.map(
-                (option) => {
-                  const count =
-                    state.reactions[
-                      option.type
-                    ];
-
-                  const selected =
-                    state.myReaction ===
-                    option.type;
-
-                  return (
-                    <button
-                      key={option.type}
-                      type="button"
-                      onClick={() =>
-                        void handleReaction(
-                          option.type,
-                        )
-                      }
-                      disabled={pending}
-                      aria-label={`${option.label}: ${count}`}
-                      aria-pressed={
-                        selected
-                      }
-                      className={`inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                        selected
-                          ? "border-[var(--accent)]/35 bg-[var(--accent-soft)] text-[var(--accent)]"
-                          : "border-[var(--border)] bg-[var(--surface)] text-[var(--muted-strong)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-soft)] hover:text-[var(--foreground)]"
-                      }`}
-                      title={
-                        option.label
-                      }
-                    >
-                      <span aria-hidden="true">
-                        {option.emoji}
-                      </span>
-
-                      <span>
-                        {count}
-                      </span>
-                    </button>
-                  );
-                },
-              )}
-
-              <button
-                type="button"
-                onClick={() =>
-                  setOpen(
-                    (current) =>
-                      !current,
-                  )
-                }
-                disabled={pending}
-                aria-label="Add reaction"
-                aria-expanded={open}
-                className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-dashed border-[var(--border-strong)] bg-[var(--surface)] text-[var(--muted)] transition hover:border-[var(--accent)]/45 hover:bg-[var(--accent-soft)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <SmilePlus size={13} />
-              </button>
-            </div>
-          ) : null}
-
-          {!loading &&
-          activeReactions.length ===
-            0 ? (
-            <button
-              type="button"
-              onClick={() =>
-                setOpen(
-                  (current) =>
-                    !current,
-                )
-              }
-              disabled={pending}
-              aria-label="Add reaction"
-              aria-expanded={open}
-              className="inline-flex h-7 items-center gap-1.5 rounded-full border border-dashed border-[var(--border-strong)] bg-[var(--surface)] px-2.5 text-[11px] font-medium text-[var(--muted)] transition hover:border-[var(--accent)]/45 hover:bg-[var(--accent-soft)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <Heart size={12} />
-              React
-            </button>
-          ) : null}
+      {loading ? (
+        <div className="inline-flex h-7 items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 text-[11px] text-[var(--muted)]">
+          <Loader2
+            size={12}
+            className="animate-spin"
+          />
+          Loading reactions
         </div>
+      ) : null}
 
-        {readState ? (
-          <span
-            aria-label={`Message ${readState.label.toLowerCase()}`}
-            title={readState.label}
-            className={`shrink-0 px-1 pt-1 text-[10px] font-semibold tracking-[-0.05em] ${
-              readState.read
-                ? "text-[var(--accent)]"
-                : "text-[var(--muted)]"
-            }`}
+      {!loading &&
+      activeReactions.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {activeReactions.map(
+            (option) => {
+              const count =
+                state.reactions[
+                  option.type
+                ];
+
+              const selected =
+                state.myReaction ===
+                option.type;
+
+              return (
+                <button
+                  key={option.type}
+                  type="button"
+                  onClick={() =>
+                    void handleReaction(
+                      option.type,
+                    )
+                  }
+                  disabled={pending}
+                  aria-label={`${option.label}: ${count}`}
+                  aria-pressed={
+                    selected
+                  }
+                  className={`inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                    selected
+                      ? "border-[var(--accent)]/35 bg-[var(--accent-soft)] text-[var(--accent)]"
+                      : "border-[var(--border)] bg-[var(--surface)] text-[var(--muted-strong)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-soft)] hover:text-[var(--foreground)]"
+                  }`}
+                  title={option.label}
+                >
+                  <span aria-hidden="true">
+                    {option.emoji}
+                  </span>
+
+                  <span>
+                    {count}
+                  </span>
+                </button>
+              );
+            },
+          )}
+
+          <button
+            type="button"
+            onClick={() =>
+              setOpen(
+                (current) =>
+                  !current,
+              )
+            }
+            disabled={pending}
+            aria-label="Add reaction"
+            aria-expanded={open}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-dashed border-[var(--border-strong)] bg-[var(--surface)] text-[var(--muted)] transition hover:border-[var(--accent)]/45 hover:bg-[var(--accent-soft)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {readState.symbol}
-          </span>
-        ) : null}
-      </div>
+            <SmilePlus size={13} />
+          </button>
+        </div>
+      ) : null}
+
+      {!loading &&
+      activeReactions.length ===
+        0 ? (
+        <button
+          type="button"
+          onClick={() =>
+            setOpen(
+              (current) =>
+                !current,
+            )
+          }
+          disabled={pending}
+          aria-label="Add reaction"
+          aria-expanded={open}
+          className="inline-flex h-7 items-center gap-1.5 rounded-full border border-dashed border-[var(--border-strong)] bg-[var(--surface)] px-2.5 text-[11px] font-medium text-[var(--muted)] transition hover:border-[var(--accent)]/45 hover:bg-[var(--accent-soft)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <Heart size={12} />
+          React
+        </button>
+      ) : null}
 
       {open ? (
         <div className="absolute bottom-full left-0 z-20 mb-2 flex max-w-[calc(100vw-2rem)] flex-wrap items-center gap-1 rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)] p-2 shadow-xl">
