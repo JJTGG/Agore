@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import AgoreAvatar from "@/components/agore-avatar";
+import MessageActionMenu from "./message-action-menu";
 import MessageReactions from "./message-reactions";
 import VoiceMessagePlayer from "./voice-message-player";
 import VoiceNoteComposer from "./voice-note-composer";
@@ -236,6 +237,7 @@ function isSameMessageGroup(
   const previousDate = new Date(
     previous.created_at,
   ).getTime();
+
   const currentDate = new Date(
     current.created_at,
   ).getTime();
@@ -253,6 +255,22 @@ function isSameMessageGroup(
   );
 }
 
+function wasEdited(message: Message) {
+  const created = new Date(
+    message.created_at,
+  ).getTime();
+
+  const updated = new Date(
+    message.updated_at,
+  ).getTime();
+
+  return (
+    Number.isFinite(created) &&
+    Number.isFinite(updated) &&
+    updated - created > 1000
+  );
+}
+
 type MessageBubbleProps = {
   message: Message;
   replyTarget: Message | null;
@@ -260,7 +278,15 @@ type MessageBubbleProps = {
   grouped: boolean;
   currentUserId: string | null;
   conversationType: Conversation["type"];
+  editing: boolean;
+  editDraft: string;
+  editSaving: boolean;
   onReply: (message: Message) => void;
+  onEdit: (message: Message) => void;
+  onEditDraftChange: (value: string) => void;
+  onSaveEdit: (messageId: string) => Promise<void>;
+  onCancelEdit: () => void;
+  onDelete: (messageId: string) => Promise<void>;
 };
 
 function MessageBubble({
@@ -270,19 +296,94 @@ function MessageBubble({
   grouped,
   currentUserId,
   conversationType,
+  editing,
+  editDraft,
+  editSaving,
   onReply,
+  onEdit,
+  onEditDraftChange,
+  onSaveEdit,
+  onCancelEdit,
+  onDelete,
 }: MessageBubbleProps) {
   const hasText = Boolean(
     message.content?.trim(),
   );
 
   const audioMedia = message.media.filter(
-    (media) => media.media_type === "audio",
+    (media) =>
+      media.media_type === "audio",
   );
 
   const senderName =
     message.sender?.display_name ??
     "Agoré user";
+
+  if (editing) {
+    return (
+      <div
+        className={`flex ${
+          isOwn
+            ? "justify-end"
+            : "justify-start"
+        }`}
+      >
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void onSaveEdit(message.id);
+          }}
+          className="w-full max-w-[92%] sm:max-w-[78%]"
+        >
+          <div className="rounded-[1.35rem] border border-[var(--accent)]/40 bg-[var(--surface-raised)] p-3 shadow-[0_8px_28px_rgba(0,0,0,0.08)]">
+            <textarea
+              value={editDraft}
+              onChange={(event) =>
+                onEditDraftChange(
+                  event.target.value,
+                )
+              }
+              maxLength={5000}
+              rows={3}
+              autoFocus
+              disabled={editSaving}
+              className="min-h-20 w-full resize-none rounded-xl bg-[var(--surface-muted)] px-3 py-3 text-sm leading-6 outline-none placeholder:text-[var(--muted)] focus:ring-2 focus:ring-[var(--accent)]/10 disabled:opacity-50"
+            />
+
+            <div className="mt-2 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={onCancelEdit}
+                disabled={editSaving}
+                className="rounded-full px-3 py-2 text-xs font-semibold text-[var(--muted-strong)] transition hover:bg-[var(--surface-muted)] disabled:opacity-40"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="submit"
+                disabled={
+                  editSaving ||
+                  !editDraft.trim()
+                }
+                className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {editSaving ? (
+                  <Loader2
+                    size={14}
+                    className="animate-spin"
+                  />
+                ) : (
+                  <Edit3 size={14} />
+                )}
+                Save
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -346,11 +447,15 @@ function MessageBubble({
             }`}
           >
             {replyTarget ? (
-              <div
-                className={`mb-3 overflow-hidden rounded-xl border-l-2 px-3 py-2 ${
+              <button
+                type="button"
+                onClick={() =>
+                  onReply(replyTarget)
+                }
+                className={`mb-3 block w-full overflow-hidden rounded-xl border-l-2 px-3 py-2 text-left transition ${
                   isOwn
-                    ? "border-white/60 bg-white/10"
-                    : "border-[var(--accent)] bg-[var(--surface)]"
+                    ? "border-white/60 bg-white/10 hover:bg-white/15"
+                    : "border-[var(--accent)] bg-[var(--surface)] hover:bg-[var(--surface-soft)]"
                 }`}
               >
                 <p
@@ -379,7 +484,7 @@ function MessageBubble({
                     replyTarget,
                   )}
                 </p>
-              </div>
+              </button>
             ) : message.reply_to_message_id ? (
               <div
                 className={`mb-3 rounded-xl border-l-2 px-3 py-2 ${
@@ -422,7 +527,7 @@ function MessageBubble({
                 ))}
 
                 {hasText ? (
-                  <p className="whitespace-pre-wrap text-[15px] leading-6">
+                  <p className="whitespace-pre-wrap break-words text-[15px] leading-6">
                     {message.content}
                   </p>
                 ) : null}
@@ -450,6 +555,10 @@ function MessageBubble({
                   : "text-[var(--muted)]"
               }`}
             >
+              {wasEdited(message) ? (
+                <span>edited</span>
+              ) : null}
+
               <span>
                 {formatMessageTime(
                   message.created_at,
@@ -465,7 +574,7 @@ function MessageBubble({
           </div>
 
           <div
-            className={`mt-1 flex items-center ${
+            className={`mt-1 flex w-full items-center ${
               isOwn
                 ? "justify-end"
                 : "justify-start"
@@ -479,19 +588,27 @@ function MessageBubble({
             />
           </div>
 
-          <button
-            type="button"
-            onClick={() => onReply(message)}
-            aria-label={`Reply to ${senderName}`}
-            title="Reply"
-            className={`absolute top-1/2 z-10 hidden h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface-raised)] text-[var(--muted-strong)] shadow-sm transition hover:border-[var(--accent)]/40 hover:bg-[var(--accent-soft)] hover:text-[var(--accent)] group-hover:flex ${
+          <div
+            className={`absolute top-1/2 z-20 flex -translate-y-1/2 items-center ${
               isOwn
-                ? "-left-10"
-                : "-right-10"
+                ? "right-full mr-1"
+                : "left-full ml-1"
             }`}
           >
-            <CornerUpLeft size={14} />
-          </button>
+            <MessageActionMenu
+              isOwn={isOwn}
+              content={message.content}
+              onReply={() =>
+                onReply(message)
+              }
+              onEdit={() =>
+                onEdit(message)
+              }
+              onDelete={() =>
+                onDelete(message.id)
+              }
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -503,6 +620,7 @@ export default function ConversationPage() {
     useParams<{
       conversationId: string;
     }>();
+
   const router = useRouter();
 
   const conversationId =
@@ -533,43 +651,73 @@ export default function ConversationPage() {
     setReplyingTo,
   ] = useState<Message | null>(null);
 
+  const [
+    editingMessageId,
+    setEditingMessageId,
+  ] = useState<string | null>(null);
+
+  const [
+    editDraft,
+    setEditDraft,
+  ] = useState("");
+
+  const [
+    editSaving,
+    setEditSaving,
+  ] = useState(false);
+
   const [loading, setLoading] =
     useState(true);
+
   const [sending, setSending] =
     useState(false);
+
   const [
     refreshing,
     setRefreshing,
   ] = useState(false);
+
   const [error, setError] =
     useState("");
+
+  const [
+    showJumpToLatest,
+    setShowJumpToLatest,
+  ] = useState(false);
 
   const [
     groupOpen,
     setGroupOpen,
   ] = useState(false);
+
   const [
     groupLoading,
     setGroupLoading,
   ] = useState(false);
+
   const [
     groupMembers,
     setGroupMembers,
   ] = useState<GroupMember[]>([]);
+
   const [
     currentUserRole,
     setCurrentUserRole,
   ] = useState("member");
+
   const [groupName, setGroupName] =
     useState("");
+
   const [
     groupDescription,
     setGroupDescription,
   ] = useState("");
+
   const [
     savingGroup,
     setSavingGroup,
   ] = useState(false);
+
   const [
     groupActionError,
     setGroupActionError,
@@ -577,16 +725,19 @@ export default function ConversationPage() {
 
   const [memberQuery, setMemberQuery] =
     useState("");
+
   const [
     memberResults,
     setMemberResults,
   ] = useState<MemberSearchResult[]>(
     [],
   );
+
   const [
     searchingMembers,
     setSearchingMembers,
   ] = useState(false);
+
   const [
     memberActionLoading,
     setMemberActionLoading,
@@ -594,10 +745,13 @@ export default function ConversationPage() {
 
   const messagesViewportRef =
     useRef<HTMLDivElement | null>(null);
+
   const messagesBottomRef =
     useRef<HTMLDivElement | null>(null);
+
   const nearBottomRef =
     useRef(true);
+
   const initialScrollDoneRef =
     useRef(false);
 
@@ -644,12 +798,6 @@ export default function ConversationPage() {
       ? conversation.participant
           ?.avatar_path
       : null;
-
-  const participantName =
-    conversation?.type === "direct"
-      ? conversation.participant
-          ?.display_name
-      : title;
 
   const loadConversation =
     useCallback(async () => {
@@ -967,8 +1115,7 @@ export default function ConversationPage() {
       )
       .subscribe((status) => {
         if (
-          status ===
-            "CHANNEL_ERROR" ||
+          status === "CHANNEL_ERROR" ||
           status === "TIMED_OUT"
         ) {
           setError(
@@ -1019,6 +1166,10 @@ export default function ConversationPage() {
 
       nearBottomRef.current =
         nearBottom;
+
+      setShowJumpToLatest(
+        !nearBottom,
+      );
     };
 
     viewport.addEventListener(
@@ -1067,6 +1218,11 @@ export default function ConversationPage() {
 
           initialScrollDoneRef.current =
             true;
+
+          nearBottomRef.current =
+            true;
+
+          setShowJumpToLatest(false);
         },
       );
 
@@ -1084,12 +1240,17 @@ export default function ConversationPage() {
       },
     );
 
-    nearBottomRef.current = true;
+    nearBottomRef.current =
+      true;
+
+    setShowJumpToLatest(false);
   }
 
   function startReply(
     message: Message,
   ) {
+    setEditingMessageId(null);
+    setEditDraft("");
     setReplyingTo(message);
     setError("");
 
@@ -1100,6 +1261,211 @@ export default function ConversationPage() {
         )
         ?.focus();
     }, 0);
+  }
+
+  function beginEdit(
+    message: Message,
+  ) {
+    const content =
+      message.content ?? "";
+
+    setReplyingTo(null);
+    setError("");
+    setEditingMessageId(
+      message.id,
+    );
+    setEditDraft(content);
+
+    window.setTimeout(() => {
+      document
+        .querySelector<HTMLTextAreaElement>(
+          'textarea[autofocus]',
+        )
+        ?.focus();
+    }, 0);
+  }
+
+  function cancelEdit() {
+    setEditingMessageId(null);
+    setEditDraft("");
+    setEditSaving(false);
+  }
+
+  async function saveEdit(
+    messageId: string,
+  ) {
+    const content =
+      editDraft.trim();
+
+    if (
+      !content ||
+      editSaving ||
+      !conversationId
+    ) {
+      return;
+    }
+
+    setEditSaving(true);
+    setError("");
+
+    try {
+      const response =
+        await fetch(
+          `/api/conversations/${encodeURIComponent(
+            conversationId,
+          )}/messages/${encodeURIComponent(
+            messageId,
+          )}`,
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              content,
+            }),
+          },
+        );
+
+      const data =
+        await response.json();
+
+      if (
+        response.status === 401
+      ) {
+        router.push("/auth");
+        return;
+      }
+
+      if (!response.ok) {
+        setError(
+          data.error ??
+            "Unable to edit the message.",
+        );
+        return;
+      }
+
+      if (data.message) {
+        setMessages(
+          (current) =>
+            current.map(
+              (message) => {
+                if (
+                  message.id !==
+                  messageId
+                ) {
+                  return message;
+                }
+
+                return {
+                  ...message,
+                  content:
+                    data.message
+                      .content,
+                  updated_at:
+                    data.message
+                      .updated_at,
+                  deleted_at:
+                    data.message
+                      .deleted_at ??
+                    null,
+                };
+              },
+            ),
+        );
+      }
+
+      setEditingMessageId(null);
+      setEditDraft("");
+    } catch {
+      setError(
+        "Unable to edit the message.",
+      );
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
+  async function deleteMessage(
+    messageId: string,
+  ) {
+    if (!conversationId) {
+      return;
+    }
+
+    setError("");
+
+    try {
+      const response =
+        await fetch(
+          `/api/conversations/${encodeURIComponent(
+            conversationId,
+          )}/messages/${encodeURIComponent(
+            messageId,
+          )}`,
+          {
+            method: "DELETE",
+          },
+        );
+
+      const data =
+        await response.json();
+
+      if (
+        response.status === 401
+      ) {
+        router.push("/auth");
+        throw new Error(
+          "Authentication required.",
+        );
+      }
+
+      if (!response.ok) {
+        const message =
+          data.error ??
+          "Unable to delete the message.";
+
+        setError(message);
+        throw new Error(message);
+      }
+
+      setMessages(
+        (current) =>
+          current.filter(
+            (message) =>
+              message.id !==
+              messageId,
+          ),
+      );
+
+      if (
+        editingMessageId ===
+        messageId
+      ) {
+        cancelEdit();
+      }
+
+      if (
+        replyingTo?.id ===
+        messageId
+      ) {
+        setReplyingTo(null);
+      }
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message
+      ) {
+        setError(error.message);
+      } else {
+        setError(
+          "Unable to delete the message.",
+        );
+      }
+
+      throw error;
+    }
   }
 
   function cancelReply() {
@@ -1177,7 +1543,8 @@ export default function ConversationPage() {
               created_at:
                 replyingTo.created_at,
               sender:
-                replyingTo.sender ?? null,
+                replyingTo.sender ??
+                null,
               media:
                 replyingTo.media ?? [],
             };
@@ -1205,8 +1572,11 @@ export default function ConversationPage() {
 
       setDraft("");
       setReplyingTo(null);
+
       nearBottomRef.current =
         true;
+
+      setShowJumpToLatest(false);
 
       void loadConversation();
     } catch {
@@ -1220,7 +1590,9 @@ export default function ConversationPage() {
 
   function handleVoiceSent() {
     setError("");
-    nearBottomRef.current = true;
+    nearBottomRef.current =
+      true;
+    setShowJumpToLatest(false);
     void loadMessages();
     void loadConversation();
   }
@@ -1558,7 +1930,9 @@ export default function ConversationPage() {
       return;
     }
 
-    const name = groupName.trim();
+    const name =
+      groupName.trim();
+
     const description =
       groupDescription.trim();
 
@@ -1674,7 +2048,7 @@ export default function ConversationPage() {
               avatarPath={
                 participantAvatar
               }
-              name={participantName}
+              name={title}
               className="h-11 w-11"
               textClassName="text-xs"
             />
@@ -1845,8 +2219,36 @@ export default function ConversationPage() {
                             conversation?.type ??
                             "direct"
                           }
+                          editing={
+                            editingMessageId ===
+                            message.id
+                          }
+                          editDraft={
+                            editingMessageId ===
+                            message.id
+                              ? editDraft
+                              : ""
+                          }
+                          editSaving={
+                            editSaving
+                          }
                           onReply={
                             startReply
+                          }
+                          onEdit={
+                            beginEdit
+                          }
+                          onEditDraftChange={
+                            setEditDraft
+                          }
+                          onSaveEdit={
+                            saveEdit
+                          }
+                          onCancelEdit={
+                            cancelEdit
+                          }
+                          onDelete={
+                            deleteMessage
                           }
                         />
                       </div>
@@ -1862,8 +2264,7 @@ export default function ConversationPage() {
               </div>
             )}
 
-            {messages.length > 0 &&
-            error &&
+            {error &&
             conversation ? (
               <div className="sticky bottom-2 mx-auto mt-3 max-w-4xl rounded-2xl border border-[var(--danger)]/20 bg-[var(--danger-soft)] px-4 py-3">
                 <p className="text-xs font-semibold text-[var(--danger)]">
@@ -1872,7 +2273,7 @@ export default function ConversationPage() {
               </div>
             ) : null}
 
-            {!nearBottomRef.current &&
+            {showJumpToLatest &&
             messages.length > 0 ? (
               <button
                 type="button"
@@ -1933,7 +2334,8 @@ export default function ConversationPage() {
                     value={draft}
                     onChange={(event) =>
                       setDraft(
-                        event.target.value,
+                        event.target
+                          .value,
                       )
                     }
                     maxLength={5000}
@@ -2114,9 +2516,7 @@ export default function ConversationPage() {
                         value={
                           groupDescription
                         }
-                        onChange={(
-                          event,
-                        ) =>
+                        onChange={(event) =>
                           setGroupDescription(
                             event.target
                               .value,
@@ -2155,7 +2555,9 @@ export default function ConversationPage() {
                   </form>
                 ) : conversation.description ? (
                   <p className="mt-5 text-sm leading-6 text-[var(--muted-strong)]">
-                    {conversation.description}
+                    {
+                      conversation.description
+                    }
                   </p>
                 ) : null}
               </div>
@@ -2557,7 +2959,9 @@ export default function ConversationPage() {
                 <div className="border-t border-[var(--border)] px-5 py-5 sm:px-6">
                   <div className="rounded-2xl border border-[var(--danger)]/20 bg-[var(--danger-soft)] px-4 py-3">
                     <p className="text-sm font-medium text-[var(--danger)]">
-                      {groupActionError}
+                      {
+                        groupActionError
+                      }
                     </p>
                   </div>
                 </div>
