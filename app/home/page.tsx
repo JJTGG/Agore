@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 
 import AgoreAvatar from "@/components/agore-avatar";
+import AgoreDesktopNav from "@/components/agore-desktop-nav";
 import AgoreMobileNav from "@/components/agore-mobile-nav";
 import PostFeed from "./post-feed";
 import { createClient } from "@/lib/supabase/server";
@@ -139,47 +140,11 @@ export default async function HomePage() {
                   </span>
                 </div>
 
-                <nav className="mt-3 space-y-1">
-                  <Link
-                    href="/home"
-                    className="flex items-center gap-3 rounded-2xl bg-[var(--foreground)] px-3.5 py-3 text-sm font-semibold text-[var(--background)]"
-                  >
-                    <Home size={17} />
-                    Home
-                  </Link>
-
-                  <Link
-                    href="/app/explore"
-                    className="flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-medium text-[var(--muted)] transition hover:bg-[var(--surface)] hover:text-[var(--foreground)]"
-                  >
-                    <Compass size={17} />
-                    Explore
-                  </Link>
-
-                  <Link
-                    href="/messages"
-                    className="flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-medium text-[var(--muted)] transition hover:bg-[var(--surface)] hover:text-[var(--foreground)]"
-                  >
-                    <MessageCircle size={17} />
-                    Messages
-                  </Link>
-
-                  <Link
-                    href={profilePath}
-                    className="flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-medium text-[var(--muted)] transition hover:bg-[var(--surface)] hover:text-[var(--foreground)]"
-                  >
-                    <UserRound size={17} />
-                    Profile
-                  </Link>
-
-                  <Link
-                    href="/settings"
-                    className="flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-medium text-[var(--muted)] transition hover:bg-[var(--surface)] hover:text-[var(--foreground)]"
-                  >
-                    <Settings size={17} />
-                    Settings
-                  </Link>
-                </nav>
+                <div className="mt-3">
+                  <AgoreDesktopNav
+                    profilePath={profilePath}
+                  />
+                </div>
               </section>
 
               <section className="overflow-hidden rounded-[1.8rem] border border-[var(--border)] bg-[var(--surface)]">
