@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { createNotification } from "@/lib/notifications";
 import { createClient } from "@/lib/supabase/server";
 
 const createCommentSchema = z.object({
@@ -65,7 +66,10 @@ export async function GET(request: Request, context: RouteContext) {
     .maybeSingle();
 
   if (postError) {
-    console.error("Failed to verify Agore post for comments:", postError);
+    console.error(
+      "Failed to verify Agore post for comments:",
+      postError,
+    );
 
     return NextResponse.json(
       { error: "Unable to load comments." },
@@ -102,7 +106,10 @@ export async function GET(request: Request, context: RouteContext) {
     .limit(parsedQuery.data.limit);
 
   if (commentsError) {
-    console.error("Failed to load Agore comments:", commentsError);
+    console.error(
+      "Failed to load Agore comments:",
+      commentsError,
+    );
 
     return NextResponse.json(
       { error: "Unable to load comments." },
@@ -141,12 +148,15 @@ export async function POST(request: Request, context: RouteContext) {
 
   const { data: post, error: postError } = await supabase
     .from("posts")
-    .select("id")
+    .select("id, author_id")
     .eq("id", postId)
     .maybeSingle();
 
   if (postError) {
-    console.error("Failed to verify Agore post for comment:", postError);
+    console.error(
+      "Failed to verify Agore post for comment:",
+      postError,
+    );
 
     return NextResponse.json(
       { error: "Unable to create the comment." },
@@ -188,10 +198,12 @@ export async function POST(request: Request, context: RouteContext) {
   const parentCommentId =
     parsedBody.data.parentCommentId ?? null;
 
+  let parentCommentAuthorId: string | null = null;
+
   if (parentCommentId) {
     const { data: parentComment, error: parentError } = await supabase
       .from("comments")
-      .select("id, post_id")
+      .select("id, post_id, author_id")
       .eq("id", parentCommentId)
       .maybeSingle();
 
@@ -213,6 +225,8 @@ export async function POST(request: Request, context: RouteContext) {
         { status: 400 },
       );
     }
+
+    parentCommentAuthorId = parentComment.author_id;
   }
 
   const { data: comment, error: commentError } = await supabase
@@ -241,12 +255,43 @@ export async function POST(request: Request, context: RouteContext) {
     .single();
 
   if (commentError) {
-    console.error("Failed to create Agore comment:", commentError);
+    console.error(
+      "Failed to create Agore comment:",
+      commentError,
+    );
 
     return NextResponse.json(
       { error: "Unable to create the comment." },
       { status: 500 },
     );
+  }
+
+  await createNotification({
+    recipientId: post.author_id,
+    actorId: user.id,
+    type: "comment",
+    entityId: postId,
+    data: {
+      commentId: comment.id,
+      parentCommentId,
+    },
+  });
+
+  if (
+    parentCommentAuthorId &&
+    parentCommentAuthorId !== post.author_id
+  ) {
+    await createNotification({
+      recipientId: parentCommentAuthorId,
+      actorId: user.id,
+      type: "comment",
+      entityId: postId,
+      data: {
+        commentId: comment.id,
+        parentCommentId,
+        isReply: true,
+      },
+    });
   }
 
   return NextResponse.json(
