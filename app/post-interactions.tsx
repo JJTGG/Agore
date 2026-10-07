@@ -63,6 +63,7 @@ type PostInteractionsProps = {
   postId: string;
   initialContent: string;
   isOwner: boolean;
+  commentsOpenByDefault?: boolean;
   onPostUpdated?: (
     postId: string,
     content: string,
@@ -115,6 +116,7 @@ export default function PostInteractions({
   postId,
   initialContent,
   isOwner,
+  commentsOpenByDefault = false,
   onPostUpdated,
   onPostDeleted,
 }: PostInteractionsProps) {
@@ -139,7 +141,9 @@ export default function PostInteractions({
 
   const [reactionPickerOpen, setReactionPickerOpen] =
     useState(false);
-  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(
+    commentsOpenByDefault,
+  );
 
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentsLoading, setCommentsLoading] =
@@ -292,6 +296,58 @@ export default function PostInteractions({
   useEffect(() => {
     setEditContent(initialContent);
   }, [initialContent]);
+
+  const loadComments = useCallback(async () => {
+    setCommentsLoading(true);
+    setError("");
+
+    try {
+      const response = await fetch(
+        `/api/posts/${encodeURIComponent(
+          postId,
+        )}/comments?limit=100`,
+        {
+          cache: "no-store",
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ??
+            "Unable to load comments.",
+        );
+      }
+
+      setComments(
+        Array.isArray(data.comments)
+          ? data.comments
+          : [],
+      );
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Unable to load comments.",
+      );
+    } finally {
+      setCommentsLoading(false);
+    }
+  }, [postId]);
+
+  useEffect(() => {
+    if (
+      commentsOpenByDefault &&
+      comments.length === 0
+    ) {
+      void loadComments();
+    }
+  }, [
+    commentsOpenByDefault,
+    comments.length,
+    loadComments,
+  ]);
 
   async function chooseReaction(
     reactionType: ReactionType,
@@ -452,51 +508,15 @@ export default function PostInteractions({
     }
   }
 
-  async function loadComments() {
-    setCommentsLoading(true);
-    setError("");
-
-    try {
-      const response = await fetch(
-        `/api/posts/${encodeURIComponent(
-          postId,
-        )}/comments?limit=100`,
-        {
-          cache: "no-store",
-        },
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data.error ??
-            "Unable to load comments.",
-        );
-      }
-
-      setComments(
-        Array.isArray(data.comments)
-          ? data.comments
-          : [],
-      );
-    } catch (requestError) {
-      setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Unable to load comments.",
-      );
-    } finally {
-      setCommentsLoading(false);
-    }
-  }
-
   async function toggleComments() {
     const nextOpen = !commentsOpen;
 
     setCommentsOpen(nextOpen);
 
-    if (nextOpen && comments.length === 0) {
+    if (
+      nextOpen &&
+      comments.length === 0
+    ) {
       await loadComments();
     }
   }
@@ -874,7 +894,7 @@ export default function PostInteractions({
                 type="button"
                 onClick={() => void deletePost()}
                 disabled={deleteLoading}
-                className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-[#8d2f2f] transition hover:bg-[#fff7f7] disabled:opacity-50"
+                className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-[var(--danger)] transition hover:bg-[var(--danger-soft)] disabled:opacity-50"
               >
                 {deleteLoading ? (
                   <Loader2
@@ -1157,8 +1177,8 @@ export default function PostInteractions({
       ) : null}
 
       {error ? (
-        <div className="mt-3 flex items-start justify-between gap-3 rounded-xl border border-[#ead1d1] bg-[#fff7f7] px-3 py-2.5">
-          <p className="text-xs font-medium text-[#8d2f2f]">
+        <div className="mt-3 flex items-start justify-between gap-3 rounded-xl border border-[var(--danger)]/20 bg-[var(--danger-soft)] px-3 py-2.5">
+          <p className="text-xs font-medium text-[var(--danger)]">
             {error}
           </p>
 
@@ -1167,7 +1187,7 @@ export default function PostInteractions({
             onClick={() =>
               void loadInteractionState()
             }
-            className="shrink-0 text-xs font-semibold text-[#8d2f2f]"
+            className="shrink-0 text-xs font-semibold text-[var(--danger)]"
           >
             Retry
           </button>
