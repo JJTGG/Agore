@@ -33,6 +33,20 @@ type MessageRow = {
   deleted_at: string | null;
 };
 
+type MessageMediaRow = {
+  id: string;
+  message_id: string;
+  media_type: "image" | "file" | "audio";
+  storage_path: string;
+  file_name: string;
+  mime_type: string | null;
+  size_bytes: number;
+  width: number | null;
+  height: number | null;
+  duration_ms: number | null;
+  created_at: string;
+};
+
 type ProfileRow = {
   id: string;
   display_name: string;
@@ -142,6 +156,81 @@ async function attachSenderProfiles(
   }));
 }
 
+async function attachMessageMedia(
+  admin: ReturnType<typeof createAdminClient>,
+  messages: MessageRow[],
+) {
+  if (messages.length === 0) {
+    return messages.map((message) => ({
+      ...message,
+      media: [],
+    }));
+  }
+
+  const messageIds = messages.map((message) => message.id);
+
+  const { data: media, error } = await admin
+    .from("message_media")
+    .select(
+      `
+        id,
+        message_id,
+        media_type,
+        storage_path,
+        file_name,
+        mime_type,
+        size_bytes,
+        width,
+        height,
+        duration_ms,
+        created_at
+      `,
+    )
+    .in("message_id", messageIds)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    console.error(
+      "Failed to load Agore message media:",
+      error,
+    );
+
+    throw new Error("Unable to load message media.");
+  }
+
+  const mediaMap = new Map<string, MessageMediaRow[]>();
+
+  for (const item of (media ?? []) as MessageMediaRow[]) {
+    const existing = mediaMap.get(item.message_id);
+
+    if (existing) {
+      existing.push(item);
+    } else {
+      mediaMap.set(item.message_id, [item]);
+    }
+  }
+
+  return messages.map((message) => ({
+    ...message,
+    media: mediaMap.get(message.id) ?? [],
+  }));
+}
+
+async function buildMessages(
+  admin: ReturnType<typeof createAdminClient>,
+  messages: MessageRow[],
+) {
+  const withMedia = await attachMessageMedia(admin, messages);
+
+  const usableMessages = withMedia.filter(
+    (message) =>
+      Boolean(message.content?.trim()) ||
+      message.media.length > 0,
+  );
+
+  return attachSenderProfiles(admin, usableMessages);
+}
+
 async function notifyConversationMembers(
   admin: ReturnType<typeof createAdminClient>,
   conversationId: string,
@@ -160,6 +249,7 @@ async function notifyConversationMembers(
       "Failed to load Agore message notification recipients:",
       membersError,
     );
+
     return;
   }
 
@@ -277,17 +367,19 @@ export async function GET(
     );
   }
 
-  const orderedMessages = ((messages ?? []) as MessageRow[]).reverse();
+  const orderedMessages = (
+    (messages ?? []) as MessageRow[]
+  ).reverse();
 
   try {
-    const messagesWithProfiles = await attachSenderProfiles(
+    const messagesWithDetails = await buildMessages(
       admin,
       orderedMessages,
     );
 
     return NextResponse.json({
       conversation_id: conversationId,
-      messages: messagesWithProfiles,
+      messages: messagesWithDetails,
       has_more:
         orderedMessages.length === parsedQuery.data.limit,
     });
@@ -463,7 +555,7 @@ export async function POST(
   );
 
   try {
-    const [messageWithProfile] = await attachSenderProfiles(
+    const [messageWithDetails] = await buildMessages(
       admin,
       [message as MessageRow],
     );
@@ -471,7 +563,7 @@ export async function POST(
     return NextResponse.json(
       {
         conversation_id: conversationId,
-        message: messageWithProfile,
+        message: messageWithDetails,
       },
       { status: 201 },
     );
