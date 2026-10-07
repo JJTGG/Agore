@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 
 import AgoreAvatar from "@/components/agore-avatar";
+import AgoreMobileNav from "@/components/agore-mobile-nav";
 import PostFeed from "./post-feed";
 import { createClient } from "@/lib/supabase/server";
 
@@ -521,60 +522,11 @@ export default async function HomePage() {
           </div>
         </footer>
 
-        <nav
-          aria-label="Mobile navigation"
-          className="fixed inset-x-3 bottom-3 z-50 mx-auto flex max-w-md items-center justify-between rounded-[1.5rem] border border-[var(--border)] bg-[color:var(--surface)]/95 px-2 py-2 shadow-[0_18px_50px_rgba(0,0,0,0.14)] backdrop-blur md:hidden"
-        >
-          <Link
-            href="/home"
-            className="flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl bg-[var(--foreground)] px-2 py-2 text-[var(--background)]"
-            aria-current="page"
-          >
-            <Home size={18} />
-
-            <span className="text-[10px] font-semibold">
-              Home
-            </span>
-          </Link>
-
-          <Link
-            href="/app/explore"
-            className="flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-2 text-[var(--muted)] transition hover:bg-[var(--background)] hover:text-[var(--foreground)]"
-          >
-            <Compass size={18} />
-
-            <span className="text-[10px] font-semibold">
-              Explore
-            </span>
-          </Link>
-
-          <Link
-            href="/messages"
-            className="flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-2 text-[var(--muted)] transition hover:bg-[var(--background)] hover:text-[var(--foreground)]"
-          >
-            <MessageCircle size={18} />
-
-            <span className="text-[10px] font-semibold">
-              Messages
-            </span>
-          </Link>
-
-          <Link
-            href={profilePath}
-            className="flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-2 text-[var(--muted)] transition hover:bg-[var(--background)] hover:text-[var(--foreground)]"
-          >
-            <AgoreAvatar
-              avatarPath={profile.avatar_path}
-              name={profile.display_name}
-              className="h-[18px] w-[18px]"
-              textClassName="text-[6px]"
-            />
-
-            <span className="text-[10px] font-semibold">
-              Profile
-            </span>
-          </Link>
-        </nav>
+        <AgoreMobileNav
+          profilePath={profilePath}
+          avatarPath={profile.avatar_path}
+          profileName={profile.display_name}
+        />
       </div>
     </main>
   );
