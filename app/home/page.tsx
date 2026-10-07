@@ -45,7 +45,10 @@ export default async function HomePage() {
       .split(/\s+/)
       .filter(Boolean)
       .slice(0, 2)
-      .map((part) => part[0]?.toUpperCase() ?? "")
+      .map(
+        (part: string) =>
+          part[0]?.toUpperCase() ?? "",
+      )
       .join("") || "A";
 
   const profilePath = `/profile/${encodeURIComponent(user.id)}`;
@@ -68,6 +71,7 @@ export default async function HomePage() {
                 <p className="text-base font-bold tracking-[-0.03em]">
                   Agoré
                 </p>
+
                 <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">
                   Your social space
                 </p>
@@ -228,7 +232,8 @@ export default async function HomePage() {
                   </div>
 
                   <h1 className="mt-4 max-w-2xl text-4xl font-semibold tracking-[-0.055em] sm:text-5xl lg:text-[3.6rem]">
-                    Good to see you, {profile.display_name.split(" ")[0]}.
+                    Good to see you,{" "}
+                    {profile.display_name.split(" ")[0]}.
                   </h1>
 
                   <p className="mt-4 max-w-xl text-base leading-7 text-[var(--muted)] sm:text-[17px]">
@@ -259,6 +264,7 @@ export default async function HomePage() {
                   <p className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--muted)]">
                     Share
                   </p>
+
                   <p className="mt-1 text-sm font-semibold">
                     Put your thoughts out there.
                   </p>
@@ -268,6 +274,7 @@ export default async function HomePage() {
                   <p className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--muted)]">
                     Connect
                   </p>
+
                   <p className="mt-1 text-sm font-semibold">
                     Follow people worth knowing.
                   </p>
@@ -277,6 +284,7 @@ export default async function HomePage() {
                   <p className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--muted)]">
                     Converse
                   </p>
+
                   <p className="mt-1 text-sm font-semibold">
                     Take the conversation private.
                   </p>
@@ -299,6 +307,7 @@ export default async function HomePage() {
                     <p className="truncate font-semibold">
                       {profile.display_name}
                     </p>
+
                     <p className="mt-1 truncate text-sm text-[var(--muted)]">
                       @{profile.username}
                     </p>
@@ -315,7 +324,10 @@ export default async function HomePage() {
 
               <section className="rounded-[1.75rem] border border-[var(--border)] bg-[var(--surface)] p-5">
                 <div className="flex items-center justify-between gap-4">
-                  <p className="text-sm font-bold">Keep exploring</p>
+                  <p className="text-sm font-bold">
+                    Keep exploring
+                  </p>
+
                   <Compass
                     size={18}
                     className="text-[var(--accent)]"
@@ -330,6 +342,7 @@ export default async function HomePage() {
                     <span className="text-sm font-medium">
                       Find people and posts
                     </span>
+
                     <Compass
                       size={16}
                       className="text-[var(--muted)]"
@@ -343,6 +356,7 @@ export default async function HomePage() {
                     <span className="text-sm font-medium">
                       Open your messages
                     </span>
+
                     <MessageCircle
                       size={16}
                       className="text-[var(--muted)]"
@@ -356,6 +370,7 @@ export default async function HomePage() {
                     <span className="text-sm font-medium">
                       Manage your profile
                     </span>
+
                     <Settings
                       size={16}
                       className="text-[var(--muted)]"
