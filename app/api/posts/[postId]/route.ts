@@ -10,13 +10,38 @@ const updatePostSchema = z.object({
     .max(2000, "Post content must be 2000 characters or fewer."),
 });
 
+const postIdSchema = z.uuid("Invalid post ID.");
+
+const postSelect = `
+  id,
+  author_id,
+  content,
+  created_at,
+  updated_at,
+  post_media (
+    id,
+    storage_path,
+    mime_type,
+    size_bytes,
+    width,
+    height,
+    sort_order,
+    created_at
+  ),
+  profiles!posts_author_id_fkey (
+    display_name,
+    username,
+    avatar_path
+  )
+`;
+
 type RouteContext = {
   params: Promise<{
     postId: string;
   }>;
 };
 
-export async function PATCH(request: Request, context: RouteContext) {
+export async function GET(request: Request, context: RouteContext) {
   const supabase = await createClient();
 
   const {
@@ -33,9 +58,79 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   const { postId } = await context.params;
 
-  if (!postId) {
+  const parsedPostId = postIdSchema.safeParse(postId);
+
+  if (!parsedPostId.success) {
     return NextResponse.json(
-      { error: "Post ID is required." },
+      { error: "Invalid post ID." },
+      { status: 400 },
+    );
+  }
+
+  const { data: post, error: postError } = await supabase
+    .from("posts")
+    .select(postSelect)
+    .eq("id", parsedPostId.data)
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  if (postError) {
+    console.error(
+      "Failed to load Agore post:",
+      postError,
+    );
+
+    return NextResponse.json(
+      { error: "Unable to load the post." },
+      { status: 500 },
+    );
+  }
+
+  if (!post) {
+    return NextResponse.json(
+      { error: "Post not found." },
+      { status: 404 },
+    );
+  }
+
+  return NextResponse.json({
+    post: {
+      ...post,
+      post_media: [...(post.post_media ?? [])].sort(
+        (a, b) =>
+          a.sort_order - b.sort_order ||
+          new Date(a.created_at).getTime() -
+            new Date(b.created_at).getTime(),
+      ),
+    },
+  });
+}
+
+export async function PATCH(
+  request: Request,
+  context: RouteContext,
+) {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return NextResponse.json(
+      { error: "Authentication required." },
+      { status: 401 },
+    );
+  }
+
+  const { postId } = await context.params;
+
+  const parsedPostId = postIdSchema.safeParse(postId);
+
+  if (!parsedPostId.success) {
+    return NextResponse.json(
+      { error: "Invalid post ID." },
       { status: 400 },
     );
   }
@@ -64,11 +159,12 @@ export async function PATCH(request: Request, context: RouteContext) {
     );
   }
 
-  const { data: existingPost, error: existingPostError } = await supabase
-    .from("posts")
-    .select("id")
-    .eq("id", postId)
-    .maybeSingle();
+  const { data: existingPost, error: existingPostError } =
+    await supabase
+      .from("posts")
+      .select("id")
+      .eq("id", parsedPostId.data)
+      .maybeSingle();
 
   if (existingPostError) {
     console.error(
@@ -94,7 +190,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     .update({
       content: parsedBody.data.content,
     })
-    .eq("id", postId)
+    .eq("id", parsedPostId.data)
     .select(
       `
         id,
@@ -111,7 +207,10 @@ export async function PATCH(request: Request, context: RouteContext) {
     .single();
 
   if (updateError) {
-    console.error("Failed to update Agore post:", updateError);
+    console.error(
+      "Failed to update Agore post:",
+      updateError,
+    );
 
     return NextResponse.json(
       { error: "Unable to update the post." },
@@ -122,7 +221,10 @@ export async function PATCH(request: Request, context: RouteContext) {
   return NextResponse.json({ post });
 }
 
-export async function DELETE(_: Request, context: RouteContext) {
+export async function DELETE(
+  _: Request,
+  context: RouteContext,
+) {
   const supabase = await createClient();
 
   const {
@@ -139,18 +241,21 @@ export async function DELETE(_: Request, context: RouteContext) {
 
   const { postId } = await context.params;
 
-  if (!postId) {
+  const parsedPostId = postIdSchema.safeParse(postId);
+
+  if (!parsedPostId.success) {
     return NextResponse.json(
-      { error: "Post ID is required." },
+      { error: "Invalid post ID." },
       { status: 400 },
     );
   }
 
-  const { data: existingPost, error: existingPostError } = await supabase
-    .from("posts")
-    .select("id")
-    .eq("id", postId)
-    .maybeSingle();
+  const { data: existingPost, error: existingPostError } =
+    await supabase
+      .from("posts")
+      .select("id")
+      .eq("id", parsedPostId.data)
+      .maybeSingle();
 
   if (existingPostError) {
     console.error(
@@ -176,11 +281,14 @@ export async function DELETE(_: Request, context: RouteContext) {
     .update({
       deleted_at: new Date().toISOString(),
     })
-    .eq("id", postId)
+    .eq("id", parsedPostId.data)
     .is("deleted_at", null);
 
   if (deleteError) {
-    console.error("Failed to delete Agore post:", deleteError);
+    console.error(
+      "Failed to delete Agore post:",
+      deleteError,
+    );
 
     return NextResponse.json(
       { error: "Unable to delete the post." },
