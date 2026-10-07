@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { createNotification } from "@/lib/notifications";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -141,6 +142,46 @@ async function attachSenderProfiles(
   }));
 }
 
+async function notifyConversationMembers(
+  admin: ReturnType<typeof createAdminClient>,
+  conversationId: string,
+  senderId: string,
+  messageId: string,
+) {
+  const { data: members, error: membersError } = await admin
+    .from("conversation_members")
+    .select("user_id")
+    .eq("conversation_id", conversationId)
+    .is("left_at", null)
+    .neq("user_id", senderId);
+
+  if (membersError) {
+    console.error(
+      "Failed to load Agore message notification recipients:",
+      membersError,
+    );
+    return;
+  }
+
+  if (!members || members.length === 0) {
+    return;
+  }
+
+  await Promise.allSettled(
+    members.map((member) =>
+      createNotification({
+        recipientId: member.user_id,
+        actorId: senderId,
+        type: "message",
+        entityId: conversationId,
+        data: {
+          messageId,
+        },
+      }),
+    ),
+  );
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ conversationId: string }> },
@@ -190,7 +231,12 @@ export async function GET(
   if (!membership) {
     return NextResponse.json(
       { error: membershipError ?? "Conversation not found." },
-      { status: membershipError === "Conversation not found." ? 404 : 500 },
+      {
+        status:
+          membershipError === "Conversation not found."
+            ? 404
+            : 500,
+      },
     );
   }
 
@@ -242,10 +288,14 @@ export async function GET(
     return NextResponse.json({
       conversation_id: conversationId,
       messages: messagesWithProfiles,
-      has_more: orderedMessages.length === parsedQuery.data.limit,
+      has_more:
+        orderedMessages.length === parsedQuery.data.limit,
     });
   } catch (error) {
-    console.error("Failed to build Agore message response:", error);
+    console.error(
+      "Failed to build Agore message response:",
+      error,
+    );
 
     return NextResponse.json(
       { error: "Unable to load messages." },
@@ -314,7 +364,12 @@ export async function POST(
   if (!membership) {
     return NextResponse.json(
       { error: membershipError ?? "Conversation not found." },
-      { status: membershipError === "Conversation not found." ? 404 : 500 },
+      {
+        status:
+          membershipError === "Conversation not found."
+            ? 404
+            : 500,
+      },
     );
   }
 
@@ -322,13 +377,14 @@ export async function POST(
     parsedBody.data.reply_to_message_id ?? null;
 
   if (replyToMessageId) {
-    const { data: replyMessage, error: replyError } = await admin
-      .from("messages")
-      .select("id")
-      .eq("id", replyToMessageId)
-      .eq("conversation_id", conversationId)
-      .is("deleted_at", null)
-      .maybeSingle();
+    const { data: replyMessage, error: replyError } =
+      await admin
+        .from("messages")
+        .select("id")
+        .eq("id", replyToMessageId)
+        .eq("conversation_id", conversationId)
+        .is("deleted_at", null)
+        .maybeSingle();
 
     if (replyError) {
       console.error(
@@ -399,6 +455,13 @@ export async function POST(
     );
   }
 
+  await notifyConversationMembers(
+    admin,
+    conversationId,
+    user.id,
+    message.id,
+  );
+
   try {
     const [messageWithProfile] = await attachSenderProfiles(
       admin,
@@ -419,7 +482,10 @@ export async function POST(
     );
 
     return NextResponse.json(
-      { error: "Message sent, but the response could not be completed." },
+      {
+        error:
+          "Message sent, but the response could not be completed.",
+      },
       { status: 201 },
     );
   }
