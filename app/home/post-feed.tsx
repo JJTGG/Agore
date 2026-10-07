@@ -242,86 +242,94 @@ export default function PostFeed() {
 
   return (
     <div className="space-y-7">
-      <section className="overflow-hidden rounded-[1.75rem] border border-[var(--border)] bg-[var(--surface)]">
-        <div className="border-b border-[var(--border)] px-5 py-4 sm:px-6">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent)]">
-                <PenLine size={16} />
-              </span>
+      <section className="relative overflow-hidden rounded-[1.9rem] border border-[var(--border)] bg-[var(--surface)]">
+        <div className="absolute inset-y-0 left-0 w-1 bg-[var(--accent)]" />
 
-              <div>
-                <p className="text-sm font-semibold">
-                  Create a post
-                </p>
+        <div className="px-5 py-5 sm:px-7 sm:py-6">
+          <div className="flex items-start justify-between gap-5">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--accent)]">
+                Your turn
+              </p>
 
-                <p className="text-xs text-[var(--muted)]">
-                  Share something worth saying.
-                </p>
-              </div>
+              <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em]">
+                What’s worth saying?
+              </h2>
+
+              <p className="mt-2 max-w-lg text-sm leading-6 text-[var(--muted)]">
+                Drop a thought, question, observation, or
+                something you want people to see.
+              </p>
             </div>
 
-            <span className="text-xs font-medium tabular-nums text-[var(--muted)]">
-              {content.length}/2000
+            <span className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)] sm:flex">
+              <Sparkles size={18} />
             </span>
           </div>
-        </div>
 
-        <form
-          onSubmit={handleSubmit}
-          className="px-5 py-5 sm:px-6 sm:py-6"
-        >
-          <div className="flex gap-3">
-            <div className="hidden shrink-0 sm:block">
-              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--accent-soft)] text-sm font-bold text-[var(--accent)]">
+          <form
+            onSubmit={handleSubmit}
+            className="mt-6"
+          >
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--accent-soft)] text-xs font-bold text-[var(--accent)]">
                 {viewerInitials}
               </span>
-            </div>
 
-            <div className="min-w-0 flex-1">
-              <textarea
-                value={content}
-                onChange={(event) =>
-                  setContent(event.target.value)
-                }
-                maxLength={2000}
-                rows={5}
-                placeholder={`What’s on your mind${
-                  viewerName
-                    ? `, ${viewerName.split(" ")[0]}`
-                    : ""
-                }?`}
-                className="w-full resize-none rounded-2xl border border-[var(--border)] bg-[var(--background)] px-4 py-4 text-[15px] leading-7 outline-none transition placeholder:text-[var(--muted)] focus:border-[var(--accent)]"
-              />
-
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-2 text-xs text-[var(--muted)]">
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--background)] px-3 py-1.5">
-                    <PenLine size={13} />
-                    Text post
-                  </span>
-
-                  <span className="hidden items-center gap-1.5 rounded-full bg-[var(--background)] px-3 py-1.5 sm:inline-flex">
-                    <Image size={13} />
-                    Media coming next
-                  </span>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={
-                    !content.trim() || publishing
+              <div className="min-w-0 flex-1">
+                <textarea
+                  value={content}
+                  onChange={(event) =>
+                    setContent(event.target.value)
                   }
-                  className="rounded-full bg-[var(--accent)] px-5 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {publishing
-                    ? "Publishing…"
-                    : "Publish"}
-                </button>
+                  maxLength={2000}
+                  rows={4}
+                  placeholder={
+                    viewerName
+                      ? `Say something, ${
+                          viewerName.split(" ")[0]
+                        }…`
+                      : "Say something…"
+                  }
+                  className="w-full resize-none rounded-[1.35rem] border border-[var(--border)] bg-[var(--background)] px-4 py-4 text-[15px] leading-7 outline-none transition placeholder:text-[var(--muted)] focus:border-[var(--accent)] focus:ring-4 focus:ring-[var(--accent-soft)]"
+                />
+
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--background)] px-3 py-1.5 text-xs font-medium text-[var(--muted)]">
+                      <PenLine size={13} />
+                      Thought
+                    </span>
+
+                    <span className="hidden items-center gap-1.5 rounded-full bg-[var(--background)] px-3 py-1.5 text-xs font-medium text-[var(--muted)] sm:inline-flex">
+                      <Image size={13} />
+                      Media coming soon
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs tabular-nums text-[var(--muted)]">
+                      {content.length}/2000
+                    </span>
+
+                    <button
+                      type="submit"
+                      disabled={
+                        !content.trim() ||
+                        publishing
+                      }
+                      className="rounded-full bg-[var(--foreground)] px-5 py-2.5 text-sm font-semibold text-[var(--background)] transition hover:bg-[var(--accent)] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {publishing
+                        ? "Sending…"
+                        : "Put it out there"}
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        </form>
+          </form>
+        </div>
       </section>
 
       {error ? (
@@ -366,6 +374,7 @@ export default function PostFeed() {
                 loading ? "animate-spin" : ""
               }
             />
+
             <span className="hidden sm:inline">
               Refresh
             </span>
