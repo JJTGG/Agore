@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createNotification } from "@/lib/notifications";
 import { createClient } from "@/lib/supabase/server";
 
 type RouteContext = {
@@ -7,7 +8,7 @@ type RouteContext = {
   }>;
 };
 
-export async function POST(_: Request, context: RouteContext) {
+async function getAuthenticatedUser() {
   const supabase = await createClient();
 
   const {
@@ -16,6 +17,22 @@ export async function POST(_: Request, context: RouteContext) {
   } = await supabase.auth.getUser();
 
   if (userError || !user) {
+    return {
+      supabase,
+      user: null,
+    };
+  }
+
+  return {
+    supabase,
+    user,
+  };
+}
+
+export async function POST(_: Request, context: RouteContext) {
+  const { supabase, user } = await getAuthenticatedUser();
+
+  if (!user) {
     return NextResponse.json(
       { error: "Authentication required." },
       { status: 401 },
@@ -33,12 +50,15 @@ export async function POST(_: Request, context: RouteContext) {
 
   const { data: post, error: postError } = await supabase
     .from("posts")
-    .select("id")
+    .select("id, author_id")
     .eq("id", postId)
     .maybeSingle();
 
   if (postError) {
-    console.error("Failed to verify Agore post for repost:", postError);
+    console.error(
+      "Failed to verify Agore post for repost:",
+      postError,
+    );
 
     return NextResponse.json(
       { error: "Unable to verify the post." },
@@ -50,6 +70,26 @@ export async function POST(_: Request, context: RouteContext) {
     return NextResponse.json(
       { error: "Post not found." },
       { status: 404 },
+    );
+  }
+
+  const { data: existingRepost, error: existingRepostError } =
+    await supabase
+      .from("reposts")
+      .select("id, post_id, user_id")
+      .eq("post_id", postId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+  if (existingRepostError) {
+    console.error(
+      "Failed to check existing Agore repost:",
+      existingRepostError,
+    );
+
+    return NextResponse.json(
+      { error: "Unable to repost the post." },
+      { status: 500 },
     );
   }
 
@@ -69,7 +109,10 @@ export async function POST(_: Request, context: RouteContext) {
     .maybeSingle();
 
   if (repostError) {
-    console.error("Failed to create Agore repost:", repostError);
+    console.error(
+      "Failed to create Agore repost:",
+      repostError,
+    );
 
     return NextResponse.json(
       { error: "Unable to repost the post." },
@@ -77,21 +120,25 @@ export async function POST(_: Request, context: RouteContext) {
     );
   }
 
+  if (!existingRepost) {
+    await createNotification({
+      recipientId: post.author_id,
+      actorId: user.id,
+      type: "repost",
+      entityId: postId,
+    });
+  }
+
   return NextResponse.json({
     reposted: true,
-    repost: repost ?? null,
+    repost: repost ?? existingRepost ?? null,
   });
 }
 
 export async function DELETE(_: Request, context: RouteContext) {
-  const supabase = await createClient();
+  const { supabase, user } = await getAuthenticatedUser();
 
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
-
-  if (userError || !user) {
+  if (!user) {
     return NextResponse.json(
       { error: "Authentication required." },
       { status: 401 },
@@ -114,7 +161,10 @@ export async function DELETE(_: Request, context: RouteContext) {
     .eq("user_id", user.id);
 
   if (deleteError) {
-    console.error("Failed to remove Agore repost:", deleteError);
+    console.error(
+      "Failed to remove Agore repost:",
+      deleteError,
+    );
 
     return NextResponse.json(
       { error: "Unable to undo the repost." },
