@@ -7,6 +7,7 @@ import {
 } from "react";
 import Link from "next/link";
 import {
+  Bell,
   Compass,
   Home,
   MessageCircle,
@@ -78,6 +79,9 @@ export default function AgoreMobileNav({
     setQuiet(false);
   }
 
+  const itemClass =
+    "flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-2 text-[var(--muted)] transition hover:bg-[var(--background)] hover:text-[var(--foreground)]";
+
   return (
     <nav
       aria-label="Mobile navigation"
@@ -108,7 +112,7 @@ export default function AgoreMobileNav({
 
       <Link
         href="/app/explore"
-        className="flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-2 text-[var(--muted)] transition hover:bg-[var(--background)] hover:text-[var(--foreground)]"
+        className={itemClass}
       >
         <Compass size={18} />
 
@@ -119,7 +123,7 @@ export default function AgoreMobileNav({
 
       <Link
         href="/messages"
-        className="flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-2 text-[var(--muted)] transition hover:bg-[var(--background)] hover:text-[var(--foreground)]"
+        className={itemClass}
       >
         <MessageCircle size={18} />
 
@@ -129,8 +133,19 @@ export default function AgoreMobileNav({
       </Link>
 
       <Link
+        href="/notifications"
+        className={itemClass}
+      >
+        <Bell size={18} />
+
+        <span className="text-[10px] font-semibold">
+          Alerts
+        </span>
+      </Link>
+
+      <Link
         href={profilePath}
-        className="flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-2 text-[var(--muted)] transition hover:bg-[var(--background)] hover:text-[var(--foreground)]"
+        className={itemClass}
       >
         <AgoreAvatar
           avatarPath={avatarPath}
