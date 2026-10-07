@@ -11,7 +11,6 @@ import {
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
-  Check,
   CornerUpLeft,
   Edit3,
   Loader2,
@@ -28,6 +27,8 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import MessageReactions from "./message-reactions";
+import VoiceMessagePlayer from "./voice-message-player";
+import VoiceNoteComposer from "./voice-note-composer";
 
 const supabase = createClient();
 
@@ -56,6 +57,20 @@ type Conversation = {
   participant: Profile | null;
 };
 
+type MessageMedia = {
+  id: string;
+  message_id: string;
+  media_type: "image" | "file" | "audio";
+  storage_path: string;
+  file_name: string;
+  mime_type: string | null;
+  size_bytes: number;
+  width: number | null;
+  height: number | null;
+  duration_ms: number | null;
+  created_at: string;
+};
+
 type Message = {
   id: string;
   conversation_id: string;
@@ -66,12 +81,14 @@ type Message = {
   updated_at: string;
   deleted_at: string | null;
   sender: Profile | null;
+  media: MessageMedia[];
   reply_to_message?: {
     id: string;
     sender_id: string | null;
     content: string | null;
     created_at: string;
     sender: Profile | null;
+    media?: MessageMedia[];
   } | null;
 };
 
@@ -129,12 +146,45 @@ function getInitials(value: string) {
   );
 }
 
-function truncateMessage(value: string | null | undefined, length = 120) {
-  const text = value?.trim() ?? "";
+function getMessagePreview(
+  message:
+    | Pick<Message, "content" | "media">
+    | {
+        content: string | null;
+        media?: MessageMedia[];
+      }
+    | null
+    | undefined,
+) {
+  const content = message?.content?.trim();
 
-  if (!text) {
-    return "Message";
+  if (content) {
+    return content;
   }
+
+  const hasAudio = (message?.media ?? []).some(
+    (media) => media.media_type === "audio",
+  );
+
+  if (hasAudio) {
+    return "Voice message";
+  }
+
+  return "Message";
+}
+
+function truncateMessage(
+  message:
+    | Pick<Message, "content" | "media">
+    | {
+        content: string | null;
+        media?: MessageMedia[];
+      }
+    | null
+    | undefined,
+  length = 120,
+) {
+  const text = getMessagePreview(message);
 
   if (text.length <= length) {
     return text;
@@ -150,9 +200,8 @@ export default function ConversationPage() {
   const conversationId = params.conversationId;
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [conversation, setConversation] = useState<Conversation | null>(
-    null,
-  );
+  const [conversation, setConversation] =
+    useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
@@ -232,13 +281,16 @@ export default function ConversationPage() {
       }
 
       if (!response.ok) {
-        setError(data.error ?? "Unable to load this conversation.");
+        setError(
+          data.error ?? "Unable to load this conversation.",
+        );
         return;
       }
 
       const found = Array.isArray(data.conversations)
         ? (data.conversations.find(
-            (item: Conversation) => item.id === conversationId,
+            (item: Conversation) =>
+              item.id === conversationId,
           ) as Conversation | undefined)
         : undefined;
 
@@ -316,12 +368,16 @@ export default function ConversationPage() {
         }
 
         if (!response.ok) {
-          setError(data.error ?? "Unable to load messages.");
+          setError(
+            data.error ?? "Unable to load messages.",
+          );
           return;
         }
 
         setMessages(
-          Array.isArray(data.messages) ? data.messages : [],
+          Array.isArray(data.messages)
+            ? data.messages
+            : [],
         );
 
         void markConversationRead();
@@ -365,17 +421,24 @@ export default function ConversationPage() {
 
       if (!response.ok) {
         setGroupActionError(
-          data.error ?? "Unable to load group members.",
+          data.error ??
+            "Unable to load group members.",
         );
         return;
       }
 
       setGroupMembers(
-        Array.isArray(data.members) ? data.members : [],
+        Array.isArray(data.members)
+          ? data.members
+          : [],
       );
-      setCurrentUserRole(data.currentUserRole ?? "member");
+      setCurrentUserRole(
+        data.currentUserRole ?? "member",
+      );
     } catch {
-      setGroupActionError("Unable to load group members.");
+      setGroupActionError(
+        "Unable to load group members.",
+      );
     } finally {
       setGroupLoading(false);
     }
@@ -440,8 +503,23 @@ export default function ConversationPage() {
           void loadMessages();
         },
       )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "messages",
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        () => {
+          void loadMessages();
+        },
+      )
       .subscribe((status) => {
-        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+        if (
+          status === "CHANNEL_ERROR" ||
+          status === "TIMED_OUT"
+        ) {
           setError(
             "Realtime messaging is unavailable. Refresh to reconnect.",
           );
@@ -454,19 +532,27 @@ export default function ConversationPage() {
   }, [conversationId, loadMessages]);
 
   useEffect(() => {
-    if (groupOpen && conversation?.type === "group") {
+    if (
+      groupOpen &&
+      conversation?.type === "group"
+    ) {
       void loadGroupMembers();
     }
-  }, [groupOpen, conversation?.type, loadGroupMembers]);
+  }, [
+    groupOpen,
+    conversation?.type,
+    loadGroupMembers,
+  ]);
 
   function startReply(message: Message) {
     setReplyingTo(message);
     setError("");
 
     window.setTimeout(() => {
-      const textarea = document.querySelector<HTMLTextAreaElement>(
-        'textarea[placeholder="Write a message…"]',
-      );
+      const textarea =
+        document.querySelector<HTMLTextAreaElement>(
+          'textarea[placeholder="Write a message…"]',
+        );
 
       textarea?.focus();
     }, 0);
@@ -476,12 +562,18 @@ export default function ConversationPage() {
     setReplyingTo(null);
   }
 
-  async function handleSend(event: FormEvent<HTMLFormElement>) {
+  async function handleSend(
+    event: FormEvent<HTMLFormElement>,
+  ) {
     event.preventDefault();
 
     const content = draft.trim();
 
-    if (!content || sending || !conversationId) {
+    if (
+      !content ||
+      sending ||
+      !conversationId
+    ) {
       return;
     }
 
@@ -500,7 +592,8 @@ export default function ConversationPage() {
           },
           body: JSON.stringify({
             content,
-            reply_to_message_id: replyingTo?.id ?? null,
+            reply_to_message_id:
+              replyingTo?.id ?? null,
           }),
         },
       );
@@ -513,7 +606,10 @@ export default function ConversationPage() {
       }
 
       if (!response.ok) {
-        setError(data.error ?? "Unable to send the message.");
+        setError(
+          data.error ??
+            "Unable to send the message.",
+        );
         return;
       }
 
@@ -527,13 +623,15 @@ export default function ConversationPage() {
             content: replyingTo.content,
             created_at: replyingTo.created_at,
             sender: replyingTo.sender ?? null,
+            media: replyingTo.media ?? [],
           };
         }
 
         setMessages((current) => {
           if (
             current.some(
-              (message) => message.id === sentMessage.id,
+              (message) =>
+                message.id === sentMessage.id,
             )
           ) {
             return current;
@@ -553,7 +651,19 @@ export default function ConversationPage() {
     }
   }
 
-  async function searchMembers(value = memberQuery) {
+  function handleVoiceSent() {
+    setError("");
+    void loadMessages();
+    void loadConversation();
+  }
+
+  function handleVoiceError(message: string) {
+    setError(message);
+  }
+
+  async function searchMembers(
+    value = memberQuery,
+  ) {
     const query = value.trim();
 
     if (query.length < 2) {
@@ -566,7 +676,9 @@ export default function ConversationPage() {
 
     try {
       const response = await fetch(
-        `/api/users/search?q=${encodeURIComponent(query)}&limit=20`,
+        `/api/users/search?q=${encodeURIComponent(
+          query,
+        )}&limit=20`,
         {
           cache: "no-store",
         },
@@ -581,24 +693,33 @@ export default function ConversationPage() {
 
       if (!response.ok) {
         setGroupActionError(
-          data.error ?? "Unable to search people.",
+          data.error ??
+            "Unable to search people.",
         );
         setMemberResults([]);
         return;
       }
 
       const currentMemberIds = new Set(
-        groupMembers.map((member) => member.userId),
+        groupMembers.map(
+          (member) => member.userId,
+        ),
       );
 
       setMemberResults(
-        (Array.isArray(data.people) ? data.people : []).filter(
+        (
+          Array.isArray(data.people)
+            ? data.people
+            : []
+        ).filter(
           (person: MemberSearchResult) =>
             !currentMemberIds.has(person.id),
         ),
       );
     } catch {
-      setGroupActionError("Unable to search people.");
+      setGroupActionError(
+        "Unable to search people.",
+      );
       setMemberResults([]);
     } finally {
       setSearchingMembers(false);
@@ -606,7 +727,10 @@ export default function ConversationPage() {
   }
 
   async function addMember(userId: string) {
-    if (currentUserRole !== "admin" || memberActionLoading) {
+    if (
+      currentUserRole !== "admin" ||
+      memberActionLoading
+    ) {
       return;
     }
 
@@ -633,18 +757,23 @@ export default function ConversationPage() {
 
       if (!response.ok) {
         setGroupActionError(
-          data.error ?? "Unable to add the member.",
+          data.error ??
+            "Unable to add the member.",
         );
         return;
       }
 
       setMemberResults((current) =>
-        current.filter((person) => person.id !== userId),
+        current.filter(
+          (person) => person.id !== userId,
+        ),
       );
 
       await loadGroupMembers();
     } catch {
-      setGroupActionError("Unable to add the member.");
+      setGroupActionError(
+        "Unable to add the member.",
+      );
     } finally {
       setMemberActionLoading(null);
     }
@@ -667,7 +796,8 @@ export default function ConversationPage() {
     );
 
     const memberName =
-      member?.profile?.display_name || "this member";
+      member?.profile?.display_name ??
+      "this member";
 
     const actionLabel =
       requestedRole === "admin"
@@ -711,14 +841,17 @@ export default function ConversationPage() {
 
       if (!response.ok) {
         setGroupActionError(
-          data.error ?? `Unable to update ${memberName}'s role.`,
+          data.error ??
+            `Unable to update ${memberName}'s role.`,
         );
         return;
       }
 
       await loadGroupMembers();
     } catch {
-      setGroupActionError("Unable to update the member role.");
+      setGroupActionError(
+        "Unable to update the member role.",
+      );
     } finally {
       setMemberActionLoading(null);
     }
@@ -727,12 +860,16 @@ export default function ConversationPage() {
   async function removeMember(userId: string) {
     if (
       memberActionLoading ||
-      (userId !== currentUserId && currentUserRole !== "admin")
+      (
+        userId !== currentUserId &&
+        currentUserRole !== "admin"
+      )
     ) {
       return;
     }
 
     const isSelf = userId === currentUserId;
+
     const confirmed = window.confirm(
       isSelf
         ? "Leave this group?"
@@ -754,7 +891,9 @@ export default function ConversationPage() {
             )}/members`
           : `/api/conversations/${encodeURIComponent(
               conversationId,
-            )}/members?userId=${encodeURIComponent(userId)}`;
+            )}/members?userId=${encodeURIComponent(
+              userId,
+            )}`;
 
       const response = await fetch(url, {
         method: "DELETE",
@@ -769,7 +908,8 @@ export default function ConversationPage() {
 
       if (!response.ok) {
         setGroupActionError(
-          data.error ?? "Unable to update group membership.",
+          data.error ??
+            "Unable to update group membership.",
         );
         return;
       }
@@ -781,7 +921,9 @@ export default function ConversationPage() {
 
       await loadGroupMembers();
     } catch {
-      setGroupActionError("Unable to update group membership.");
+      setGroupActionError(
+        "Unable to update group membership.",
+      );
     } finally {
       setMemberActionLoading(null);
     }
@@ -792,7 +934,10 @@ export default function ConversationPage() {
   ) {
     event.preventDefault();
 
-    if (currentUserRole !== "admin" || savingGroup) {
+    if (
+      currentUserRole !== "admin" ||
+      savingGroup
+    ) {
       return;
     }
 
@@ -800,7 +945,9 @@ export default function ConversationPage() {
     const description = groupDescription.trim();
 
     if (!name) {
-      setGroupActionError("Group name cannot be empty.");
+      setGroupActionError(
+        "Group name cannot be empty.",
+      );
       return;
     }
 
@@ -833,7 +980,8 @@ export default function ConversationPage() {
 
       if (!response.ok) {
         setGroupActionError(
-          data.error ?? "Unable to update group settings.",
+          data.error ??
+            "Unable to update group settings.",
         );
         return;
       }
@@ -844,7 +992,8 @@ export default function ConversationPage() {
             ? {
                 ...current,
                 name: data.conversation.name,
-                description: data.conversation.description,
+                description:
+                  data.conversation.description,
                 updated_at:
                   data.conversation.updated_at ??
                   current.updated_at,
@@ -853,7 +1002,9 @@ export default function ConversationPage() {
         );
       }
     } catch {
-      setGroupActionError("Unable to update group settings.");
+      setGroupActionError(
+        "Unable to update group settings.",
+      );
     } finally {
       setSavingGroup(false);
     }
@@ -902,7 +1053,9 @@ export default function ConversationPage() {
             {conversation?.type === "group" ? (
               <button
                 type="button"
-                onClick={() => setGroupOpen(true)}
+                onClick={() =>
+                  setGroupOpen(true)
+                }
                 aria-label="Open group settings"
                 className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#deddd7] bg-white text-[#5d6269] transition hover:bg-[#f8f7f3]"
               >
@@ -912,11 +1065,15 @@ export default function ConversationPage() {
 
             <button
               type="button"
-              onClick={() => void loadMessages(true)}
+              onClick={() =>
+                void loadMessages(true)
+              }
               disabled={refreshing || loading}
               className="rounded-full px-3 py-2 text-sm font-medium text-[#656a71] transition hover:bg-[#f7f6f2] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {refreshing ? "Refreshing…" : "Refresh"}
+              {refreshing
+                ? "Refreshing…"
+                : "Refresh"}
             </button>
           </header>
 
@@ -963,15 +1120,23 @@ export default function ConversationPage() {
               <div className="space-y-4">
                 {messages.map((message, index) => {
                   const isOwn =
-                    message.sender_id === currentUserId;
+                    message.sender_id ===
+                    currentUserId;
 
-                  const previousMessage = messages[index - 1];
-                  const currentDay = formatMessageDay(
-                    message.created_at,
-                  );
-                  const previousDay = previousMessage
-                    ? formatMessageDay(previousMessage.created_at)
-                    : null;
+                  const previousMessage =
+                    messages[index - 1];
+
+                  const currentDay =
+                    formatMessageDay(
+                      message.created_at,
+                    );
+
+                  const previousDay =
+                    previousMessage
+                      ? formatMessageDay(
+                          previousMessage.created_at,
+                        )
+                      : null;
 
                   const replyTarget =
                     message.reply_to_message ??
@@ -981,6 +1146,18 @@ export default function ConversationPage() {
                         message.reply_to_message_id,
                     ) ??
                     null;
+
+                  const audioMedia =
+                    message.media.filter(
+                      (media) =>
+                        media.media_type ===
+                        "audio",
+                    );
+
+                  const hasText =
+                    Boolean(
+                      message.content?.trim(),
+                    );
 
                   return (
                     <div key={message.id}>
@@ -999,7 +1176,7 @@ export default function ConversationPage() {
                             : "items-start"
                         }`}
                       >
-                        <div className="group relative max-w-[82%]">
+                        <div className="group relative max-w-[88%]">
                           <div
                             className={`rounded-2xl px-4 py-3 ${
                               isOwn
@@ -1022,7 +1199,8 @@ export default function ConversationPage() {
                                       : "text-[#2148b8]"
                                   }`}
                                 >
-                                  {replyTarget.sender
+                                  {replyTarget
+                                    .sender
                                     ?.display_name ||
                                     (replyTarget.sender_id ===
                                     currentUserId
@@ -1038,7 +1216,7 @@ export default function ConversationPage() {
                                   }`}
                                 >
                                   {truncateMessage(
-                                    replyTarget.content,
+                                    replyTarget,
                                   )}
                                 </p>
                               </div>
@@ -1062,18 +1240,63 @@ export default function ConversationPage() {
                               </div>
                             ) : null}
 
-                            {!isOwn && message.sender ? (
+                            {!isOwn &&
+                            message.sender ? (
                               <p className="mb-1 text-xs font-semibold text-[#5f646b]">
-                                {message.sender.display_name}
+                                {
+                                  message.sender
+                                    .display_name
+                                }
                               </p>
                             ) : null}
 
-                            <p className="whitespace-pre-wrap text-[15px] leading-6">
-                              {message.content ?? ""}
-                            </p>
+                            {audioMedia.length > 0 ? (
+                              <div
+                                className={
+                                  hasText
+                                    ? "space-y-3"
+                                    : undefined
+                                }
+                              >
+                                {audioMedia.map(
+                                  (media) => (
+                                    <VoiceMessagePlayer
+                                      key={media.id}
+                                      storagePath={
+                                        media.storage_path
+                                      }
+                                      durationMs={
+                                        media.duration_ms
+                                      }
+                                      isOwn={isOwn}
+                                    />
+                                  ),
+                                )}
+
+                                {hasText ? (
+                                  <p className="whitespace-pre-wrap text-[15px] leading-6">
+                                    {message.content}
+                                  </p>
+                                ) : null}
+                              </div>
+                            ) : hasText ? (
+                              <p className="whitespace-pre-wrap text-[15px] leading-6">
+                                {message.content}
+                              </p>
+                            ) : (
+                              <p
+                                className={`text-sm ${
+                                  isOwn
+                                    ? "text-white/70"
+                                    : "text-[#85898f]"
+                                }`}
+                              >
+                                Voice message unavailable
+                              </p>
+                            )}
 
                             <p
-                              className={`mt-1 text-[11px] ${
+                              className={`mt-2 text-[11px] ${
                                 isOwn
                                   ? "text-white/70"
                                   : "text-[#85898f]"
@@ -1091,7 +1314,8 @@ export default function ConversationPage() {
                               startReply(message)
                             }
                             aria-label={`Reply to ${
-                              message.sender?.display_name ||
+                              message.sender
+                                ?.display_name ??
                               "this message"
                             }`}
                             title="Reply"
@@ -1106,7 +1330,9 @@ export default function ConversationPage() {
                         </div>
 
                         <MessageReactions
-                          conversationId={conversationId}
+                          conversationId={
+                            conversationId
+                          }
                           messageId={message.id}
                         />
                       </div>
@@ -1138,14 +1364,18 @@ export default function ConversationPage() {
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-semibold text-[#2148b8]">
                     Replying to{" "}
-                    {replyingTo.sender_id === currentUserId
+                    {replyingTo.sender_id ===
+                    currentUserId
                       ? "yourself"
-                      : replyingTo.sender?.display_name ||
+                      : replyingTo.sender
+                          ?.display_name ??
                         "message"}
                   </p>
 
                   <p className="mt-1 truncate text-xs text-[#6f747b]">
-                    {truncateMessage(replyingTo.content)}
+                    {truncateMessage(
+                      replyingTo,
+                    )}
                   </p>
                 </div>
 
@@ -1164,10 +1394,14 @@ export default function ConversationPage() {
             <div className="flex items-end gap-2">
               <textarea
                 value={draft}
-                onChange={(event) => setDraft(event.target.value)}
+                onChange={(event) =>
+                  setDraft(event.target.value)
+                }
                 maxLength={5000}
                 rows={1}
-                disabled={sending || !conversation}
+                disabled={
+                  sending || !conversation
+                }
                 onKeyDown={(event) => {
                   if (
                     event.key === "Enter" &&
@@ -1179,6 +1413,17 @@ export default function ConversationPage() {
                 }}
                 placeholder="Write a message…"
                 className="max-h-32 min-h-11 flex-1 resize-none rounded-2xl border border-[#d9d8d2] bg-white px-4 py-3 text-sm outline-none transition placeholder:text-[#9b9da1] focus:border-[#2148b8] focus:ring-2 focus:ring-[#dce5ff] disabled:cursor-not-allowed disabled:bg-[#f1f0eb]"
+              />
+
+              <VoiceNoteComposer
+                conversationId={
+                  conversationId
+                }
+                disabled={
+                  sending || !conversation
+                }
+                onSent={handleVoiceSent}
+                onError={handleVoiceError}
               />
 
               <button
@@ -1209,7 +1454,8 @@ export default function ConversationPage() {
         </section>
       </div>
 
-      {groupOpen && conversation?.type === "group" ? (
+      {groupOpen &&
+      conversation?.type === "group" ? (
         <div
           className="fixed inset-0 z-50 flex items-end justify-center bg-[#17191c]/30 px-3 py-3 sm:items-center sm:px-5"
           role="dialog"
@@ -1263,14 +1509,19 @@ export default function ConversationPage() {
 
                     <p className="mt-1 text-sm text-[#777b81]">
                       {groupMembers.length} member
-                      {groupMembers.length === 1 ? "" : "s"}
+                      {groupMembers.length === 1
+                        ? ""
+                        : "s"}
                     </p>
                   </div>
                 </div>
 
-                {currentUserRole === "admin" ? (
+                {currentUserRole ===
+                "admin" ? (
                   <form
-                    onSubmit={saveGroupSettings}
+                    onSubmit={
+                      saveGroupSettings
+                    }
                     className="mt-6 space-y-4"
                   >
                     <label className="block">
@@ -1281,7 +1532,9 @@ export default function ConversationPage() {
                       <input
                         value={groupName}
                         onChange={(event) =>
-                          setGroupName(event.target.value)
+                          setGroupName(
+                            event.target.value,
+                          )
                         }
                         maxLength={80}
                         disabled={savingGroup}
@@ -1295,9 +1548,13 @@ export default function ConversationPage() {
                       </span>
 
                       <textarea
-                        value={groupDescription}
+                        value={
+                          groupDescription
+                        }
                         onChange={(event) =>
-                          setGroupDescription(event.target.value)
+                          setGroupDescription(
+                            event.target.value,
+                          )
                         }
                         maxLength={500}
                         rows={3}
@@ -1309,7 +1566,8 @@ export default function ConversationPage() {
                     <button
                       type="submit"
                       disabled={
-                        savingGroup || !groupName.trim()
+                        savingGroup ||
+                        !groupName.trim()
                       }
                       className="inline-flex items-center gap-2 rounded-full bg-[#2148b8] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#183991] disabled:cursor-not-allowed disabled:opacity-50"
                     >
@@ -1346,7 +1604,8 @@ export default function ConversationPage() {
                     </p>
                   </div>
 
-                  {currentUserRole === "admin" ? (
+                  {currentUserRole ===
+                  "admin" ? (
                     <span className="text-xs font-medium text-[#7c8085]">
                       Admin controls enabled
                     </span>
@@ -1360,149 +1619,192 @@ export default function ConversationPage() {
                       className="animate-spin text-[#2148b8]"
                     />
                   </div>
-                ) : groupMembers.length === 0 ? (
+                ) : groupMembers.length ===
+                  0 ? (
                   <p className="mt-4 text-sm text-[#777b81]">
                     No active members found.
                   </p>
                 ) : (
                   <div className="mt-4 space-y-1">
-                    {groupMembers.map((member) => {
-                      const profile = member.profile;
-                      const memberName =
-                        profile?.display_name || "Agoré user";
-                      const isCurrentUser =
-                        member.userId === currentUserId;
-                      const removeLoading =
-                        memberActionLoading ===
-                        `remove:${member.userId}`;
-                      const roleLoading =
-                        memberActionLoading ===
-                        `role:${member.userId}`;
+                    {groupMembers.map(
+                      (member) => {
+                        const profile =
+                          member.profile;
 
-                      return (
-                        <div
-                          key={member.userId}
-                          className="rounded-2xl px-3 py-3 transition hover:bg-[#f8f7f3]"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div
-                              aria-hidden="true"
-                              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#edf0f8] text-xs font-bold text-[#536071]"
-                            >
-                              {getInitials(memberName)}
-                            </div>
+                        const memberDisplayName =
+                          profile?.display_name ??
+                          "Agoré user";
 
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2">
-                                <p className="truncate text-sm font-semibold">
-                                  {memberName}
-                                </p>
+                        const isCurrentUser =
+                          member.userId ===
+                          currentUserId;
 
-                                {member.role === "admin" ? (
-                                  <span className="shrink-0 rounded-full bg-[#e8edff] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#2148b8]">
-                                    Admin
-                                  </span>
-                                ) : null}
+                        const removeLoading =
+                          memberActionLoading ===
+                          `remove:${member.userId}`;
+
+                        const roleLoading =
+                          memberActionLoading ===
+                          `role:${member.userId}`;
+
+                        return (
+                          <div
+                            key={
+                              member.userId
+                            }
+                            className="rounded-2xl px-3 py-3 transition hover:bg-[#f8f7f3]"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div
+                                aria-hidden="true"
+                                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#edf0f8] text-xs font-bold text-[#536071]"
+                              >
+                                {getInitials(
+                                  memberDisplayName,
+                                )}
                               </div>
 
-                              <p className="mt-0.5 truncate text-xs text-[#777b81]">
-                                @{profile?.username || "user"}
-                                {isCurrentUser
-                                  ? " · You"
-                                  : ""}
-                              </p>
-                            </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2">
+                                  <p className="truncate text-sm font-semibold">
+                                    {
+                                      memberDisplayName
+                                    }
+                                  </p>
 
-                            {isCurrentUser ||
-                            currentUserRole === "admin" ? (
-                              <div className="flex shrink-0 items-center gap-1">
-                                {currentUserRole === "admin" &&
-                                !isCurrentUser ? (
+                                  {member.role ===
+                                  "admin" ? (
+                                    <span className="shrink-0 rounded-full bg-[#e8edff] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#2148b8]">
+                                      Admin
+                                    </span>
+                                  ) : null}
+                                </div>
+
+                                <p className="mt-0.5 truncate text-xs text-[#777b81]">
+                                  @
+                                  {profile?.username ??
+                                    "user"}
+                                  {isCurrentUser
+                                    ? " · You"
+                                    : ""}
+                                </p>
+                              </div>
+
+                              {isCurrentUser ||
+                              currentUserRole ===
+                                "admin" ? (
+                                <div className="flex shrink-0 items-center gap-1">
+                                  {currentUserRole ===
+                                    "admin" &&
+                                  !isCurrentUser ? (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        void updateMemberRole(
+                                          member.userId,
+                                          member.role ===
+                                            "admin"
+                                            ? "member"
+                                            : "admin",
+                                        )
+                                      }
+                                      disabled={Boolean(
+                                        memberActionLoading,
+                                      )}
+                                      aria-label={
+                                        member.role ===
+                                        "admin"
+                                          ? `Remove admin role from ${memberDisplayName}`
+                                          : `Promote ${memberDisplayName} to admin`
+                                      }
+                                      title={
+                                        member.role ===
+                                        "admin"
+                                          ? "Remove admin role"
+                                          : "Make admin"
+                                      }
+                                      className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#deddd7] bg-white text-[#536071] transition hover:bg-[#eef2ff] hover:text-[#2148b8] disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                      {roleLoading ? (
+                                        <Loader2
+                                          size={
+                                            15
+                                          }
+                                          className="animate-spin"
+                                        />
+                                      ) : member.role ===
+                                        "admin" ? (
+                                        <ShieldOff
+                                          size={
+                                            15
+                                          }
+                                        />
+                                      ) : (
+                                        <Shield
+                                          size={
+                                            15
+                                          }
+                                        />
+                                      )}
+                                    </button>
+                                  ) : null}
+
                                   <button
                                     type="button"
                                     onClick={() =>
-                                      void updateMemberRole(
+                                      void removeMember(
                                         member.userId,
-                                        member.role === "admin"
-                                          ? "member"
-                                          : "admin",
                                       )
                                     }
                                     disabled={Boolean(
                                       memberActionLoading,
                                     )}
+                                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#deddd7] bg-white text-[#8a4646] transition hover:bg-[#fff7f7] disabled:cursor-not-allowed disabled:opacity-50"
                                     aria-label={
-                                      member.role === "admin"
-                                        ? `Remove admin role from ${memberName}`
-                                        : `Promote ${memberName} to admin`
+                                      isCurrentUser
+                                        ? "Leave group"
+                                        : `Remove ${memberDisplayName}`
                                     }
-                                    title={
-                                      member.role === "admin"
-                                        ? "Remove admin role"
-                                        : "Make admin"
-                                    }
-                                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#deddd7] bg-white text-[#536071] transition hover:bg-[#eef2ff] hover:text-[#2148b8] disabled:cursor-not-allowed disabled:opacity-50"
                                   >
-                                    {roleLoading ? (
+                                    {removeLoading ? (
                                       <Loader2
-                                        size={15}
+                                        size={
+                                          15
+                                        }
                                         className="animate-spin"
                                       />
-                                    ) : member.role ===
-                                      "admin" ? (
-                                      <ShieldOff size={15} />
                                     ) : (
-                                      <Shield size={15} />
+                                      <UserMinus
+                                        size={
+                                          15
+                                        }
+                                      />
                                     )}
                                   </button>
-                                ) : null}
+                                </div>
+                              ) : null}
+                            </div>
 
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    void removeMember(
-                                      member.userId,
-                                    )
-                                  }
-                                  disabled={Boolean(
-                                    memberActionLoading,
-                                  )}
-                                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#deddd7] bg-white text-[#8a4646] transition hover:bg-[#fff7f7] disabled:cursor-not-allowed disabled:opacity-50"
-                                  aria-label={
-                                    isCurrentUser
-                                      ? "Leave group"
-                                      : `Remove ${memberName}`
-                                  }
-                                >
-                                  {removeLoading ? (
-                                    <Loader2
-                                      size={15}
-                                      className="animate-spin"
-                                    />
-                                  ) : (
-                                    <UserMinus size={15} />
-                                  )}
-                                </button>
-                              </div>
+                            {currentUserRole ===
+                              "admin" &&
+                            !isCurrentUser ? (
+                              <p className="ml-[52px] mt-2 text-[11px] text-[#8a8d92]">
+                                {member.role ===
+                                "admin"
+                                  ? "Tap the shield to remove admin access."
+                                  : "Tap the shield to make this member an admin."}
+                              </p>
                             ) : null}
                           </div>
-
-                          {currentUserRole === "admin" &&
-                          !isCurrentUser ? (
-                            <p className="ml-[52px] mt-2 text-[11px] text-[#8a8d92]">
-                              {member.role === "admin"
-                                ? "Tap the shield to remove admin access."
-                                : "Tap the shield to make this member an admin."}
-                            </p>
-                          ) : null}
-                        </div>
-                      );
-                    })}
+                        );
+                      },
+                    )}
                   </div>
                 )}
               </div>
 
-              {currentUserRole === "admin" ? (
+              {currentUserRole ===
+              "admin" ? (
                 <div className="px-5 py-5 sm:px-6">
                   <div className="flex items-center gap-2">
                     <Plus
@@ -1524,32 +1826,47 @@ export default function ConversationPage() {
                       <input
                         value={memberQuery}
                         onChange={(event) => {
-                          const value = event.target.value;
+                          const value =
+                            event.target.value;
+
                           setMemberQuery(value);
 
-                          if (value.trim().length < 2) {
-                            setMemberResults([]);
+                          if (
+                            value.trim()
+                              .length < 2
+                          ) {
+                            setMemberResults(
+                              [],
+                            );
                           }
                         }}
                         onKeyDown={(event) => {
-                          if (event.key === "Enter") {
+                          if (
+                            event.key ===
+                            "Enter"
+                          ) {
                             event.preventDefault();
                             void searchMembers();
                           }
                         }}
                         maxLength={50}
                         placeholder="Search username or name…"
-                        disabled={searchingMembers}
+                        disabled={
+                          searchingMembers
+                        }
                         className="w-full rounded-2xl border border-[#d9d8d2] bg-white py-3 pl-10 pr-4 text-sm outline-none transition placeholder:text-[#9b9da1] focus:border-[#2148b8] focus:ring-2 focus:ring-[#dce5ff] disabled:bg-[#f1f0eb]"
                       />
                     </div>
 
                     <button
                       type="button"
-                      onClick={() => void searchMembers()}
+                      onClick={() =>
+                        void searchMembers()
+                      }
                       disabled={
                         searchingMembers ||
-                        memberQuery.trim().length < 2
+                        memberQuery.trim()
+                          .length < 2
                       }
                       className="rounded-2xl bg-[#eef2ff] px-4 text-sm font-semibold text-[#2148b8] transition hover:bg-[#e4eaff] disabled:cursor-not-allowed disabled:opacity-50"
                     >
@@ -1564,59 +1881,78 @@ export default function ConversationPage() {
                     </button>
                   </div>
 
-                  {memberResults.length > 0 ? (
+                  {memberResults.length >
+                  0 ? (
                     <div className="mt-3 space-y-1 rounded-2xl border border-[#ebeae5] bg-[#fcfcfa] p-2">
-                      {memberResults.map((person) => {
-                        const actionLoading =
-                          memberActionLoading ===
-                          `add:${person.id}`;
+                      {memberResults.map(
+                        (person) => {
+                          const actionLoading =
+                            memberActionLoading ===
+                            `add:${person.id}`;
 
-                        return (
-                          <button
-                            key={person.id}
-                            type="button"
-                            onClick={() =>
-                              void addMember(person.id)
-                            }
-                            disabled={Boolean(
-                              memberActionLoading,
-                            )}
-                            className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            <div
-                              aria-hidden="true"
-                              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#e5ebff] text-xs font-bold text-[#2148b8]"
+                          return (
+                            <button
+                              key={
+                                person.id
+                              }
+                              type="button"
+                              onClick={() =>
+                                void addMember(
+                                  person.id,
+                                )
+                              }
+                              disabled={Boolean(
+                                memberActionLoading,
+                              )}
+                              className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
                             >
-                              {getInitials(
-                                person.display_name,
-                              )}
-                            </div>
+                              <div
+                                aria-hidden="true"
+                                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#e5ebff] text-xs font-bold text-[#2148b8]"
+                              >
+                                {getInitials(
+                                  person.display_name,
+                                )}
+                              </div>
 
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-semibold">
-                                {person.display_name}
-                              </p>
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-semibold">
+                                  {
+                                    person.display_name
+                                  }
+                                </p>
 
-                              <p className="mt-0.5 truncate text-xs text-[#777b81]">
-                                @{person.username}
-                              </p>
-                            </div>
+                                <p className="mt-0.5 truncate text-xs text-[#777b81]">
+                                  @
+                                  {
+                                    person.username
+                                  }
+                                </p>
+                              </div>
 
-                            <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#e9edfb] text-[#2148b8]">
-                              {actionLoading ? (
-                                <Loader2
-                                  size={15}
-                                  className="animate-spin"
-                                />
-                              ) : (
-                                <Plus size={15} />
-                              )}
-                            </span>
-                          </button>
-                        );
-                      })}
+                              <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#e9edfb] text-[#2148b8]">
+                                {actionLoading ? (
+                                  <Loader2
+                                    size={
+                                      15
+                                    }
+                                    className="animate-spin"
+                                  />
+                                ) : (
+                                  <Plus
+                                    size={
+                                      15
+                                    }
+                                  />
+                                )}
+                              </span>
+                            </button>
+                          );
+                        },
+                      )}
                     </div>
-                  ) : memberQuery.trim().length >= 2 &&
+                  ) : memberQuery.trim()
+                      .length >= 2 &&
                     !searchingMembers ? (
                     <p className="mt-3 rounded-2xl border border-[#ebeae5] bg-[#fcfcfa] px-4 py-3 text-sm text-[#777b81]">
                       No available people found.
@@ -1629,11 +1965,15 @@ export default function ConversationPage() {
                     type="button"
                     onClick={() =>
                       currentUserId
-                        ? void removeMember(currentUserId)
+                        ? void removeMember(
+                            currentUserId,
+                          )
                         : undefined
                     }
                     disabled={
-                      Boolean(memberActionLoading) ||
+                      Boolean(
+                        memberActionLoading,
+                      ) ||
                       !currentUserId
                     }
                     className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-[#ead1d1] bg-[#fff7f7] px-4 py-3 text-sm font-semibold text-[#8d2f2f] transition hover:bg-[#fff1f1] disabled:cursor-not-allowed disabled:opacity-50"
