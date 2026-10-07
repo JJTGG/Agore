@@ -26,6 +26,7 @@ import {
   X,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
+import MessageReactions from "./message-reactions";
 
 const supabase = createClient();
 
@@ -698,7 +699,9 @@ export default function ConversationPage() {
     }
   }
 
-  async function saveGroupSettings(event: FormEvent<HTMLFormElement>) {
+  async function saveGroupSettings(
+    event: FormEvent<HTMLFormElement>,
+  ) {
     event.preventDefault();
 
     if (currentUserRole !== "admin" || savingGroup) {
@@ -893,10 +896,10 @@ export default function ConversationPage() {
                       ) : null}
 
                       <div
-                        className={`flex ${
+                        className={`flex flex-col ${
                           isOwn
-                            ? "justify-end"
-                            : "justify-start"
+                            ? "items-end"
+                            : "items-start"
                         }`}
                       >
                         <div
@@ -928,6 +931,11 @@ export default function ConversationPage() {
                             )}
                           </p>
                         </div>
+
+                        <MessageReactions
+                          conversationId={conversationId}
+                          messageId={message.id}
+                        />
                       </div>
                     </div>
                   );
@@ -979,7 +987,10 @@ export default function ConversationPage() {
                 className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#2148b8] text-white transition hover:bg-[#183991] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {sending ? (
-                  <Loader2 size={17} className="animate-spin" />
+                  <Loader2
+                    size={17}
+                    className="animate-spin"
+                  />
                 ) : (
                   <Send size={17} />
                 )}
@@ -1088,7 +1099,9 @@ export default function ConversationPage() {
 
                     <button
                       type="submit"
-                      disabled={savingGroup || !groupName.trim()}
+                      disabled={
+                        savingGroup || !groupName.trim()
+                      }
                       className="inline-flex items-center gap-2 rounded-full bg-[#2148b8] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#183991] disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {savingGroup ? (
@@ -1099,7 +1112,10 @@ export default function ConversationPage() {
                       ) : (
                         <Edit3 size={16} />
                       )}
-                      {savingGroup ? "Saving…" : "Save details"}
+
+                      {savingGroup
+                        ? "Saving…"
+                        : "Save details"}
                     </button>
                   </form>
                 ) : conversation.description ? (
@@ -1112,8 +1128,13 @@ export default function ConversationPage() {
               <div className="border-b border-[#ebeae5] px-5 py-5 sm:px-6">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Users size={17} className="text-[#2148b8]" />
-                    <p className="text-sm font-semibold">Members</p>
+                    <Users
+                      size={17}
+                      className="text-[#2148b8]"
+                    />
+                    <p className="text-sm font-semibold">
+                      Members
+                    </p>
                   </div>
 
                   {currentUserRole === "admin" ? (
@@ -1177,7 +1198,9 @@ export default function ConversationPage() {
 
                               <p className="mt-0.5 truncate text-xs text-[#777b81]">
                                 @{profile?.username || "user"}
-                                {isCurrentUser ? " · You" : ""}
+                                {isCurrentUser
+                                  ? " · You"
+                                  : ""}
                               </p>
                             </div>
 
@@ -1196,9 +1219,9 @@ export default function ConversationPage() {
                                           : "admin",
                                       )
                                     }
-                                    disabled={
-                                      Boolean(memberActionLoading)
-                                    }
+                                    disabled={Boolean(
+                                      memberActionLoading,
+                                    )}
                                     aria-label={
                                       member.role === "admin"
                                         ? `Remove admin role from ${memberName}`
@@ -1216,7 +1239,8 @@ export default function ConversationPage() {
                                         size={15}
                                         className="animate-spin"
                                       />
-                                    ) : member.role === "admin" ? (
+                                    ) : member.role ===
+                                      "admin" ? (
                                       <ShieldOff size={15} />
                                     ) : (
                                       <Shield size={15} />
@@ -1227,11 +1251,13 @@ export default function ConversationPage() {
                                 <button
                                   type="button"
                                   onClick={() =>
-                                    void removeMember(member.userId)
+                                    void removeMember(
+                                      member.userId,
+                                    )
                                   }
-                                  disabled={
-                                    Boolean(memberActionLoading)
-                                  }
+                                  disabled={Boolean(
+                                    memberActionLoading,
+                                  )}
                                   className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#deddd7] bg-white text-[#8a4646] transition hover:bg-[#fff7f7] disabled:cursor-not-allowed disabled:opacity-50"
                                   aria-label={
                                     isCurrentUser
@@ -1270,7 +1296,10 @@ export default function ConversationPage() {
               {currentUserRole === "admin" ? (
                 <div className="px-5 py-5 sm:px-6">
                   <div className="flex items-center gap-2">
-                    <Plus size={17} className="text-[#2148b8]" />
+                    <Plus
+                      size={17}
+                      className="text-[#2148b8]"
+                    />
                     <p className="text-sm font-semibold">
                       Add members
                     </p>
@@ -1340,14 +1369,18 @@ export default function ConversationPage() {
                             onClick={() =>
                               void addMember(person.id)
                             }
-                            disabled={Boolean(memberActionLoading)}
+                            disabled={Boolean(
+                              memberActionLoading,
+                            )}
                             className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             <div
                               aria-hidden="true"
                               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#e5ebff] text-xs font-bold text-[#2148b8]"
                             >
-                              {getInitials(person.display_name)}
+                              {getInitials(
+                                person.display_name,
+                              )}
                             </div>
 
                             <div className="min-w-0 flex-1">
