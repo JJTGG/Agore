@@ -25,6 +25,10 @@ type Post = {
   author: Profile | null;
 };
 
+type PostQueryRow = Omit<Post, "author"> & {
+  author: Profile[];
+};
+
 type Group = {
   id: string;
   name: string | null;
@@ -299,10 +303,17 @@ export async function GET(request: Request) {
     );
   }
 
+  const posts = ((postRows ?? []) as PostQueryRow[]).map(
+    (post) => ({
+      ...post,
+      author: post.author?.[0] ?? null,
+    }),
+  );
+
   return NextResponse.json({
     query: parsedQuery.data.q,
     people: (people ?? []) as Profile[],
-    posts: (postRows ?? []) as Post[],
+    posts,
     groups,
   });
 }
