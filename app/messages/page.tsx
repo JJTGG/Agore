@@ -44,6 +44,14 @@ type Conversation = {
     last_read_at: string | null;
   };
   participant: Profile | null;
+  latest_message: {
+    id: string;
+    sender_id: string | null;
+    content: string | null;
+    created_at: string;
+    preview: string;
+  } | null;
+  has_unread_messages: boolean;
 };
 
 type SearchPerson = {
@@ -67,6 +75,7 @@ function formatConversationDate(value: string | null) {
   }
 
   const now = new Date();
+
   const sameDay =
     now.getFullYear() === date.getFullYear() &&
     now.getMonth() === date.getMonth() &&
@@ -127,9 +136,7 @@ export default function MessagesPage() {
   const [groupDescription, setGroupDescription] = useState("");
   const [memberQuery, setMemberQuery] = useState("");
   const [memberResults, setMemberResults] = useState<SearchPerson[]>([]);
-  const [selectedMembers, setSelectedMembers] = useState<SearchPerson[]>(
-    [],
-  );
+  const [selectedMembers, setSelectedMembers] = useState<SearchPerson[]>([]);
   const [searchingMembers, setSearchingMembers] = useState(false);
   const [creatingGroup, setCreatingGroup] = useState(false);
   const [groupError, setGroupError] = useState("");
@@ -164,17 +171,13 @@ export default function MessagesPage() {
         }
 
         if (!response.ok) {
-          setError(
-            data.error ?? "Unable to load your conversations.",
-          );
+          setError(data.error ?? "Unable to load your conversations.");
           setConversations([]);
           return;
         }
 
         setConversations(
-          Array.isArray(data.conversations)
-            ? data.conversations
-            : [],
+          Array.isArray(data.conversations) ? data.conversations : [],
         );
       } catch {
         setError("Unable to load your conversations.");
@@ -218,9 +221,7 @@ export default function MessagesPage() {
       }
 
       if (!response.ok) {
-        setGroupError(
-          data.error ?? "Unable to search people.",
-        );
+        setGroupError(data.error ?? "Unable to search people.");
         setMemberResults([]);
         return;
       }
@@ -263,9 +264,7 @@ export default function MessagesPage() {
       }
 
       if (!response.ok) {
-        setDirectError(
-          data.error ?? "Unable to search people.",
-        );
+        setDirectError(data.error ?? "Unable to search people.");
         setDirectResults([]);
         return;
       }
@@ -315,9 +314,7 @@ export default function MessagesPage() {
       }
 
       if (!data.conversation?.id) {
-        setDirectError(
-          "The conversation could not be opened.",
-        );
+        setDirectError("The conversation could not be opened.");
         return;
       }
 
@@ -346,9 +343,7 @@ export default function MessagesPage() {
       }
 
       if (current.length >= 49) {
-        setGroupError(
-          "A group can have at most 50 members.",
-        );
+        setGroupError("A group can have at most 50 members.");
         return current;
       }
 
@@ -358,9 +353,7 @@ export default function MessagesPage() {
 
   function removeSelectedMember(personId: string) {
     setSelectedMembers((current) =>
-      current.filter(
-        (member) => member.id !== personId,
-      ),
+      current.filter((member) => member.id !== personId),
     );
   }
 
@@ -409,9 +402,7 @@ export default function MessagesPage() {
     }
 
     if (selectedMembers.length < 1) {
-      setGroupError(
-        "Select at least one other member.",
-      );
+      setGroupError("Select at least one other member.");
       return;
     }
 
@@ -419,22 +410,17 @@ export default function MessagesPage() {
     setGroupError("");
 
     try {
-      const response = await fetch(
-        "/api/conversations/group",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            name,
-            description,
-            memberIds: selectedMembers.map(
-              (member) => member.id,
-            ),
-          }),
+      const response = await fetch("/api/conversations/group", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        body: JSON.stringify({
+          name,
+          description,
+          memberIds: selectedMembers.map((member) => member.id),
+        }),
+      });
 
       const data = await response.json();
 
@@ -445,8 +431,7 @@ export default function MessagesPage() {
 
       if (!response.ok) {
         setGroupError(
-          data.error ??
-            "Unable to create the group.",
+          data.error ?? "Unable to create the group.",
         );
         return;
       }
@@ -462,9 +447,7 @@ export default function MessagesPage() {
       resetGroupForm();
 
       router.push(
-        `/messages/${encodeURIComponent(
-          data.conversation.id,
-        )}`,
+        `/messages/${encodeURIComponent(data.conversation.id)}`,
       );
     } catch {
       setGroupError("Unable to create the group.");
@@ -502,10 +485,7 @@ export default function MessagesPage() {
             </div>
 
             <div className="hidden items-center gap-2 sm:flex">
-              <Link
-                href="/home"
-                className={navigationClass}
-              >
+              <Link href="/home" className={navigationClass}>
                 <Home size={15} />
                 Home
               </Link>
@@ -547,10 +527,7 @@ export default function MessagesPage() {
           </div>
 
           <div className="mt-3 flex gap-2 overflow-x-auto pb-1 sm:hidden">
-            <Link
-              href="/home"
-              className={navigationClass}
-            >
+            <Link href="/home" className={navigationClass}>
               <Home size={14} />
               Home
             </Link>
@@ -706,11 +683,17 @@ export default function MessagesPage() {
           ) : (
             <div className="divide-y divide-[var(--border)]">
               {conversations.map((conversation) => {
-                const title = getConversationTitle(
-                  conversation,
-                );
-                const subtitle = getConversationSubtitle(
-                  conversation,
+                const title = getConversationTitle(conversation);
+                const subtitle = getConversationSubtitle(conversation);
+
+                const preview =
+                  conversation.latest_message?.preview ?? subtitle;
+
+                const timestamp = formatConversationDate(
+                  conversation.latest_message?.created_at ??
+                    conversation.last_message_at ??
+                    conversation.updated_at ??
+                    conversation.created_at,
                 );
 
                 return (
@@ -734,21 +717,38 @@ export default function MessagesPage() {
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-3">
-                        <p className="truncate text-sm font-semibold">
+                        <p
+                          className={`truncate text-sm ${
+                            conversation.has_unread_messages
+                              ? "font-bold"
+                              : "font-semibold"
+                          }`}
+                        >
                           {title}
                         </p>
 
-                        <span className="shrink-0 text-xs text-[var(--muted)]">
-                          {formatConversationDate(
-                            conversation.last_message_at ??
-                              conversation.updated_at ??
-                              conversation.created_at,
-                          )}
-                        </span>
+                        <div className="flex shrink-0 items-center gap-2">
+                          {conversation.has_unread_messages ? (
+                            <span
+                              aria-label="Unread messages"
+                              className="h-2.5 w-2.5 rounded-full bg-[var(--accent)]"
+                            />
+                          ) : null}
+
+                          <span className="text-xs text-[var(--muted)]">
+                            {timestamp}
+                          </span>
+                        </div>
                       </div>
 
-                      <p className="mt-1 truncate text-sm text-[var(--muted)]">
-                        {subtitle}
+                      <p
+                        className={`mt-1 truncate text-sm ${
+                          conversation.has_unread_messages
+                            ? "font-semibold text-[var(--foreground)]"
+                            : "text-[var(--muted)]"
+                        }`}
+                      >
+                        {preview}
                       </p>
                     </div>
 
@@ -995,9 +995,7 @@ export default function MessagesPage() {
                   <textarea
                     value={groupDescription}
                     onChange={(event) =>
-                      setGroupDescription(
-                        event.target.value,
-                      )
+                      setGroupDescription(event.target.value)
                     }
                     maxLength={500}
                     rows={3}
@@ -1059,13 +1057,10 @@ export default function MessagesPage() {
                       <input
                         value={memberQuery}
                         onChange={(event) => {
-                          const value =
-                            event.target.value;
+                          const value = event.target.value;
                           setMemberQuery(value);
 
-                          if (
-                            value.trim().length < 2
-                          ) {
+                          if (value.trim().length < 2) {
                             setMemberResults([]);
                           }
                         }}
@@ -1106,19 +1101,15 @@ export default function MessagesPage() {
                   {memberResults.length > 0 ? (
                     <div className="mt-3 space-y-1 rounded-2xl border border-[var(--border)] bg-[var(--background)] p-2">
                       {memberResults.map((person) => {
-                        const selected =
-                          selectedMembers.some(
-                            (member) =>
-                              member.id === person.id,
-                          );
+                        const selected = selectedMembers.some(
+                          (member) => member.id === person.id,
+                        );
 
                         return (
                           <button
                             key={person.id}
                             type="button"
-                            onClick={() =>
-                              toggleMember(person)
-                            }
+                            onClick={() => toggleMember(person)}
                             disabled={creatingGroup}
                             className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-[var(--surface)] disabled:cursor-not-allowed disabled:opacity-60"
                           >
@@ -1126,9 +1117,7 @@ export default function MessagesPage() {
                               aria-hidden="true"
                               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--accent-soft)] text-xs font-bold text-[var(--accent)]"
                             >
-                              {getInitials(
-                                person.display_name,
-                              )}
+                              {getInitials(person.display_name)}
                             </div>
 
                             <div className="min-w-0 flex-1">
