@@ -151,6 +151,54 @@ export async function POST(request: Request) {
     });
   }
 
+  const { data: targetSettings, error: targetSettingsError } = await admin
+    .from("user_settings")
+    .select("allow_messages_from")
+    .eq("user_id", targetUserId)
+    .maybeSingle();
+
+  if (targetSettingsError) {
+    console.error(
+      "Failed to load Agore message privacy settings:",
+      targetSettingsError,
+    );
+
+    return NextResponse.json(
+      { error: "Unable to start the conversation." },
+      { status: 500 },
+    );
+  }
+
+  const allowMessagesFrom = targetSettings?.allow_messages_from ?? "everyone";
+
+  if (allowMessagesFrom === "followers") {
+    const { data: followRelationship, error: followError } = await admin
+      .from("follows")
+      .select("follower_id")
+      .eq("follower_id", user.id)
+      .eq("following_id", targetUserId)
+      .maybeSingle();
+
+    if (followError) {
+      console.error(
+        "Failed to check Agore direct-message follower permission:",
+        followError,
+      );
+
+      return NextResponse.json(
+        { error: "Unable to start the conversation." },
+        { status: 500 },
+      );
+    }
+
+    if (!followRelationship) {
+      return NextResponse.json(
+        { error: "This user only accepts messages from followers." },
+        { status: 403 },
+      );
+    }
+  }
+
   const { data: conversation, error: conversationError } = await admin
     .from("conversations")
     .insert({
