@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { createNotification } from "@/lib/notifications";
 import { createClient } from "@/lib/supabase/server";
 
 const reactionSchema = z.object({
@@ -47,12 +48,16 @@ async function getVisiblePost(
 ) {
   const { data: post, error } = await supabase
     .from("posts")
-    .select("id")
+    .select("id, author_id")
     .eq("id", postId)
     .maybeSingle();
 
   if (error) {
-    console.error("Failed to verify Agore post for reaction:", error);
+    console.error(
+      "Failed to verify Agore post for reaction:",
+      error,
+    );
+
     return {
       post: null,
       error,
@@ -127,6 +132,26 @@ export async function POST(request: Request, context: RouteContext) {
     );
   }
 
+  const { data: existingReaction, error: existingReactionError } =
+    await supabase
+      .from("post_reactions")
+      .select("post_id, user_id, reaction_type")
+      .eq("post_id", postId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+  if (existingReactionError) {
+    console.error(
+      "Failed to check existing Agore post reaction:",
+      existingReactionError,
+    );
+
+    return NextResponse.json(
+      { error: "Unable to save the reaction." },
+      { status: 500 },
+    );
+  }
+
   const { data: reaction, error: reactionError } = await supabase
     .from("post_reactions")
     .upsert(
@@ -143,12 +168,27 @@ export async function POST(request: Request, context: RouteContext) {
     .single();
 
   if (reactionError) {
-    console.error("Failed to save Agore post reaction:", reactionError);
+    console.error(
+      "Failed to save Agore post reaction:",
+      reactionError,
+    );
 
     return NextResponse.json(
       { error: "Unable to save the reaction." },
       { status: 500 },
     );
+  }
+
+  if (!existingReaction) {
+    await createNotification({
+      recipientId: post.author_id,
+      actorId: user.id,
+      type: "reaction",
+      entityId: postId,
+      data: {
+        reactionType: parsedBody.data.reactionType,
+      },
+    });
   }
 
   return NextResponse.json({ reaction });
@@ -180,7 +220,10 @@ export async function DELETE(_: Request, context: RouteContext) {
     .eq("user_id", user.id);
 
   if (deleteError) {
-    console.error("Failed to remove Agore post reaction:", deleteError);
+    console.error(
+      "Failed to remove Agore post reaction:",
+      deleteError,
+    );
 
     return NextResponse.json(
       { error: "Unable to remove the reaction." },
