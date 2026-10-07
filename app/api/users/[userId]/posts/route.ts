@@ -16,6 +16,16 @@ const postSelect = `
     display_name,
     username,
     avatar_path
+  ),
+  post_media (
+    id,
+    storage_path,
+    mime_type,
+    size_bytes,
+    width,
+    height,
+    sort_order,
+    created_at
   )
 `;
 
@@ -67,7 +77,10 @@ export async function GET(
     .maybeSingle();
 
   if (profileError) {
-    console.error("Failed to load Agore profile for posts:", profileError);
+    console.error(
+      "Failed to load Agore profile for posts:",
+      profileError,
+    );
 
     return NextResponse.json(
       { error: "Unable to load this profile." },
@@ -82,13 +95,14 @@ export async function GET(
     );
   }
 
-  const { data: blockingRelationship, error: blockError } = await supabase
-    .from("blocks")
-    .select("blocker_id, blocked_id")
-    .or(
-      `and(blocker_id.eq.${user.id},blocked_id.eq.${userId}),and(blocker_id.eq.${userId},blocked_id.eq.${user.id})`,
-    )
-    .limit(1);
+  const { data: blockingRelationship, error: blockError } =
+    await supabase
+      .from("blocks")
+      .select("blocker_id, blocked_id")
+      .or(
+        `and(blocker_id.eq.${user.id},blocked_id.eq.${userId}),and(blocker_id.eq.${userId},blocked_id.eq.${user.id})`,
+      )
+      .limit(1);
 
   if (blockError) {
     console.error(
@@ -102,7 +116,10 @@ export async function GET(
     );
   }
 
-  if (blockingRelationship && blockingRelationship.length > 0) {
+  if (
+    blockingRelationship &&
+    blockingRelationship.length > 0
+  ) {
     return NextResponse.json(
       { error: "Profile not found." },
       { status: 404 },
@@ -117,7 +134,10 @@ export async function GET(
     .limit(parsedQuery.data.limit);
 
   if (postsError) {
-    console.error("Failed to load Agore profile posts:", postsError);
+    console.error(
+      "Failed to load Agore profile posts:",
+      postsError,
+    );
 
     return NextResponse.json(
       { error: "Unable to load profile posts." },
@@ -125,7 +145,23 @@ export async function GET(
     );
   }
 
+  const normalizedPosts = (posts ?? []).map((post) => ({
+    ...post,
+    post_media: Array.isArray(post.post_media)
+      ? [...post.post_media].sort((a, b) => {
+          if (a.sort_order !== b.sort_order) {
+            return a.sort_order - b.sort_order;
+          }
+
+          return (
+            new Date(a.created_at).getTime() -
+            new Date(b.created_at).getTime()
+          );
+        })
+      : [],
+  }));
+
   return NextResponse.json({
-    posts: posts ?? [],
+    posts: normalizedPosts,
   });
 }
