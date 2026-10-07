@@ -518,12 +518,32 @@ export async function POST(
     );
   }
 
+  const finalizedAt = new Date().toISOString();
+
+  const { error: messageUpdateError } =
+    await admin
+      .from("messages")
+      .update({
+        updated_at: finalizedAt,
+      })
+      .eq("id", messageId)
+      .eq("conversation_id", conversationId)
+      .eq("sender_id", user.id)
+      .is("deleted_at", null);
+
+  if (messageUpdateError) {
+    console.error(
+      "Failed to publish Agore voice finalization update:",
+      messageUpdateError,
+    );
+  }
+
   const { error: conversationUpdateError } =
     await admin
       .from("conversations")
       .update({
         last_message_at: message.created_at,
-        updated_at: new Date().toISOString(),
+        updated_at: finalizedAt,
       })
       .eq("id", conversationId);
 
@@ -543,7 +563,10 @@ export async function POST(
 
   return NextResponse.json(
     {
-      message,
+      message: {
+        ...message,
+        updated_at: finalizedAt,
+      },
       media,
       finalized: true,
     },
@@ -677,7 +700,10 @@ export async function DELETE(
     }
   }
 
-  if (storagePaths.size === 0 && message.content === null) {
+  if (
+    storagePaths.size === 0 &&
+    message.content === null
+  ) {
     const {
       data: orphanedFiles,
       error: orphanedFilesError,
