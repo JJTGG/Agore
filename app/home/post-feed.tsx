@@ -15,13 +15,14 @@ import {
   Sparkles,
 } from "lucide-react";
 
+import AgoreAvatar from "@/components/agore-avatar";
 import { createClient } from "@/lib/supabase/browser";
 import PostInteractions from "@/app/post-interactions";
 
 type Profile = {
   display_name: string;
   username: string;
-  avatar_path?: string | null;
+  avatar_path: string | null;
 };
 
 type Post = {
@@ -52,23 +53,6 @@ function formatPostDate(value: string) {
   }).format(date);
 }
 
-function getInitials(
-  displayName: string | null | undefined,
-) {
-  const initials =
-    displayName
-      ?.split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map(
-        (part: string) =>
-          part[0]?.toUpperCase() ?? "",
-      )
-      .join("") ?? "";
-
-  return initials || "A";
-}
-
 export default function PostFeed() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [content, setContent] = useState("");
@@ -76,6 +60,8 @@ export default function PostFeed() {
     null,
   );
   const [viewerName, setViewerName] = useState("");
+  const [viewerAvatarPath, setViewerAvatarPath] =
+    useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState("");
@@ -89,16 +75,18 @@ export default function PostFeed() {
 
     if (!user) {
       setViewerName("");
+      setViewerAvatarPath(null);
       return;
     }
 
     const { data: profile } = await supabase
       .from("profiles")
-      .select("display_name")
+      .select("display_name, avatar_path")
       .eq("id", user.id)
       .maybeSingle();
 
     setViewerName(profile?.display_name ?? "");
+    setViewerAvatarPath(profile?.avatar_path ?? null);
   }, []);
 
   const loadPosts = useCallback(async () => {
@@ -127,7 +115,11 @@ export default function PostFeed() {
       }
 
       setPosts(
-        "posts" in data ? data.posts : [],
+        "posts" in data
+          ? Array.isArray(data.posts)
+            ? data.posts
+            : []
+          : [],
       );
     } catch (requestError) {
       setError(
@@ -226,9 +218,7 @@ export default function PostFeed() {
     );
   }
 
-  function handlePostDeleted(
-    postId: string,
-  ) {
+  function handlePostDeleted(postId: string) {
     setPosts((currentPosts) =>
       currentPosts.filter(
         (post) => post.id !== postId,
@@ -236,29 +226,31 @@ export default function PostFeed() {
     );
   }
 
-  const viewerInitials = getInitials(
-    viewerName,
-  );
-
   return (
     <div className="space-y-7">
-      <section className="relative overflow-hidden rounded-[1.9rem] border border-[var(--border)] bg-[var(--surface)]">
+      <section className="relative overflow-hidden rounded-[2rem] border border-[var(--border)] bg-[var(--surface)]">
         <div className="absolute inset-y-0 left-0 w-1 bg-[var(--accent)]" />
 
-        <div className="px-5 py-5 sm:px-7 sm:py-6">
+        <div className="absolute right-[-45px] top-[-45px] h-32 w-32 rounded-full border-[16px] border-[var(--accent-soft)]" />
+
+        <div className="relative px-5 py-5 sm:px-7 sm:py-6">
           <div className="flex items-start justify-between gap-5">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--accent)]">
-                Your turn
-              </p>
+              <div className="flex items-center gap-2">
+                <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
+
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--accent)]">
+                  Your turn
+                </p>
+              </div>
 
               <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em]">
                 What’s worth saying?
               </h2>
 
               <p className="mt-2 max-w-lg text-sm leading-6 text-[var(--muted)]">
-                Drop a thought, question, observation, or
-                something you want people to see.
+                Drop a thought, question, observation, or something you want
+                people to see.
               </p>
             </div>
 
@@ -272,9 +264,12 @@ export default function PostFeed() {
             className="mt-6"
           >
             <div className="flex items-start gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--accent-soft)] text-xs font-bold text-[var(--accent)]">
-                {viewerInitials}
-              </span>
+              <AgoreAvatar
+                avatarPath={viewerAvatarPath}
+                name={viewerName}
+                className="h-10 w-10"
+                textClassName="text-xs"
+              />
 
               <div className="min-w-0 flex-1">
                 <textarea
@@ -333,7 +328,7 @@ export default function PostFeed() {
       </section>
 
       {error ? (
-        <section className="flex items-center justify-between gap-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm">
+        <section className="flex items-center justify-between gap-4 rounded-2xl border border-[var(--danger)]/20 bg-[var(--danger-soft)] px-4 py-3 text-sm">
           <p>{error}</p>
 
           <button
@@ -371,7 +366,9 @@ export default function PostFeed() {
             <RefreshCw
               size={15}
               className={
-                loading ? "animate-spin" : ""
+                loading
+                  ? "animate-spin"
+                  : ""
               }
             />
 
@@ -419,9 +416,8 @@ export default function PostFeed() {
               </h3>
 
               <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[var(--muted)]">
-                There are no visible posts in your feed yet.
-                Put the first thought out there and give
-                Agoré somewhere to begin.
+                There are no visible posts in your feed yet. Put the first
+                thought out there and give Agoré somewhere to begin.
               </p>
 
               <button
@@ -468,11 +464,14 @@ export default function PostFeed() {
                         )}`}
                         className="flex min-w-0 items-center gap-3"
                       >
-                        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--accent-soft)] text-sm font-bold text-[var(--accent)] transition group-hover:scale-[1.02]">
-                          {getInitials(
-                            authorName,
-                          )}
-                        </span>
+                        <AgoreAvatar
+                          avatarPath={
+                            post.profiles?.avatar_path
+                          }
+                          name={authorName}
+                          className="h-11 w-11 transition group-hover:scale-[1.02]"
+                          textClassName="text-sm"
+                        />
 
                         <span className="min-w-0">
                           <span className="block truncate text-sm font-semibold">
