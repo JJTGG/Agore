@@ -1,6 +1,14 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
+import Link from "next/link";
+import { createClient } from "@/lib/supabase/browser";
+import PostInteractions from "@/app/post-interactions";
 
 type Profile = {
   display_name: string;
@@ -24,6 +32,8 @@ type ErrorResponse = {
   error?: string;
 };
 
+const supabase = createClient();
+
 function formatPostDate(value: string) {
   const date = new Date(value);
 
@@ -36,9 +46,18 @@ function formatPostDate(value: string) {
 export default function PostFeed() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [content, setContent] = useState("");
+  const [viewerId, setViewerId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState("");
+
+  const loadViewer = useCallback(async () => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    setViewerId(user?.id ?? null);
+  }, []);
 
   const loadPosts = useCallback(async () => {
     setLoading(true);
@@ -50,7 +69,9 @@ export default function PostFeed() {
         cache: "no-store",
       });
 
-      const data = (await response.json()) as PostsResponse | ErrorResponse;
+      const data = (await response.json()) as
+        | PostsResponse
+        | ErrorResponse;
 
       if (!response.ok) {
         throw new Error(
@@ -73,10 +94,13 @@ export default function PostFeed() {
   }, []);
 
   useEffect(() => {
+    void loadViewer();
     void loadPosts();
-  }, [loadPosts]);
+  }, [loadPosts, loadViewer]);
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(
+    event: FormEvent<HTMLFormElement>,
+  ) {
     event.preventDefault();
 
     const trimmedContent = content.trim();
@@ -115,7 +139,10 @@ export default function PostFeed() {
         throw new Error("The post response was invalid.");
       }
 
-      setPosts((currentPosts) => [data.post, ...currentPosts]);
+      setPosts((currentPosts) => [
+        data.post,
+        ...currentPosts,
+      ]);
       setContent("");
     } catch (requestError) {
       setError(
@@ -128,6 +155,29 @@ export default function PostFeed() {
     }
   }
 
+  function handlePostUpdated(
+    postId: string,
+    updatedContent: string,
+  ) {
+    setPosts((currentPosts) =>
+      currentPosts.map((post) =>
+        post.id === postId
+          ? {
+              ...post,
+              content: updatedContent,
+              updated_at: new Date().toISOString(),
+            }
+          : post,
+      ),
+    );
+  }
+
+  function handlePostDeleted(postId: string) {
+    setPosts((currentPosts) =>
+      currentPosts.filter((post) => post.id !== postId),
+    );
+  }
+
   return (
     <div className="space-y-6">
       <section className="border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6">
@@ -136,6 +186,7 @@ export default function PostFeed() {
             <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
               Create
             </p>
+
             <h2 className="mt-2 text-xl font-semibold tracking-[-0.025em]">
               Share something with Agoré.
             </h2>
@@ -149,7 +200,9 @@ export default function PostFeed() {
         <form className="mt-5" onSubmit={handleSubmit}>
           <textarea
             value={content}
-            onChange={(event) => setContent(event.target.value)}
+            onChange={(event) =>
+              setContent(event.target.value)
+            }
             maxLength={2000}
             rows={5}
             placeholder="What’s on your mind?"
@@ -163,10 +216,14 @@ export default function PostFeed() {
 
             <button
               type="submit"
-              disabled={!content.trim() || publishing}
+              disabled={
+                !content.trim() || publishing
+              }
               className="rounded-full bg-[var(--accent)] px-5 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {publishing ? "Publishing…" : "Publish"}
+              {publishing
+                ? "Publishing…"
+                : "Publish"}
             </button>
           </div>
         </form>
@@ -176,6 +233,7 @@ export default function PostFeed() {
         <section className="border border-[var(--border)] bg-[var(--surface)] p-4 text-sm text-[var(--foreground)]">
           <div className="flex items-center justify-between gap-4">
             <p>{error}</p>
+
             <button
               type="button"
               onClick={() => void loadPosts()}
@@ -193,6 +251,7 @@ export default function PostFeed() {
             <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
               Feed
             </p>
+
             <h2 className="mt-2 text-2xl font-semibold tracking-[-0.035em]">
               Latest posts
             </h2>
@@ -214,41 +273,67 @@ export default function PostFeed() {
           </div>
         ) : posts.length === 0 ? (
           <div className="border border-[var(--border)] bg-[var(--surface)] p-6">
-            <p className="font-medium">Your feed is empty.</p>
+            <p className="font-medium">
+              Your feed is empty.
+            </p>
+
             <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
-              Publish the first post and start the conversation.
+              Publish the first post and start the
+              conversation.
             </p>
           </div>
         ) : (
           <div className="space-y-4">
-            {posts.map((post) => (
-              <article
-                key={post.id}
-                className="border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6"
-              >
-                <header className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="font-semibold">
-                      {post.profiles?.display_name ?? "Agoré user"}
-                    </p>
-                    <p className="mt-1 text-sm text-[var(--muted)]">
-                      @{post.profiles?.username ?? "unknown"}
-                    </p>
-                  </div>
+            {posts.map((post) => {
+              const isOwner =
+                viewerId !== null &&
+                viewerId === post.author_id;
 
-                  <time
-                    dateTime={post.created_at}
-                    className="shrink-0 text-right text-xs text-[var(--muted)]"
-                  >
-                    {formatPostDate(post.created_at)}
-                  </time>
-                </header>
+              return (
+                <article
+                  key={post.id}
+                  className="border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6"
+                >
+                  <header className="flex items-start justify-between gap-4">
+                    <Link
+                      href={`/profile/${encodeURIComponent(
+                        post.author_id,
+                      )}`}
+                      className="min-w-0 transition hover:opacity-75"
+                    >
+                      <p className="font-semibold">
+                        {post.profiles?.display_name ??
+                          "Agoré user"}
+                      </p>
 
-                <p className="mt-5 whitespace-pre-wrap text-sm leading-7">
-                  {post.content}
-                </p>
-              </article>
-            ))}
+                      <p className="mt-1 text-sm text-[var(--muted)]">
+                        @{post.profiles?.username ??
+                          "unknown"}
+                      </p>
+                    </Link>
+
+                    <time
+                      dateTime={post.created_at}
+                      className="shrink-0 text-right text-xs text-[var(--muted)]"
+                    >
+                      {formatPostDate(post.created_at)}
+                    </time>
+                  </header>
+
+                  <p className="mt-5 whitespace-pre-wrap text-sm leading-7">
+                    {post.content}
+                  </p>
+
+                  <PostInteractions
+                    postId={post.id}
+                    initialContent={post.content}
+                    isOwner={isOwner}
+                    onPostUpdated={handlePostUpdated}
+                    onPostDeleted={handlePostDeleted}
+                  />
+                </article>
+              );
+            })}
           </div>
         )}
       </section>
