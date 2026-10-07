@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 
 const userIdSchema = z.string().uuid();
 
@@ -114,6 +114,49 @@ async function verifyFollowTarget(
   };
 }
 
+async function createFollowNotification(
+  actorId: string,
+  recipientId: string,
+  targetUserId: string,
+) {
+  const admin = createAdminClient();
+
+  const { data: preferences, error: preferencesError } = await admin
+    .from("notification_preferences")
+    .select("follows")
+    .eq("user_id", recipientId)
+    .maybeSingle();
+
+  if (preferencesError) {
+    console.error(
+      "Failed to load Agore follow notification preferences:",
+      preferencesError,
+    );
+    return;
+  }
+
+  if (preferences?.follows === false) {
+    return;
+  }
+
+  const { error: notificationError } = await admin
+    .from("notifications")
+    .insert({
+      recipient_id: recipientId,
+      actor_id: actorId,
+      type: "follow",
+      entity_id: targetUserId,
+      data: {},
+    });
+
+  if (notificationError) {
+    console.error(
+      "Failed to create Agore follow notification:",
+      notificationError,
+    );
+  }
+}
+
 export async function GET(_: Request, context: RouteContext) {
   const { supabase, user } = await getAuthenticatedUser();
 
@@ -222,6 +265,14 @@ export async function POST(_: Request, context: RouteContext) {
     return NextResponse.json(
       { error: "Unable to follow this user." },
       { status: 500 },
+    );
+  }
+
+  if (follow) {
+    await createFollowNotification(
+      user.id,
+      targetUserId,
+      targetUserId,
     );
   }
 
