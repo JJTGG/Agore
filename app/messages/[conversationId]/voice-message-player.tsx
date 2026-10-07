@@ -126,10 +126,7 @@ export default function VoiceMessagePlayer({
       setError(true);
     };
 
-    audio.addEventListener(
-      "timeupdate",
-      handleTimeUpdate,
-    );
+    audio.addEventListener("timeupdate", handleTimeUpdate);
     audio.addEventListener("play", handlePlay);
     audio.addEventListener("pause", handlePause);
     audio.addEventListener("ended", handleEnded);
@@ -141,18 +138,9 @@ export default function VoiceMessagePlayer({
         handleTimeUpdate,
       );
       audio.removeEventListener("play", handlePlay);
-      audio.removeEventListener(
-        "pause",
-        handlePause,
-      );
-      audio.removeEventListener(
-        "ended",
-        handleEnded,
-      );
-      audio.removeEventListener(
-        "error",
-        handleError,
-      );
+      audio.removeEventListener("pause", handlePause);
+      audio.removeEventListener("ended", handleEnded);
+      audio.removeEventListener("error", handleError);
     };
   }, [audioUrl]);
 
@@ -205,7 +193,7 @@ export default function VoiceMessagePlayer({
         className={`flex min-w-[220px] items-center gap-2 text-xs ${
           isOwn
             ? "text-white/80"
-            : "text-[#777b81]"
+            : "text-[var(--muted)]"
         }`}
       >
         <AlertCircle size={15} />
@@ -228,7 +216,7 @@ export default function VoiceMessagePlayer({
         className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition disabled:cursor-not-allowed disabled:opacity-60 ${
           isOwn
             ? "bg-white/15 text-white hover:bg-white/25"
-            : "bg-white text-[#2148b8] shadow-sm hover:bg-[#f7f8fc]"
+            : "bg-[var(--surface)] text-[var(--accent)] shadow-sm hover:bg-[var(--surface-soft)]"
         }`}
       >
         {loading ? (
@@ -255,14 +243,14 @@ export default function VoiceMessagePlayer({
           className={`h-1.5 overflow-hidden rounded-full ${
             isOwn
               ? "bg-white/20"
-              : "bg-[#dfe4ef]"
+              : "bg-[var(--surface-muted)]"
           }`}
         >
           <div
             className={`h-full rounded-full transition-[width] ${
               isOwn
                 ? "bg-white"
-                : "bg-[#2148b8]"
+                : "bg-[var(--accent)]"
             }`}
             style={{
               width: `${progress}%`,
@@ -274,7 +262,7 @@ export default function VoiceMessagePlayer({
           className={`mt-1.5 flex items-center justify-between text-[11px] tabular-nums ${
             isOwn
               ? "text-white/70"
-              : "text-[#85898f]"
+              : "text-[var(--muted)]"
           }`}
         >
           <span>{formatDuration(currentMs)}</span>
