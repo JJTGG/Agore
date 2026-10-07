@@ -16,9 +16,18 @@ type NotificationInput = {
   data?: Record<string, unknown>;
 };
 
+type NotificationPreferences = {
+  follows: boolean;
+  reactions: boolean;
+  comments: boolean;
+  reposts: boolean;
+  messages: boolean;
+  group_activity: boolean;
+};
+
 const preferenceByType: Record<
   NotificationType,
-  "follows" | "reactions" | "comments" | "reposts" | "messages" | "group_activity"
+  keyof NotificationPreferences
 > = {
   follow: "follows",
   reaction: "reactions",
@@ -48,7 +57,9 @@ export async function createNotification({
 
   const { data: preferences, error: preferencesError } = await admin
     .from("notification_preferences")
-    .select(preferenceColumn)
+    .select(
+      "follows, reactions, comments, reposts, messages, group_activity",
+    )
     .eq("user_id", recipientId)
     .maybeSingle();
 
@@ -60,9 +71,12 @@ export async function createNotification({
     return false;
   }
 
+  const typedPreferences =
+    (preferences as NotificationPreferences | null) ?? null;
+
   if (
-    preferences &&
-    preferences[preferenceColumn] === false
+    typedPreferences &&
+    typedPreferences[preferenceColumn] === false
   ) {
     return false;
   }
