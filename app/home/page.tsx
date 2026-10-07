@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
+  ArrowUpRight,
   Compass,
   Home,
   MessageCircle,
@@ -53,54 +54,60 @@ export default async function HomePage() {
       )
       .join("") || "A";
 
+  const firstName =
+    profile.display_name.split(/\s+/)[0] ||
+    "there";
+
   const profilePath =
     `/profile/${encodeURIComponent(user.id)}`;
 
   return (
     <main className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
-      <div className="mx-auto min-h-screen w-full max-w-[1180px] px-4 pb-10 sm:px-6 lg:px-8">
-        <header className="sticky top-0 z-40 bg-[color:var(--background)]/95 backdrop-blur">
-          <div className="flex min-h-[76px] items-center justify-between gap-5 border-b border-[var(--border)]">
+      <div className="mx-auto min-h-screen w-full max-w-[1440px] px-4 pb-28 sm:px-6 lg:px-8 lg:pb-0">
+        <header className="sticky top-0 z-40 border-b border-[var(--border)] bg-[color:var(--background)]/95 backdrop-blur">
+          <div className="flex min-h-[72px] items-center justify-between gap-4">
             <Link
               href="/home"
               className="group flex items-center gap-3"
               aria-label="Agoré home"
             >
-              <span className="flex h-10 w-10 items-center justify-center rounded-[14px] bg-[var(--foreground)] text-sm font-black tracking-[-0.04em] text-[var(--background)] transition group-hover:bg-[var(--accent)] group-hover:text-white">
-                A
+              <span className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-2xl bg-[var(--foreground)] text-sm font-black tracking-[-0.04em] text-[var(--background)] transition duration-200 group-hover:bg-[var(--accent)] group-hover:text-white">
+                <span className="relative z-10">
+                  A
+                </span>
+
+                <span className="absolute -right-3 -top-3 h-7 w-7 rounded-full bg-[var(--accent)] opacity-70 transition duration-200 group-hover:scale-150" />
               </span>
 
-              <div>
-                <p className="text-[17px] font-bold tracking-[-0.04em]">
+              <div className="hidden sm:block">
+                <p className="text-base font-bold tracking-[-0.04em]">
                   Agoré
                 </p>
 
-                <p className="hidden text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)] sm:block">
-                  a place to gather
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+                  Your social space
                 </p>
               </div>
             </Link>
 
-            <nav className="hidden items-center gap-7 md:flex">
+            <nav className="hidden items-center gap-2 md:flex">
               <Link
                 href="/home"
-                className="relative py-2 text-sm font-semibold"
+                className="rounded-full bg-[var(--surface)] px-4 py-2.5 text-sm font-semibold shadow-sm ring-1 ring-[var(--border)]"
               >
                 Home
-
-                <span className="absolute inset-x-0 -bottom-[1px] h-0.5 rounded-full bg-[var(--accent)]" />
               </Link>
 
               <Link
                 href="/app/explore"
-                className="py-2 text-sm font-medium text-[var(--muted)] transition hover:text-[var(--foreground)]"
+                className="rounded-full px-4 py-2.5 text-sm font-medium text-[var(--muted)] transition hover:bg-[var(--surface)] hover:text-[var(--foreground)]"
               >
                 Explore
               </Link>
 
               <Link
                 href="/messages"
-                className="py-2 text-sm font-medium text-[var(--muted)] transition hover:text-[var(--foreground)]"
+                className="rounded-full px-4 py-2.5 text-sm font-medium text-[var(--muted)] transition hover:bg-[var(--surface)] hover:text-[var(--foreground)]"
               >
                 Messages
               </Link>
@@ -109,10 +116,15 @@ export default async function HomePage() {
             <div className="flex items-center gap-2">
               <Link
                 href={profilePath}
-                className="group flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-xs font-bold text-[var(--accent)] transition hover:border-[var(--accent)]"
-                aria-label="Your profile"
+                className="flex items-center gap-2.5 rounded-full border border-[var(--border)] bg-[var(--surface)] py-1.5 pl-1.5 pr-3 transition hover:border-[var(--accent)]"
               >
-                <span>{initials}</span>
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--accent-soft)] text-xs font-bold text-[var(--accent)]">
+                  {initials}
+                </span>
+
+                <span className="hidden max-w-32 truncate text-sm font-semibold sm:block">
+                  {profile.display_name}
+                </span>
               </Link>
 
               <Link
@@ -126,7 +138,7 @@ export default async function HomePage() {
               <form action={signOut}>
                 <button
                   type="submit"
-                  className="hidden rounded-full border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--muted)] transition hover:border-[var(--foreground)] hover:text-[var(--foreground)] sm:block"
+                  className="hidden rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm font-medium transition hover:border-[var(--foreground)] sm:block"
                 >
                   Sign out
                 </button>
@@ -134,175 +146,390 @@ export default async function HomePage() {
             </div>
           </div>
 
-          <nav className="flex gap-5 overflow-x-auto border-b border-[var(--border)] py-3 md:hidden">
+          <nav className="flex gap-2 overflow-x-auto pb-3 md:hidden">
             <Link
               href="/home"
-              className="flex shrink-0 items-center gap-1.5 text-sm font-semibold"
+              className="shrink-0 rounded-full bg-[var(--surface)] px-4 py-2 text-sm font-semibold shadow-sm"
             >
-              <Home size={15} />
               Home
             </Link>
 
             <Link
               href="/app/explore"
-              className="flex shrink-0 items-center gap-1.5 text-sm font-medium text-[var(--muted)]"
+              className="shrink-0 rounded-full border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--muted)]"
             >
-              <Compass size={15} />
               Explore
             </Link>
 
             <Link
               href="/messages"
-              className="flex shrink-0 items-center gap-1.5 text-sm font-medium text-[var(--muted)]"
+              className="shrink-0 rounded-full border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--muted)]"
             >
-              <MessageCircle size={15} />
               Messages
             </Link>
 
             <Link
               href={profilePath}
-              className="flex shrink-0 items-center gap-1.5 text-sm font-medium text-[var(--muted)]"
+              className="shrink-0 rounded-full border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--muted)]"
             >
-              <UserRound size={15} />
               Profile
             </Link>
           </nav>
         </header>
 
-        <section className="py-10 sm:py-14 lg:py-16">
-          <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-end lg:gap-14">
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-[var(--accent)]">
-                The square
-              </p>
+        <div className="grid gap-8 py-6 lg:grid-cols-[210px_minmax(0,1fr)_250px] lg:gap-9 lg:py-8">
+          <aside className="hidden lg:block">
+            <div className="sticky top-[104px] space-y-6">
+              <section>
+                <div className="px-3">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--muted)]">
+                    Your space
+                  </p>
+                </div>
 
-              <h1 className="mt-4 max-w-3xl text-[3.2rem] font-semibold leading-[0.94] tracking-[-0.07em] sm:text-6xl lg:text-[5rem]">
-                Welcome back,
-                <br />
-                {profile.display_name.split(" ")[0]}.
-              </h1>
+                <nav className="mt-3 space-y-1">
+                  <Link
+                    href="/home"
+                    className="flex items-center gap-3 rounded-2xl bg-[var(--foreground)] px-3.5 py-3 text-sm font-semibold text-[var(--background)]"
+                  >
+                    <Home size={17} />
+                    Home
+                  </Link>
 
-              <p className="mt-6 max-w-2xl text-base leading-7 text-[var(--muted)] sm:text-lg sm:leading-8">
-                Agoré is where people meet ideas, conversations, and each
-                other. See what is moving through your space.
-              </p>
+                  <Link
+                    href="/app/explore"
+                    className="flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-medium text-[var(--muted)] transition hover:bg-[var(--surface)] hover:text-[var(--foreground)]"
+                  >
+                    <Compass size={17} />
+                    Explore
+                  </Link>
+
+                  <Link
+                    href="/messages"
+                    className="flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-medium text-[var(--muted)] transition hover:bg-[var(--surface)] hover:text-[var(--foreground)]"
+                  >
+                    <MessageCircle size={17} />
+                    Messages
+                  </Link>
+
+                  <Link
+                    href={profilePath}
+                    className="flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-medium text-[var(--muted)] transition hover:bg-[var(--surface)] hover:text-[var(--foreground)]"
+                  >
+                    <UserRound size={17} />
+                    Profile
+                  </Link>
+                </nav>
+              </section>
+
+              <section className="overflow-hidden rounded-[1.6rem] border border-[var(--border)] bg-[var(--surface)]">
+                <div className="bg-[var(--foreground)] px-4 py-4 text-[var(--background)]">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] opacity-60">
+                    Agoré note
+                  </p>
+
+                  <p className="mt-2 text-sm font-semibold leading-5">
+                    Not everything needs to be loud to be worth sharing.
+                  </p>
+                </div>
+
+                <div className="px-4 py-4">
+                  <p className="text-xs leading-5 text-[var(--muted)]">
+                    Follow people. Find ideas. Start conversations.
+                  </p>
+
+                  <Link
+                    href="/app/explore"
+                    className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-[var(--accent)]"
+                  >
+                    Go exploring
+                    <ArrowUpRight size={13} />
+                  </Link>
+                </div>
+              </section>
             </div>
+          </aside>
 
-            <div className="border-l border-[var(--border)] pl-5 lg:mb-1">
-              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[var(--muted)]">
-                Signed in as
-              </p>
-
-              <p className="mt-2 text-lg font-semibold tracking-[-0.025em]">
-                {profile.display_name}
-              </p>
-
-              <p className="mt-1 text-sm text-[var(--muted)]">
-                @{profile.username}
-              </p>
-
-              <Link
-                href={profilePath}
-                className="mt-5 inline-flex text-sm font-semibold text-[var(--accent)] transition hover:opacity-70"
-              >
-                Open profile →
-              </Link>
-            </div>
-          </div>
-
-          <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-2 border-y border-[var(--border)] py-4 text-xs font-medium uppercase tracking-[0.14em] text-[var(--muted)]">
-            <span className="flex items-center gap-2">
-              <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
-              Share
-            </span>
-
-            <span>Follow people</span>
-
-            <span>Join conversations</span>
-
-            <span>Message directly</span>
-          </div>
-        </section>
-
-        <div className="grid gap-10 lg:grid-cols-[minmax(0,760px)_180px] lg:justify-center lg:gap-14">
           <section className="min-w-0">
+            <section className="relative mb-7 overflow-hidden rounded-[2rem] border border-[var(--border)] bg-[var(--surface)]">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_88%_10%,var(--accent-soft),transparent_30%)]" />
+
+              <div className="absolute -right-10 bottom-[-90px] h-56 w-56 rounded-full border-[28px] border-[var(--accent-soft)] opacity-70" />
+
+              <div className="relative grid gap-8 px-5 py-7 sm:px-8 sm:py-9 lg:grid-cols-[minmax(0,1fr)_190px] lg:gap-10">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full bg-[var(--accent)]" />
+
+                    <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[var(--accent)]">
+                      Agoré / Home
+                    </p>
+                  </div>
+
+                  <h1 className="mt-4 max-w-2xl text-[2.8rem] font-semibold leading-[0.96] tracking-[-0.065em] sm:text-5xl lg:text-[4.25rem]">
+                    What’s happening
+                    <br />
+                    around you,{" "}
+                    <span className="text-[var(--accent)]">
+                      {firstName}.
+                    </span>
+                  </h1>
+
+                  <p className="mt-5 max-w-xl text-[15px] leading-7 text-[var(--muted)] sm:text-base">
+                    People you follow, conversations you can join, and ideas
+                    worth stopping for — all in one place.
+                  </p>
+                </div>
+
+                <div className="flex flex-col justify-between border-l border-[var(--border)] pl-5">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--muted)]">
+                      You
+                    </p>
+
+                    <p className="mt-2 text-lg font-semibold tracking-[-0.03em]">
+                      {profile.display_name}
+                    </p>
+
+                    <p className="mt-1 text-sm text-[var(--muted)]">
+                      @{profile.username}
+                    </p>
+                  </div>
+
+                  <Link
+                    href={profilePath}
+                    className="mt-6 inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--accent)] transition hover:opacity-70"
+                  >
+                    View profile
+                    <ArrowUpRight size={15} />
+                  </Link>
+                </div>
+              </div>
+
+              <div className="relative grid border-t border-[var(--border)] sm:grid-cols-3">
+                <div className="px-5 py-4 sm:px-6">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--accent)]">
+                    Share
+                  </p>
+
+                  <p className="mt-1.5 text-sm font-semibold">
+                    Put a thought somewhere.
+                  </p>
+                </div>
+
+                <div className="border-t border-[var(--border)] px-5 py-4 sm:border-l sm:border-t-0 sm:px-6">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--accent)]">
+                    Discover
+                  </p>
+
+                  <p className="mt-1.5 text-sm font-semibold">
+                    Find people and ideas.
+                  </p>
+                </div>
+
+                <div className="border-t border-[var(--border)] px-5 py-4 sm:border-l sm:border-t-0 sm:px-6">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--accent)]">
+                    Talk
+                  </p>
+
+                  <p className="mt-1.5 text-sm font-semibold">
+                    Take it into conversation.
+                  </p>
+                </div>
+              </div>
+            </section>
+
             <PostFeed />
           </section>
 
           <aside className="hidden lg:block">
-            <div className="sticky top-[104px] pt-1">
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--muted)]">
-                Your space
-              </p>
+            <div className="sticky top-[104px] space-y-5">
+              <section className="relative overflow-hidden rounded-[1.7rem] border border-[var(--border)] bg-[var(--surface)] p-5">
+                <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-[var(--accent-soft)]" />
 
-              <nav className="mt-4 space-y-4">
-                <Link
-                  href="/home"
-                  className="flex items-center gap-2 text-sm font-semibold"
-                >
-                  <Home
-                    size={15}
+                <div className="relative">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--muted)]">
+                    Your corner
+                  </p>
+
+                  <div className="mt-4 flex items-center gap-3">
+                    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-sm font-bold text-white">
+                      {initials}
+                    </span>
+
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold">
+                        {profile.display_name}
+                      </p>
+
+                      <p className="mt-1 truncate text-xs text-[var(--muted)]">
+                        @{profile.username}
+                      </p>
+                    </div>
+                  </div>
+
+                  <Link
+                    href={profilePath}
+                    className="mt-5 flex w-full items-center justify-center rounded-full bg-[var(--foreground)] px-4 py-2.5 text-sm font-semibold text-[var(--background)] transition hover:bg-[var(--accent)] hover:text-white"
+                  >
+                    Open profile
+                  </Link>
+                </div>
+              </section>
+
+              <section className="rounded-[1.7rem] border border-[var(--border)] bg-[var(--surface)] p-5">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--muted)]">
+                      Move around
+                    </p>
+
+                    <p className="mt-1.5 text-sm font-semibold">
+                      There’s more to explore.
+                    </p>
+                  </div>
+
+                  <Compass
+                    size={19}
                     className="text-[var(--accent)]"
                   />
-                  Home
-                </Link>
+                </div>
 
-                <Link
-                  href="/app/explore"
-                  className="flex items-center gap-2 text-sm text-[var(--muted)] transition hover:text-[var(--foreground)]"
-                >
-                  <Compass size={15} />
-                  Explore
-                </Link>
+                <div className="mt-5 space-y-2">
+                  <Link
+                    href="/app/explore"
+                    className="group flex items-center justify-between rounded-2xl bg-[var(--background)] px-3.5 py-3 transition hover:bg-[var(--surface-muted)]"
+                  >
+                    <span className="text-sm font-medium">
+                      Discover people & posts
+                    </span>
 
-                <Link
-                  href="/messages"
-                  className="flex items-center gap-2 text-sm text-[var(--muted)] transition hover:text-[var(--foreground)]"
-                >
-                  <MessageCircle size={15} />
-                  Messages
-                </Link>
+                    <ArrowUpRight
+                      size={15}
+                      className="text-[var(--muted)] transition group-hover:text-[var(--accent)]"
+                    />
+                  </Link>
 
-                <Link
-                  href={profilePath}
-                  className="flex items-center gap-2 text-sm text-[var(--muted)] transition hover:text-[var(--foreground)]"
-                >
-                  <UserRound size={15} />
-                  Profile
-                </Link>
-              </nav>
+                  <Link
+                    href="/messages"
+                    className="group flex items-center justify-between rounded-2xl bg-[var(--background)] px-3.5 py-3 transition hover:bg-[var(--surface-muted)]"
+                  >
+                    <span className="text-sm font-medium">
+                      Continue a conversation
+                    </span>
 
-              <div className="mt-12 border-t border-[var(--border)] pt-5">
-                <p className="text-xs leading-5 text-[var(--muted)]">
-                  A social space should feel like somewhere people actually
-                  gather — not another dashboard.
+                    <ArrowUpRight
+                      size={15}
+                      className="text-[var(--muted)] transition group-hover:text-[var(--accent)]"
+                    />
+                  </Link>
+
+                  <Link
+                    href="/settings"
+                    className="group flex items-center justify-between rounded-2xl bg-[var(--background)] px-3.5 py-3 transition hover:bg-[var(--surface-muted)]"
+                  >
+                    <span className="text-sm font-medium">
+                      Tune your space
+                    </span>
+
+                    <Settings
+                      size={15}
+                      className="text-[var(--muted)] transition group-hover:text-[var(--accent)]"
+                    />
+                  </Link>
+                </div>
+              </section>
+
+              <section className="rounded-[1.7rem] border border-[var(--accent)]/20 bg-[var(--accent-soft)] p-5">
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--accent)]">
+                  Remember
                 </p>
-              </div>
+
+                <p className="mt-2 text-sm font-semibold leading-6">
+                  Agoré works best when you actually participate.
+                </p>
+
+                <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
+                  Say something. React to something. Start somewhere.
+                </p>
+              </section>
             </div>
           </aside>
         </div>
 
-        <footer className="mt-14 flex flex-col gap-2 border-t border-[var(--border)] py-6 text-xs text-[var(--muted)] sm:flex-row sm:items-center sm:justify-between">
-          <p>Agoré · a place to gather.</p>
+        <footer className="mt-12 hidden border-t border-[var(--border)] py-6 lg:block">
+          <div className="flex items-center justify-between gap-4 text-xs text-[var(--muted)]">
+            <p>Agoré · Your social space.</p>
 
-          <div className="flex items-center gap-4">
-            <Link
-              href={profilePath}
-              className="transition hover:text-[var(--foreground)]"
-            >
-              @{profile.username}
-            </Link>
+            <div className="flex items-center gap-4">
+              <Link
+                href={profilePath}
+                className="transition hover:text-[var(--foreground)]"
+              >
+                @{profile.username}
+              </Link>
 
-            <span aria-hidden="true">·</span>
+              <span aria-hidden="true">·</span>
 
-            <Link
-              href="/settings"
-              className="transition hover:text-[var(--foreground)]"
-            >
-              Settings
-            </Link>
+              <Link
+                href="/settings"
+                className="transition hover:text-[var(--foreground)]"
+              >
+                Settings
+              </Link>
+            </div>
           </div>
         </footer>
+
+        <nav
+          aria-label="Mobile navigation"
+          className="fixed inset-x-3 bottom-3 z-50 mx-auto flex max-w-md items-center justify-between rounded-[1.5rem] border border-[var(--border)] bg-[color:var(--surface)]/95 px-2 py-2 shadow-[0_18px_50px_rgba(0,0,0,0.14)] backdrop-blur md:hidden"
+        >
+          <Link
+            href="/home"
+            className="flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl bg-[var(--foreground)] px-2 py-2 text-[var(--background)]"
+            aria-current="page"
+          >
+            <Home size={18} />
+
+            <span className="text-[10px] font-semibold">
+              Home
+            </span>
+          </Link>
+
+          <Link
+            href="/app/explore"
+            className="flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-2 text-[var(--muted)] transition hover:bg-[var(--background)] hover:text-[var(--foreground)]"
+          >
+            <Compass size={18} />
+
+            <span className="text-[10px] font-semibold">
+              Explore
+            </span>
+          </Link>
+
+          <Link
+            href="/messages"
+            className="flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-2 text-[var(--muted)] transition hover:bg-[var(--background)] hover:text-[var(--foreground)]"
+          >
+            <MessageCircle size={18} />
+
+            <span className="text-[10px] font-semibold">
+              Messages
+            </span>
+          </Link>
+
+          <Link
+            href={profilePath}
+            className="flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-2 text-[var(--muted)] transition hover:bg-[var(--background)] hover:text-[var(--foreground)]"
+          >
+            <UserRound size={18} />
+
+            <span className="text-[10px] font-semibold">
+              Profile
+            </span>
+          </Link>
+        </nav>
       </div>
     </main>
   );
