@@ -92,7 +92,9 @@ async function verifyMessage(
 ) {
   const { data: message, error } = await admin
     .from("messages")
-    .select("id, conversation_id, sender_id")
+    .select(
+      "id, conversation_id, sender_id, created_at",
+    )
     .eq("id", messageId)
     .eq("conversation_id", conversationId)
     .is("deleted_at", null)
@@ -194,7 +196,8 @@ export async function GET(
     );
   }
 
-  const parsedParams = paramsSchema.safeParse(await params);
+  const parsedParams =
+    paramsSchema.safeParse(await params);
 
   if (!parsedParams.success) {
     return NextResponse.json(
@@ -203,21 +206,25 @@ export async function GET(
     );
   }
 
-  const { conversationId, messageId } = parsedParams.data;
+  const { conversationId, messageId } =
+    parsedParams.data;
+
   const admin = createAdminClient();
 
-  const membership = await verifyConversationMembership(
-    admin,
-    conversationId,
-    user.id,
-  );
+  const membership =
+    await verifyConversationMembership(
+      admin,
+      conversationId,
+      user.id,
+    );
 
   if (!membership.ok) {
     return NextResponse.json(
       { error: membership.error },
       {
         status:
-          membership.error === "Conversation not found."
+          membership.error ===
+          "Conversation not found."
             ? 404
             : 500,
       },
@@ -232,10 +239,15 @@ export async function GET(
 
   if (!message.message) {
     return NextResponse.json(
-      { error: message.error ?? "Message not found." },
+      {
+        error:
+          message.error ??
+          "Message not found.",
+      },
       {
         status:
-          message.error === "Message not found."
+          message.error ===
+          "Message not found."
             ? 404
             : 500,
       },
@@ -243,14 +255,22 @@ export async function GET(
   }
 
   try {
-    const state = await loadReactionState(
-      admin,
-      messageId,
-      user.id,
-    );
+    const state =
+      await loadReactionState(
+        admin,
+        messageId,
+        user.id,
+      );
 
     return NextResponse.json({
       message_id: messageId,
+      message: {
+        id: message.message.id,
+        sender_id:
+          message.message.sender_id,
+        created_at:
+          message.message.created_at,
+      },
       ...state,
     });
   } catch (error) {
@@ -260,7 +280,10 @@ export async function GET(
     );
 
     return NextResponse.json(
-      { error: "Unable to load message reactions." },
+      {
+        error:
+          "Unable to load message reactions.",
+      },
       { status: 500 },
     );
   }
@@ -277,7 +300,8 @@ export async function POST(
     }>;
   },
 ) {
-  const user = await getAuthenticatedUser();
+  const user =
+    await getAuthenticatedUser();
 
   if (!user) {
     return NextResponse.json(
@@ -286,16 +310,26 @@ export async function POST(
     );
   }
 
-  const parsedParams = paramsSchema.safeParse(await params);
+  const parsedParams =
+    paramsSchema.safeParse(
+      await params,
+    );
 
   if (!parsedParams.success) {
     return NextResponse.json(
-      { error: "Invalid conversation or message ID." },
+      {
+        error:
+          "Invalid conversation or message ID.",
+      },
       { status: 400 },
     );
   }
 
-  const { conversationId, messageId } = parsedParams.data;
+  const {
+    conversationId,
+    messageId,
+  } =
+    parsedParams.data;
 
   let body: unknown;
 
@@ -308,71 +342,88 @@ export async function POST(
     );
   }
 
-  const parsedBody = reactionSchema.safeParse(body);
+  const parsedBody =
+    reactionSchema.safeParse(body);
 
   if (!parsedBody.success) {
     return NextResponse.json(
       {
         error:
-          parsedBody.error.issues[0]?.message ??
+          parsedBody.error.issues[0]
+            ?.message ??
           "Invalid reaction.",
       },
       { status: 400 },
     );
   }
 
-  const admin = createAdminClient();
+  const admin =
+    createAdminClient();
 
-  const membership = await verifyConversationMembership(
-    admin,
-    conversationId,
-    user.id,
-  );
+  const membership =
+    await verifyConversationMembership(
+      admin,
+      conversationId,
+      user.id,
+    );
 
   if (!membership.ok) {
     return NextResponse.json(
       { error: membership.error },
       {
         status:
-          membership.error === "Conversation not found."
+          membership.error ===
+          "Conversation not found."
             ? 404
             : 500,
       },
     );
   }
 
-  const message = await verifyMessage(
-    admin,
-    conversationId,
-    messageId,
-  );
+  const message =
+    await verifyMessage(
+      admin,
+      conversationId,
+      messageId,
+    );
 
   if (!message.message) {
     return NextResponse.json(
-      { error: message.error ?? "Message not found." },
+      {
+        error:
+          message.error ??
+          "Message not found.",
+      },
       {
         status:
-          message.error === "Message not found."
+          message.error ===
+          "Message not found."
             ? 404
             : 500,
       },
     );
   }
 
-  const reactionType = parsedBody.data.reactionType;
+  const reactionType =
+    parsedBody.data.reactionType;
 
-  const { error: upsertError } = await admin
-    .from("message_reactions")
-    .upsert(
-      {
-        message_id: messageId,
-        user_id: user.id,
-        reaction_type: reactionType,
-      },
-      {
-        onConflict: "message_id,user_id",
-      },
-    );
+  const { error: upsertError } =
+    await admin
+      .from("message_reactions")
+      .upsert(
+        {
+          message_id:
+            messageId,
+          user_id:
+            user.id,
+          reaction_type:
+            reactionType,
+        },
+        {
+          onConflict:
+            "message_id,user_id",
+        },
+      );
 
   if (upsertError) {
     console.error(
@@ -381,17 +432,21 @@ export async function POST(
     );
 
     return NextResponse.json(
-      { error: "Unable to save the reaction." },
+      {
+        error:
+          "Unable to save the reaction.",
+      },
       { status: 500 },
     );
   }
 
   try {
-    const state = await loadReactionState(
-      admin,
-      messageId,
-      user.id,
-    );
+    const state =
+      await loadReactionState(
+        admin,
+        messageId,
+        user.id,
+      );
 
     return NextResponse.json({
       message_id: messageId,
@@ -404,7 +459,10 @@ export async function POST(
     );
 
     return NextResponse.json(
-      { error: "Reaction saved, but the updated state could not be loaded." },
+      {
+        error:
+          "Reaction saved, but the updated state could not be loaded.",
+      },
       { status: 500 },
     );
   }
@@ -421,7 +479,8 @@ export async function DELETE(
     }>;
   },
 ) {
-  const user = await getAuthenticatedUser();
+  const user =
+    await getAuthenticatedUser();
 
   if (!user) {
     return NextResponse.json(
@@ -430,59 +489,87 @@ export async function DELETE(
     );
   }
 
-  const parsedParams = paramsSchema.safeParse(await params);
+  const parsedParams =
+    paramsSchema.safeParse(
+      await params,
+    );
 
   if (!parsedParams.success) {
     return NextResponse.json(
-      { error: "Invalid conversation or message ID." },
+      {
+        error:
+          "Invalid conversation or message ID.",
+      },
       { status: 400 },
     );
   }
 
-  const { conversationId, messageId } = parsedParams.data;
-  const admin = createAdminClient();
-
-  const membership = await verifyConversationMembership(
-    admin,
+  const {
     conversationId,
-    user.id,
-  );
+    messageId,
+  } =
+    parsedParams.data;
+
+  const admin =
+    createAdminClient();
+
+  const membership =
+    await verifyConversationMembership(
+      admin,
+      conversationId,
+      user.id,
+    );
 
   if (!membership.ok) {
     return NextResponse.json(
       { error: membership.error },
       {
         status:
-          membership.error === "Conversation not found."
+          membership.error ===
+          "Conversation not found."
             ? 404
             : 500,
       },
     );
   }
 
-  const message = await verifyMessage(
-    admin,
-    conversationId,
-    messageId,
-  );
+  const message =
+    await verifyMessage(
+      admin,
+      conversationId,
+      messageId,
+    );
 
   if (!message.message) {
     return NextResponse.json(
-      { error: message.error ?? "Message not found." },
+      {
+        error:
+          message.error ??
+          "Message not found.",
+      },
       {
         status:
-          message.error === "Message not found."
+          message.error ===
+          "Message not found."
             ? 404
             : 500,
       },
     );
   }
 
-  const { error: deleteError } = await admin
+  const {
+    error: deleteError,
+  } = await admin
     .from("message_reactions")
     .delete()
-    .eq("message_id", messageId)
-    .eq("user_id", user.id);
+    .eq(
+      "message_id",
+      messageId,
+    )
+    .eq(
+      "user_id",
+      user.id,
+    );
 
   if (deleteError) {
     console.error(
@@ -491,17 +578,21 @@ export async function DELETE(
     );
 
     return NextResponse.json(
-      { error: "Unable to remove the reaction." },
+      {
+        error:
+          "Unable to remove the reaction.",
+      },
       { status: 500 },
     );
   }
 
   try {
-    const state = await loadReactionState(
-      admin,
-      messageId,
-      user.id,
-    );
+    const state =
+      await loadReactionState(
+        admin,
+        messageId,
+        user.id,
+      );
 
     return NextResponse.json({
       message_id: messageId,
