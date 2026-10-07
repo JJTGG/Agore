@@ -84,9 +84,9 @@ export async function GET(
 
   const { data: blockingRelationship, error: blockError } = await supabase
     .from("blocks")
-    .select("blocker, blocked")
+    .select("blocker_id, blocked_id")
     .or(
-      `and(blocker.eq.${user.id},blocked.eq.${userId}),and(blocker.eq.${userId},blocked.eq.${user.id})`,
+      `and(blocker_id.eq.${user.id},blocked_id.eq.${userId}),and(blocker_id.eq.${userId},blocked_id.eq.${user.id})`,
     )
     .limit(1);
 
