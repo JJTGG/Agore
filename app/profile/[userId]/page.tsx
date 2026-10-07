@@ -36,6 +36,7 @@ export default function ProfilePage() {
   const userId = params.userId;
 
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [isOwner, setIsOwner] = useState(false);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<
@@ -49,6 +50,7 @@ export default function ProfilePage() {
 
     setLoading(true);
     setError("");
+    setAvatarUrl(null);
 
     try {
       const response = await fetch(
@@ -67,16 +69,36 @@ export default function ProfilePage() {
         return;
       }
 
-      setProfile(data.profile);
+      const loadedProfile = data.profile as Profile;
+
+      setProfile(loadedProfile);
+
+      if (loadedProfile.avatar_path) {
+        const { data: signedAvatar, error: signedUrlError } =
+          await supabase.storage
+            .from("avatars")
+            .createSignedUrl(loadedProfile.avatar_path, 60 * 60);
+
+        if (signedUrlError) {
+          console.error(
+            "Failed to create Agore profile avatar signed URL:",
+            signedUrlError,
+          );
+          setAvatarUrl(null);
+        } else {
+          setAvatarUrl(signedAvatar.signedUrl);
+        }
+      }
 
       const {
         data: { user },
       } = await supabase.auth.getUser();
 
-      setIsOwner(user?.id === data.profile.id);
+      setIsOwner(user?.id === loadedProfile.id);
     } catch {
       setError("Unable to load this profile.");
       setProfile(null);
+      setAvatarUrl(null);
       setIsOwner(false);
     } finally {
       setLoading(false);
@@ -272,11 +294,21 @@ export default function ProfilePage() {
               <div className="border-b border-[#ebeae5] px-6 pb-6 pt-7 sm:px-8">
                 <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
                   <div className="flex items-start gap-4">
-                    <div
-                      aria-hidden="true"
-                      className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-[#e5ebff] text-xl font-bold text-[#2148b8]"
-                    >
-                      {initials || "A"}
+                    <div className="flex h-20 w-20 shrink-0 overflow-hidden rounded-full bg-[#e5ebff] text-xl font-bold text-[#2148b8]">
+                      {avatarUrl ? (
+                        <img
+                          src={avatarUrl}
+                          alt={`${profile.display_name}'s profile photo`}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <span
+                          aria-hidden="true"
+                          className="flex h-full w-full items-center justify-center"
+                        >
+                          {initials || "A"}
+                        </span>
+                      )}
                     </div>
 
                     <div className="min-w-0">
