@@ -256,6 +256,38 @@ export default function ConversationPage() {
     }
   }, [conversationId, router]);
 
+  const markConversationRead = useCallback(async () => {
+    if (!conversationId) {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `/api/conversations/${encodeURIComponent(
+          conversationId,
+        )}/read`,
+        {
+          method: "PATCH",
+        },
+      );
+
+      if (response.status === 401) {
+        router.push("/auth");
+        return;
+      }
+
+      if (!response.ok) {
+        console.warn(
+          "Agore conversation read state could not be updated.",
+        );
+      }
+    } catch {
+      console.warn(
+        "Agore conversation read state request failed.",
+      );
+    }
+  }, [conversationId, router]);
+
   const loadMessages = useCallback(
     async (manual = false) => {
       if (!conversationId) {
@@ -291,13 +323,15 @@ export default function ConversationPage() {
         setMessages(
           Array.isArray(data.messages) ? data.messages : [],
         );
+
+        void markConversationRead();
       } catch {
         setError("Unable to load messages.");
       } finally {
         setRefreshing(false);
       }
     },
-    [conversationId, router],
+    [conversationId, markConversationRead, router],
   );
 
   const loadGroupMembers = useCallback(async () => {
