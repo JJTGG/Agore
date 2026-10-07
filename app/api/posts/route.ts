@@ -49,6 +49,76 @@ const postSelect = `
   )
 `;
 
+const repostSelect = `
+  id,
+  post_id,
+  user_id,
+  created_at,
+  profiles!reposts_user_id_fkey (
+    display_name,
+    username,
+    avatar_path
+  )
+`;
+
+type Profile = {
+  display_name: string;
+  username: string;
+  avatar_path: string | null;
+};
+
+type PostRow = {
+  id: string;
+  author_id: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+  post_media: Array<{
+    id: string;
+    storage_path: string;
+    mime_type: string;
+    size_bytes: number;
+    width: number | null;
+    height: number | null;
+    sort_order: number;
+    created_at: string;
+  }> | null;
+  profiles: Profile | Profile[] | null;
+};
+
+type RepostRow = {
+  id: string;
+  post_id: string;
+  user_id: string;
+  created_at: string;
+  profiles: Profile | Profile[] | null;
+};
+
+function normalizeProfile(
+  profile: Profile | Profile[] | null,
+) {
+  if (!profile) {
+    return null;
+  }
+
+  return Array.isArray(profile)
+    ? profile[0] ?? null
+    : profile;
+}
+
+function normalizePost(post: PostRow) {
+  return {
+    ...post,
+    profiles: normalizeProfile(post.profiles),
+    post_media: [...(post.post_media ?? [])].sort(
+      (a, b) =>
+        a.sort_order - b.sort_order ||
+        new Date(a.created_at).getTime() -
+          new Date(b.created_at).getTime(),
+    ),
+  };
+}
+
 export async function GET(request: Request) {
   const supabase = await createClient();
 
@@ -87,20 +157,33 @@ export async function GET(request: Request) {
     );
   }
 
-  const {
-    data: posts,
-    error: postsError,
-  } = await supabase
-    .from("posts")
-    .select(postSelect)
-    .order("created_at", {
-      ascending: false,
-    })
-    .limit(parsedQuery.data.limit);
+  const limit = parsedQuery.data.limit;
+
+  const [
+    { data: posts, error: postsError },
+    { data: reposts, error: repostsError },
+  ] = await Promise.all([
+    supabase
+      .from("posts")
+      .select(postSelect)
+      .is("deleted_at", null)
+      .order("created_at", {
+        ascending: false,
+      })
+      .limit(limit),
+
+    supabase
+      .from("reposts")
+      .select(repostSelect)
+      .order("created_at", {
+        ascending: false,
+      })
+      .limit(limit),
+  ]);
 
   if (postsError) {
     console.error(
-      "Failed to load Agore feed:",
+      "Failed to load Agore feed posts:",
       postsError,
     );
 
@@ -113,16 +196,127 @@ export async function GET(request: Request) {
     );
   }
 
-  return NextResponse.json({
-    posts: (posts ?? []).map((post) => ({
-      ...post,
-      post_media: [...(post.post_media ?? [])].sort(
-        (a, b) =>
-          a.sort_order - b.sort_order ||
-          new Date(a.created_at).getTime() -
-            new Date(b.created_at).getTime(),
+  if (repostsError) {
+    console.error(
+      "Failed to load Agore repost activity:",
+      repostsError,
+    );
+
+    return NextResponse.json(
+      {
+        error:
+          "Unable to load the feed activity.",
+      },
+      { status: 500 },
+    );
+  }
+
+  const normalizedPosts =
+    ((posts ?? []) as PostRow[]).map(
+      normalizePost,
+    );
+
+  const repostRows =
+    (reposts ?? []) as RepostRow[];
+
+  const repostPostIds = [
+    ...new Set(
+      repostRows.map(
+        (repost) => repost.post_id,
       ),
+    ),
+  ];
+
+  let repostSourcePosts: PostRow[] = [];
+
+  if (repostPostIds.length > 0) {
+    const {
+      data: sourcePosts,
+      error: sourcePostsError,
+    } = await supabase
+      .from("posts")
+      .select(postSelect)
+      .in("id", repostPostIds)
+      .is("deleted_at", null);
+
+    if (sourcePostsError) {
+      console.error(
+        "Failed to load Agore repost source posts:",
+        sourcePostsError,
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            "Unable to load reposted content.",
+        },
+        { status: 500 },
+      );
+    }
+
+    repostSourcePosts =
+      (sourcePosts ?? []) as PostRow[];
+  }
+
+  const sourcePostMap = new Map(
+    repostSourcePosts.map((post) => [
+      post.id,
+      normalizePost(post),
+    ]),
+  );
+
+  const feedItems = [
+    ...normalizedPosts.map((post) => ({
+      ...post,
+      feed_at: post.created_at,
+      feed_context: {
+        type: "original" as const,
+      },
     })),
+
+    ...repostRows
+      .map((repost) => {
+        const sourcePost =
+          sourcePostMap.get(
+            repost.post_id,
+          );
+
+        if (!sourcePost) {
+          return null;
+        }
+
+        return {
+          ...sourcePost,
+          feed_at: repost.created_at,
+          feed_context: {
+            type: "repost" as const,
+            id: repost.id,
+            user_id: repost.user_id,
+            created_at: repost.created_at,
+            profiles:
+              normalizeProfile(
+                repost.profiles,
+              ),
+          },
+        };
+      })
+      .filter(
+        (
+          item,
+        ): item is NonNullable<
+          typeof item
+        > => item !== null,
+      ),
+  ]
+    .sort(
+      (a, b) =>
+        new Date(b.feed_at).getTime() -
+        new Date(a.feed_at).getTime(),
+    )
+    .slice(0, limit);
+
+  return NextResponse.json({
+    posts: feedItems,
   });
 }
 
@@ -204,12 +398,8 @@ export async function POST(request: Request) {
   return NextResponse.json(
     {
       post: {
-        ...post,
-        post_media: [...(post.post_media ?? [])].sort(
-          (a, b) =>
-            a.sort_order - b.sort_order ||
-            new Date(a.created_at).getTime() -
-              new Date(b.created_at).getTime(),
+        ...normalizePost(
+          post as PostRow,
         ),
       },
     },
