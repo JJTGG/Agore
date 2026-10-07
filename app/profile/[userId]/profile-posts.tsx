@@ -20,6 +20,7 @@ import PostMedia, {
   type PostMediaItem,
 } from "@/components/post-media";
 import PostInteractions from "@/app/post-interactions";
+import ProfileMedia from "./profile-media";
 import { createClient } from "@/lib/supabase/browser";
 
 type ProfileAuthor = {
@@ -225,9 +226,13 @@ function RepostCard({
           this profile
         </Link>
 
-        <span aria-hidden="true">·</span>
+        <span aria-hidden="true">
+          ·
+        </span>
 
-        <time dateTime={repost.reposted_at}>
+        <time
+          dateTime={repost.reposted_at}
+        >
           {formatPostDate(
             repost.reposted_at,
           )}
@@ -284,13 +289,20 @@ function RepostCard({
 
           <PostInteractions
             postId={repost.id}
-            initialContent={repost.content}
+            initialContent={
+              repost.content
+            }
             isOwner={
               viewerId !== null &&
-              viewerId === repost.author_id
+              viewerId ===
+                repost.author_id
             }
-            onPostUpdated={onPostUpdated}
-            onPostDeleted={onPostDeleted}
+            onPostUpdated={
+              onPostUpdated
+            }
+            onPostDeleted={
+              onPostDeleted
+            }
           />
         </div>
       </div>
@@ -315,11 +327,15 @@ export default function ProfilePosts({
   const [activeTab, setActiveTab] =
     useState<ProfileTab>("posts");
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] =
+    useState(true);
+
   const [repostsLoading, setRepostsLoading] =
     useState(false);
 
-  const [error, setError] = useState("");
+  const [error, setError] =
+    useState("");
+
   const [repostsLoaded, setRepostsLoaded] =
     useState(false);
 
@@ -327,9 +343,12 @@ export default function ProfilePosts({
     async () => {
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } =
+        await supabase.auth.getUser();
 
-      setViewerId(user?.id ?? null);
+      setViewerId(
+        user?.id ?? null,
+      );
     },
     [],
   );
@@ -344,15 +363,16 @@ export default function ProfilePosts({
       setError("");
 
       try {
-        const response = await fetch(
-          `/api/users/${encodeURIComponent(
-            userId,
-          )}/posts?limit=50`,
-          {
-            method: "GET",
-            cache: "no-store",
-          },
-        );
+        const response =
+          await fetch(
+            `/api/users/${encodeURIComponent(
+              userId,
+            )}/posts?limit=50`,
+            {
+              method: "GET",
+              cache: "no-store",
+            },
+          );
 
         const data =
           (await response.json()) as PostsResponse;
@@ -366,15 +386,17 @@ export default function ProfilePosts({
 
         setPosts(
           Array.isArray(data.posts)
-            ? data.posts.map((post) => ({
-                ...post,
-                post_media:
-                  Array.isArray(
-                    post.post_media,
-                  )
-                    ? post.post_media
-                    : [],
-              }))
+            ? data.posts.map(
+                (post) => ({
+                  ...post,
+                  post_media:
+                    Array.isArray(
+                      post.post_media,
+                    )
+                      ? post.post_media
+                      : [],
+                }),
+              )
             : [],
         );
       } catch (requestError) {
@@ -383,6 +405,7 @@ export default function ProfilePosts({
             ? requestError.message
             : "Unable to load posts.",
         );
+
         setPosts([]);
       } finally {
         setLoading(false);
@@ -401,15 +424,16 @@ export default function ProfilePosts({
       setError("");
 
       try {
-        const response = await fetch(
-          `/api/users/${encodeURIComponent(
-            userId,
-          )}/reposts?limit=50`,
-          {
-            method: "GET",
-            cache: "no-store",
-          },
-        );
+        const response =
+          await fetch(
+            `/api/users/${encodeURIComponent(
+              userId,
+            )}/reposts?limit=50`,
+            {
+              method: "GET",
+              cache: "no-store",
+            },
+          );
 
         const data =
           (await response.json()) as RepostsResponse;
@@ -422,7 +446,9 @@ export default function ProfilePosts({
         }
 
         setReposts(
-          Array.isArray(data.reposts)
+          Array.isArray(
+            data.reposts,
+          )
             ? data.reposts.map(
                 (repost) => ({
                   ...repost,
@@ -444,6 +470,7 @@ export default function ProfilePosts({
             ? requestError.message
             : "Unable to load reposts.",
         );
+
         setReposts([]);
       } finally {
         setRepostsLoading(false);
@@ -455,13 +482,21 @@ export default function ProfilePosts({
   useEffect(() => {
     void loadViewer();
     void loadPosts();
-  }, [loadPosts, loadViewer]);
+  }, [
+    loadPosts,
+    loadViewer,
+  ]);
 
   useEffect(() => {
-    if (activeTab === "reposts") {
+    if (
+      activeTab === "reposts"
+    ) {
       void loadReposts();
     }
-  }, [activeTab, loadReposts]);
+  }, [
+    activeTab,
+    loadReposts,
+  ]);
 
   const mediaPosts = useMemo(
     () =>
@@ -475,54 +510,77 @@ export default function ProfilePosts({
     [posts],
   );
 
+  const mediaCount = useMemo(
+    () =>
+      mediaPosts.reduce(
+        (total, post) =>
+          total +
+          post.post_media.length,
+        0,
+      ),
+    [mediaPosts],
+  );
+
   function handlePostUpdated(
     postId: string,
     updatedContent: string,
   ) {
-    setPosts((currentPosts) =>
-      currentPosts.map((post) =>
-        post.id === postId
-          ? {
-              ...post,
-              content: updatedContent,
-              updated_at:
-                new Date().toISOString(),
-            }
-          : post,
-      ),
+    setPosts(
+      (currentPosts) =>
+        currentPosts.map(
+          (post) =>
+            post.id === postId
+              ? {
+                  ...post,
+                  content:
+                    updatedContent,
+                  updated_at:
+                    new Date().toISOString(),
+                }
+              : post,
+        ),
     );
 
-    setReposts((currentReposts) =>
-      currentReposts.map((post) =>
-        post.id === postId
-          ? {
-              ...post,
-              content: updatedContent,
-              updated_at:
-                new Date().toISOString(),
-            }
-          : post,
-      ),
+    setReposts(
+      (currentReposts) =>
+        currentReposts.map(
+          (post) =>
+            post.id === postId
+              ? {
+                  ...post,
+                  content:
+                    updatedContent,
+                  updated_at:
+                    new Date().toISOString(),
+                }
+              : post,
+        ),
     );
   }
 
   function handlePostDeleted(
     postId: string,
   ) {
-    setPosts((currentPosts) =>
-      currentPosts.filter(
-        (post) => post.id !== postId,
-      ),
+    setPosts(
+      (currentPosts) =>
+        currentPosts.filter(
+          (post) =>
+            post.id !== postId,
+        ),
     );
 
-    setReposts((currentReposts) =>
-      currentReposts.filter(
-        (post) => post.id !== postId,
-      ),
+    setReposts(
+      (currentReposts) =>
+        currentReposts.filter(
+          (post) =>
+            post.id !== postId,
+        ),
     );
   }
 
-  function selectTab(tab: ProfileTab) {
+  function selectTab(
+    tab: ProfileTab,
+  ) {
     setError("");
     setActiveTab(tab);
   }
@@ -534,12 +592,14 @@ export default function ProfilePosts({
 
         <div className="overflow-hidden rounded-[1.75rem] border border-[var(--border)] bg-[var(--surface)]">
           <div className="grid grid-cols-3 border-b border-[var(--border)]">
-            {[0, 1, 2].map((item) => (
-              <div
-                key={item}
-                className="h-12 animate-pulse bg-[var(--surface-muted)]"
-              />
-            ))}
+            {[0, 1, 2].map(
+              (item) => (
+                <div
+                  key={item}
+                  className="h-12 animate-pulse bg-[var(--surface-muted)]"
+                />
+              ),
+            )}
           </div>
 
           <div className="space-y-4 p-5">
@@ -551,7 +611,10 @@ export default function ProfilePosts({
     );
   }
 
-  if (error && posts.length === 0) {
+  if (
+    error &&
+    posts.length === 0
+  ) {
     return (
       <section className="mt-7 rounded-[1.75rem] border border-[var(--border)] bg-[var(--surface)] p-6">
         <p className="text-sm font-medium text-[var(--danger)]">
@@ -563,8 +626,12 @@ export default function ProfilePosts({
           onClick={() => {
             void loadPosts();
 
-            if (repostsLoaded) {
-              setRepostsLoaded(false);
+            if (
+              repostsLoaded
+            ) {
+              setRepostsLoaded(
+                false,
+              );
             }
           }}
           className="mt-4 rounded-full bg-[var(--foreground)] px-4 py-2 text-sm font-semibold text-[var(--background)] transition hover:bg-[var(--accent)] hover:text-white"
@@ -632,7 +699,8 @@ export default function ProfilePosts({
               </span>
             ) : null}
 
-            {activeTab === "posts" ? (
+            {activeTab ===
+            "posts" ? (
               <span className="absolute inset-x-5 bottom-0 h-0.5 rounded-full bg-[var(--accent)]" />
             ) : null}
           </button>
@@ -657,13 +725,14 @@ export default function ProfilePosts({
 
             Media
 
-            {mediaPosts.length > 0 ? (
+            {mediaCount > 0 ? (
               <span className="rounded-full bg-[var(--background)] px-1.5 py-0.5 text-[10px] text-[var(--muted)]">
-                {mediaPosts.length}
+                {mediaCount}
               </span>
             ) : null}
 
-            {activeTab === "media" ? (
+            {activeTab ===
+            "media" ? (
               <span className="absolute inset-x-5 bottom-0 h-0.5 rounded-full bg-[var(--accent)]" />
             ) : null}
           </button>
@@ -672,14 +741,16 @@ export default function ProfilePosts({
             type="button"
             role="tab"
             aria-selected={
-              activeTab === "reposts"
+              activeTab ===
+              "reposts"
             }
             onClick={() =>
               selectTab("reposts")
             }
             className={[
               "relative flex items-center justify-center gap-2 px-3 py-4 text-sm font-semibold transition",
-              activeTab === "reposts"
+              activeTab ===
+              "reposts"
                 ? "text-[var(--foreground)]"
                 : "text-[var(--muted)] hover:text-[var(--foreground)]",
             ].join(" ")}
@@ -694,13 +765,15 @@ export default function ProfilePosts({
               </span>
             ) : null}
 
-            {activeTab === "reposts" ? (
+            {activeTab ===
+            "reposts" ? (
               <span className="absolute inset-x-5 bottom-0 h-0.5 rounded-full bg-[var(--accent)]" />
             ) : null}
           </button>
         </div>
 
-        {activeTab === "reposts" &&
+        {activeTab ===
+          "reposts" &&
         repostsLoading ? (
           <div className="flex min-h-52 items-center justify-center px-6">
             <div className="flex items-center gap-2 text-sm text-[var(--muted)]">
@@ -711,34 +784,39 @@ export default function ProfilePosts({
               Loading reposts…
             </div>
           </div>
-        ) : activeTab !== "reposts" &&
-          activePosts.length === 0 ? (
+        ) : activeTab ===
+            "media" ? (
+          <ProfileMedia
+            posts={mediaPosts}
+          />
+        ) : activeTab !==
+            "reposts" &&
+          activePosts.length ===
+            0 ? (
           <div className="px-6 py-12 text-center">
             <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]">
-              {activeTab === "media" ? (
-                <ImageIcon size={20} />
-              ) : (
-                <MessageCircle size={20} />
-              )}
+              <MessageCircle
+                size={20}
+              />
             </span>
 
             <p className="mt-4 text-sm font-medium text-[var(--foreground)]">
-              {activeTab === "media"
-                ? "No media yet."
-                : "No posts yet."}
+              No posts yet.
             </p>
 
             <p className="mt-1 text-sm text-[var(--muted)]">
-              {activeTab === "media"
-                ? "Media shared by this profile will appear here."
-                : "Conversation starts here."}
+              Conversation starts here.
             </p>
           </div>
-        ) : activeTab === "reposts" &&
-          reposts.length === 0 ? (
+        ) : activeTab ===
+            "reposts" &&
+          reposts.length ===
+            0 ? (
           <div className="px-6 py-12 text-center">
             <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]">
-              <Repeat2 size={20} />
+              <Repeat2
+                size={20}
+              />
             </span>
 
             <p className="mt-4 text-sm font-medium text-[var(--foreground)]">
@@ -751,39 +829,30 @@ export default function ProfilePosts({
           </div>
         ) : (
           <div className="space-y-4 p-4 sm:p-5">
-            {activeTab ===
-            "reposts"
-              ? reposts.map(
-                  (repost) => (
-                    <RepostCard
-                      key={repost.repost_id}
-                      repost={repost}
-                      viewerId={viewerId}
-                      profileId={userId}
-                      onPostUpdated={
-                        handlePostUpdated
-                      }
-                      onPostDeleted={
-                        handlePostDeleted
-                      }
-                    />
-                  ),
-                )
-              : activePosts.map(
-                  (post) => (
-                    <PostCard
-                      key={post.id}
-                      post={post}
-                      viewerId={viewerId}
-                      onPostUpdated={
-                        handlePostUpdated
-                      }
-                      onPostDeleted={
-                        handlePostDeleted
-                      }
-                    />
-                  ),
-                )}
+            {reposts.map(
+              (repost) => (
+                <RepostCard
+                  key={
+                    repost.repost_id
+                  }
+                  repost={
+                    repost
+                  }
+                  viewerId={
+                    viewerId
+                  }
+                  profileId={
+                    userId
+                  }
+                  onPostUpdated={
+                    handlePostUpdated
+                  }
+                  onPostDeleted={
+                    handlePostDeleted
+                  }
+                />
+              ),
+            )}
           </div>
         )}
 
