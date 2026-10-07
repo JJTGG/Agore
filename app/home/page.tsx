@@ -6,9 +6,11 @@ import {
   Home,
   MessageCircle,
   Settings,
+  Sparkles,
   UserRound,
 } from "lucide-react";
 
+import AgoreAvatar from "@/components/agore-avatar";
 import PostFeed from "./post-feed";
 import { createClient } from "@/lib/supabase/server";
 
@@ -25,7 +27,7 @@ export default async function HomePage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("display_name, username")
+    .select("display_name, username, avatar_path")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -42,17 +44,6 @@ export default async function HomePage() {
 
     redirect("/auth");
   }
-
-  const initials =
-    profile.display_name
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map(
-        (part: string) =>
-          part[0]?.toUpperCase() ?? "",
-      )
-      .join("") || "A";
 
   const firstName =
     profile.display_name.split(/\s+/)[0] ||
@@ -90,46 +81,26 @@ export default async function HomePage() {
               </div>
             </Link>
 
-            <nav className="hidden items-center gap-1 md:flex">
-              <Link
-                href="/home"
-                className="rounded-full bg-[var(--surface)] px-4 py-2.5 text-sm font-semibold shadow-sm ring-1 ring-[var(--border)]"
-              >
-                Home
-              </Link>
-
-              <Link
-                href="/app/explore"
-                className="rounded-full px-4 py-2.5 text-sm font-medium text-[var(--muted)] transition hover:bg-[var(--surface)] hover:text-[var(--foreground)]"
-              >
-                Explore
-              </Link>
-
-              <Link
-                href="/messages"
-                className="rounded-full px-4 py-2.5 text-sm font-medium text-[var(--muted)] transition hover:bg-[var(--surface)] hover:text-[var(--foreground)]"
-              >
-                Messages
-              </Link>
-            </nav>
-
             <div className="flex items-center gap-2">
               <Link
                 href={profilePath}
-                className="flex items-center gap-2.5 rounded-full border border-[var(--border)] bg-[var(--surface)] py-1.5 pl-1.5 pr-3 transition hover:border-[var(--accent)]"
+                className="group flex items-center gap-2.5 rounded-full border border-[var(--border)] bg-[var(--surface)] py-1.5 pl-1.5 pr-3 transition hover:border-[var(--accent)]"
               >
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--accent-soft)] text-xs font-bold text-[var(--accent)]">
-                  {initials}
-                </span>
+                <AgoreAvatar
+                  avatarPath={profile.avatar_path}
+                  name={profile.display_name}
+                  className="h-8 w-8"
+                  textClassName="text-[10px]"
+                />
 
-                <span className="hidden max-w-32 truncate text-sm font-semibold sm:block">
+                <span className="hidden max-w-36 truncate text-sm font-semibold sm:block">
                   {profile.display_name}
                 </span>
               </Link>
 
               <Link
                 href="/settings"
-                className="hidden h-10 w-10 items-center justify-center rounded-full text-[var(--muted)] transition hover:bg-[var(--surface)] hover:text-[var(--foreground)] sm:flex"
+                className="flex h-10 w-10 items-center justify-center rounded-full text-[var(--muted)] transition hover:bg-[var(--surface)] hover:text-[var(--foreground)]"
                 aria-label="Settings"
               >
                 <Settings size={18} />
@@ -145,45 +116,27 @@ export default async function HomePage() {
               </form>
             </div>
           </div>
-
-          <nav className="flex gap-2 overflow-x-auto pb-3 md:hidden">
-            <Link
-              href="/home"
-              className="shrink-0 rounded-full bg-[var(--surface)] px-4 py-2 text-sm font-semibold shadow-sm"
-            >
-              Home
-            </Link>
-
-            <Link
-              href="/app/explore"
-              className="shrink-0 rounded-full border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--muted)]"
-            >
-              Explore
-            </Link>
-
-            <Link
-              href="/messages"
-              className="shrink-0 rounded-full border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--muted)]"
-            >
-              Messages
-            </Link>
-
-            <Link
-              href={profilePath}
-              className="shrink-0 rounded-full border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--muted)]"
-            >
-              Profile
-            </Link>
-          </nav>
         </header>
 
         <div className="grid gap-8 py-6 lg:grid-cols-[210px_minmax(0,1fr)_250px] lg:gap-9 lg:py-8">
           <aside className="hidden lg:block">
             <div className="sticky top-[104px] space-y-5">
               <section>
-                <p className="px-3 text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--muted)]">
-                  Your space
-                </p>
+                <div className="flex items-end justify-between px-3">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--muted)]">
+                      Navigate
+                    </p>
+
+                    <p className="mt-1 text-sm font-semibold">
+                      Your space
+                    </p>
+                  </div>
+
+                  <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--accent)]">
+                    01
+                  </span>
+                </div>
 
                 <nav className="mt-3 space-y-1">
                   <Link
@@ -217,20 +170,34 @@ export default async function HomePage() {
                     <UserRound size={17} />
                     Profile
                   </Link>
+
+                  <Link
+                    href="/settings"
+                    className="flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-medium text-[var(--muted)] transition hover:bg-[var(--surface)] hover:text-[var(--foreground)]"
+                  >
+                    <Settings size={17} />
+                    Settings
+                  </Link>
                 </nav>
               </section>
 
-              <section className="overflow-hidden rounded-[1.7rem] border border-[var(--border)] bg-[var(--surface)]">
-                <div className="relative bg-[var(--foreground)] px-4 py-4 text-[var(--background)]">
-                  <div className="absolute -right-4 -top-8 h-20 w-20 rounded-full bg-[var(--accent)] opacity-70" />
+              <section className="overflow-hidden rounded-[1.8rem] border border-[var(--border)] bg-[var(--surface)]">
+                <div className="relative overflow-hidden bg-[var(--foreground)] px-4 py-5 text-[var(--background)]">
+                  <div className="absolute -right-6 -top-8 h-24 w-24 rounded-full border-[12px] border-[var(--accent)] opacity-80" />
+                  <div className="absolute bottom-[-20px] left-[-20px] h-16 w-16 rounded-full bg-[var(--accent)] opacity-35" />
 
                   <div className="relative">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] opacity-60">
+                    <Sparkles
+                      size={17}
+                      className="text-[var(--accent)]"
+                    />
+
+                    <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.18em] opacity-60">
                       Agoré note
                     </p>
 
                     <p className="mt-2 text-sm font-semibold leading-5">
-                      A place for thoughts to meet people.
+                      Good spaces are built one conversation at a time.
                     </p>
                   </div>
                 </div>
@@ -254,64 +221,94 @@ export default async function HomePage() {
           </aside>
 
           <section className="min-w-0">
-            <section className="relative mb-7 overflow-hidden rounded-[2rem] border border-[var(--border)] bg-[var(--surface)]">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_92%_8%,var(--accent-soft),transparent_31%)]" />
+            <section className="relative mb-7 overflow-hidden rounded-[2.2rem] border border-[var(--border)] bg-[var(--surface)]">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_88%_12%,var(--accent-soft),transparent_29%)]" />
 
-              <div className="absolute -right-12 bottom-[-85px] h-52 w-52 rounded-full border-[26px] border-[var(--accent-soft)] opacity-80" />
+              <div className="absolute right-[-70px] top-[-90px] h-64 w-64 rounded-full border-[34px] border-[var(--accent-soft)] opacity-80" />
 
-              <div className="relative px-5 py-7 sm:px-8 sm:py-9">
-                <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_200px] lg:gap-10">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full bg-[var(--accent)]" />
+              <div className="absolute bottom-[-90px] left-[38%] h-52 w-52 rounded-full border border-[var(--border)] opacity-60" />
 
-                      <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--accent)]">
-                        Your Agoré
-                      </p>
-                    </div>
+              <div className="relative grid lg:grid-cols-[minmax(0,1fr)_230px]">
+                <div className="px-5 py-8 sm:px-8 sm:py-10 lg:px-10 lg:py-12">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full bg-[var(--accent)]" />
 
-                    <h1 className="mt-4 max-w-2xl text-[2.7rem] font-semibold leading-[0.97] tracking-[-0.065em] sm:text-5xl lg:text-[4rem]">
-                      Good to see you,
-                      <br />
-                      {firstName}.
-                    </h1>
-
-                    <p className="mt-5 max-w-xl text-[15px] leading-7 text-[var(--muted)] sm:text-base sm:leading-7">
-                      See what people are saying, discover something new, and
-                      add your own voice to the space.
+                    <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--accent)]">
+                      Your Agoré
                     </p>
                   </div>
 
-                  <div className="flex flex-col justify-between border-l border-[var(--border)] pl-5">
-                    <div>
-                      <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--muted)]">
-                        You
-                      </p>
+                  <h1 className="mt-5 max-w-3xl text-[2.8rem] font-semibold leading-[0.94] tracking-[-0.07em] sm:text-5xl lg:text-[4.4rem]">
+                    Good to see you,
+                    <br />
+                    <span className="text-[var(--accent)]">
+                      {firstName}.
+                    </span>
+                  </h1>
 
-                      <p className="mt-2 text-lg font-semibold tracking-[-0.03em]">
-                        {profile.display_name}
-                      </p>
+                  <p className="mt-6 max-w-xl text-[15px] leading-7 text-[var(--muted)] sm:text-base sm:leading-7">
+                    See what people are saying, find something worth
+                    following, and add your own voice to the room.
+                  </p>
 
-                      <p className="mt-1 text-sm text-[var(--muted)]">
-                        @{profile.username}
-                      </p>
-                    </div>
-
+                  <div className="mt-7 flex flex-wrap gap-2">
                     <Link
-                      href={profilePath}
-                      className="mt-6 inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--accent)] transition hover:opacity-70"
+                      href="/app/explore"
+                      className="inline-flex items-center gap-2 rounded-full bg-[var(--foreground)] px-4 py-2.5 text-sm font-semibold text-[var(--background)] transition hover:bg-[var(--accent)] hover:text-white"
                     >
-                      View profile
+                      Explore
                       <ArrowUpRight size={15} />
                     </Link>
+
+                    <Link
+                      href="/messages"
+                      className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm font-semibold text-[var(--foreground)] transition hover:border-[var(--accent)] hover:bg-[var(--surface-muted)]"
+                    >
+                      Messages
+                      <MessageCircle size={15} />
+                    </Link>
                   </div>
+                </div>
+
+                <div className="relative flex flex-col justify-between overflow-hidden border-t border-[var(--border)] bg-[var(--foreground)] px-6 py-7 text-[var(--background)] lg:border-l lg:border-t-0 lg:px-7 lg:py-8">
+                  <div className="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-[var(--accent)] opacity-70" />
+                  <div className="absolute bottom-[-34px] left-[-34px] h-24 w-24 rounded-full border-[14px] border-[var(--accent)] opacity-30" />
+
+                  <div className="relative">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] opacity-50">
+                      You are here
+                    </p>
+
+                    <AgoreAvatar
+                      avatarPath={profile.avatar_path}
+                      name={profile.display_name}
+                      className="mt-5 h-16 w-16 border-2 border-[var(--background)]/20"
+                      textClassName="text-lg"
+                    />
+
+                    <p className="mt-4 text-lg font-semibold tracking-[-0.03em]">
+                      {profile.display_name}
+                    </p>
+
+                    <p className="mt-1 text-sm opacity-55">
+                      @{profile.username}
+                    </p>
+                  </div>
+
+                  <Link
+                    href={profilePath}
+                    className="relative mt-8 inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--accent)] transition hover:text-[var(--accent-strong)]"
+                  >
+                    Open profile
+                    <ArrowUpRight size={15} />
+                  </Link>
                 </div>
               </div>
 
               <div className="relative grid border-t border-[var(--border)] sm:grid-cols-3">
                 <div className="px-5 py-4 sm:px-6">
                   <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--accent)]">
-                    Share
+                    01 / Share
                   </p>
 
                   <p className="mt-1.5 text-sm font-semibold">
@@ -321,7 +318,7 @@ export default async function HomePage() {
 
                 <div className="border-t border-[var(--border)] px-5 py-4 sm:border-l sm:border-t-0 sm:px-6">
                   <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--accent)]">
-                    Discover
+                    02 / Discover
                   </p>
 
                   <p className="mt-1.5 text-sm font-semibold">
@@ -331,7 +328,7 @@ export default async function HomePage() {
 
                 <div className="border-t border-[var(--border)] px-5 py-4 sm:border-l sm:border-t-0 sm:px-6">
                   <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--accent)]">
-                    Converse
+                    03 / Converse
                   </p>
 
                   <p className="mt-1.5 text-sm font-semibold">
@@ -346,18 +343,34 @@ export default async function HomePage() {
 
           <aside className="hidden lg:block">
             <div className="sticky top-[104px] space-y-5">
-              <section className="relative overflow-hidden rounded-[1.7rem] border border-[var(--border)] bg-[var(--surface)] p-5">
+              <section className="relative overflow-hidden rounded-[1.8rem] border border-[var(--border)] bg-[var(--surface)] p-5">
                 <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-[var(--accent-soft)]" />
 
                 <div className="relative">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--muted)]">
-                    Your corner
-                  </p>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--muted)]">
+                        Your corner
+                      </p>
 
-                  <div className="mt-4 flex items-center gap-3">
-                    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-sm font-bold text-white">
-                      {initials}
-                    </span>
+                      <p className="mt-1 text-sm font-semibold">
+                        Keep your presence close.
+                      </p>
+                    </div>
+
+                    <UserRound
+                      size={18}
+                      className="text-[var(--accent)]"
+                    />
+                  </div>
+
+                  <div className="mt-5 flex items-center gap-3">
+                    <AgoreAvatar
+                      avatarPath={profile.avatar_path}
+                      name={profile.display_name}
+                      className="h-12 w-12"
+                      textClassName="text-sm"
+                    />
 
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold">
@@ -379,8 +392,8 @@ export default async function HomePage() {
                 </div>
               </section>
 
-              <section className="rounded-[1.7rem] border border-[var(--border)] bg-[var(--surface)] p-5">
-                <div className="flex items-center justify-between gap-4">
+              <section className="overflow-hidden rounded-[1.8rem] border border-[var(--border)] bg-[var(--surface)]">
+                <div className="flex items-center justify-between px-5 py-5">
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--muted)]">
                       Move around
@@ -397,13 +410,19 @@ export default async function HomePage() {
                   />
                 </div>
 
-                <div className="mt-5 space-y-2">
+                <div className="border-t border-[var(--border)]">
                   <Link
                     href="/app/explore"
-                    className="group flex items-center justify-between rounded-2xl bg-[var(--background)] px-3.5 py-3 transition hover:bg-[var(--surface-muted)]"
+                    className="group flex items-center justify-between border-b border-[var(--border)] px-5 py-4 transition hover:bg-[var(--background)]"
                   >
-                    <span className="text-sm font-medium">
-                      Discover people & posts
+                    <span>
+                      <span className="block text-sm font-semibold">
+                        Discover
+                      </span>
+
+                      <span className="mt-1 block text-xs text-[var(--muted)]">
+                        People and posts
+                      </span>
                     </span>
 
                     <ArrowUpRight
@@ -414,10 +433,16 @@ export default async function HomePage() {
 
                   <Link
                     href="/messages"
-                    className="group flex items-center justify-between rounded-2xl bg-[var(--background)] px-3.5 py-3 transition hover:bg-[var(--surface-muted)]"
+                    className="group flex items-center justify-between border-b border-[var(--border)] px-5 py-4 transition hover:bg-[var(--background)]"
                   >
-                    <span className="text-sm font-medium">
-                      Continue a conversation
+                    <span>
+                      <span className="block text-sm font-semibold">
+                        Converse
+                      </span>
+
+                      <span className="mt-1 block text-xs text-[var(--muted)]">
+                        Continue a conversation
+                      </span>
                     </span>
 
                     <ArrowUpRight
@@ -428,10 +453,16 @@ export default async function HomePage() {
 
                   <Link
                     href="/settings"
-                    className="group flex items-center justify-between rounded-2xl bg-[var(--background)] px-3.5 py-3 transition hover:bg-[var(--surface-muted)]"
+                    className="group flex items-center justify-between px-5 py-4 transition hover:bg-[var(--background)]"
                   >
-                    <span className="text-sm font-medium">
-                      Tune your space
+                    <span>
+                      <span className="block text-sm font-semibold">
+                        Settings
+                      </span>
+
+                      <span className="mt-1 block text-xs text-[var(--muted)]">
+                        Tune your space
+                      </span>
                     </span>
 
                     <Settings
@@ -442,12 +473,19 @@ export default async function HomePage() {
                 </div>
               </section>
 
-              <section className="rounded-[1.7rem] border border-[var(--accent)]/20 bg-[var(--accent-soft)] p-5">
-                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--accent)]">
-                  Agoré thought
-                </p>
+              <section className="rounded-[1.8rem] border border-[var(--accent)]/25 bg-[var(--accent-soft)] p-5">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--accent)]">
+                    Agoré thought
+                  </p>
 
-                <p className="mt-2 text-sm font-semibold leading-6">
+                  <Sparkles
+                    size={15}
+                    className="text-[var(--accent)]"
+                  />
+                </div>
+
+                <p className="mt-3 text-sm font-semibold leading-6">
                   You don’t need a big audience to start a good conversation.
                 </p>
 
@@ -525,7 +563,12 @@ export default async function HomePage() {
             href={profilePath}
             className="flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-2 text-[var(--muted)] transition hover:bg-[var(--background)] hover:text-[var(--foreground)]"
           >
-            <UserRound size={18} />
+            <AgoreAvatar
+              avatarPath={profile.avatar_path}
+              name={profile.display_name}
+              className="h-[18px] w-[18px]"
+              textClassName="text-[6px]"
+            />
 
             <span className="text-[10px] font-semibold">
               Profile
