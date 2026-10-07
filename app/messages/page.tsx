@@ -120,17 +120,6 @@ function getConversationSubtitle(conversation: Conversation) {
     : "Direct conversation";
 }
 
-function getInitials(value: string) {
-  return (
-    value
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((part) => part[0]?.toUpperCase() ?? "")
-      .join("") || "A"
-  );
-}
-
 export default function MessagesPage() {
   const router = useRouter();
 
@@ -972,12 +961,12 @@ export default function MessagesPage() {
                       disabled={openingDirect}
                       className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      <div
-                        aria-hidden="true"
-                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--accent-soft)] text-xs font-bold text-[var(--accent)]"
-                      >
-                        {getInitials(person.display_name)}
-                      </div>
+                      <AgoreAvatar
+                        avatarPath={person.avatar_path}
+                        name={person.display_name}
+                        className="h-11 w-11 shrink-0"
+                        textClassName="text-xs"
+                      />
 
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-semibold">
@@ -1209,12 +1198,12 @@ export default function MessagesPage() {
                             disabled={creatingGroup}
                             className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-[var(--surface)] disabled:cursor-not-allowed disabled:opacity-60"
                           >
-                            <div
-                              aria-hidden="true"
-                              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--accent-soft)] text-xs font-bold text-[var(--accent)]"
-                            >
-                              {getInitials(person.display_name)}
-                            </div>
+                            <AgoreAvatar
+                              avatarPath={person.avatar_path}
+                              name={person.display_name}
+                              className="h-10 w-10 shrink-0"
+                              textClassName="text-xs"
+                            />
 
                             <div className="min-w-0 flex-1">
                               <p className="truncate text-sm font-semibold">
