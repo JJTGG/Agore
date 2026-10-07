@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import PostFeed from "./post-feed";
 import { createClient } from "@/lib/supabase/server";
@@ -34,24 +35,34 @@ export default async function HomePage() {
   return (
     <main className="min-h-screen bg-[var(--background)]">
       <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-5 py-6 sm:px-8">
-        <header className="flex items-center justify-between border-b border-[var(--border)] pb-5">
-          <div>
+        <header className="flex items-center justify-between gap-4 border-b border-[var(--border)] pb-5">
+          <div className="min-w-0">
             <p className="text-xl font-semibold tracking-[-0.03em]">
               Agoré
             </p>
-            <p className="mt-1 text-sm text-[var(--muted)]">
+
+            <p className="mt-1 truncate text-sm text-[var(--muted)]">
               Welcome back, {profile.display_name}.
             </p>
           </div>
 
-          <form action={signOut}>
-            <button
-              type="submit"
+          <div className="flex shrink-0 items-center gap-2">
+            <Link
+              href={`/profile/${encodeURIComponent(user.id)}`}
               className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-medium transition hover:border-[var(--accent)]"
             >
-              Sign out
-            </button>
-          </form>
+              Profile
+            </Link>
+
+            <form action={signOut}>
+              <button
+                type="submit"
+                className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-medium transition hover:border-[var(--accent)]"
+              >
+                Sign out
+              </button>
+            </form>
+          </div>
         </header>
 
         <section className="py-10 sm:py-14">
@@ -74,7 +85,12 @@ export default async function HomePage() {
         </section>
 
         <footer className="border-t border-[var(--border)] py-5 text-sm text-[var(--muted)]">
-          @{profile.username}
+          <Link
+            href={`/profile/${encodeURIComponent(user.id)}`}
+            className="transition hover:text-[var(--foreground)]"
+          >
+            @{profile.username}
+          </Link>
         </footer>
       </div>
     </main>
