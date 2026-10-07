@@ -90,7 +90,7 @@ export default async function HomePage() {
               </div>
             </Link>
 
-            <nav className="hidden items-center gap-2 md:flex">
+            <nav className="hidden items-center gap-1 md:flex">
               <Link
                 href="/home"
                 className="rounded-full bg-[var(--surface)] px-4 py-2.5 text-sm font-semibold shadow-sm ring-1 ring-[var(--border)]"
@@ -179,13 +179,11 @@ export default async function HomePage() {
 
         <div className="grid gap-8 py-6 lg:grid-cols-[210px_minmax(0,1fr)_250px] lg:gap-9 lg:py-8">
           <aside className="hidden lg:block">
-            <div className="sticky top-[104px] space-y-6">
+            <div className="sticky top-[104px] space-y-5">
               <section>
-                <div className="px-3">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--muted)]">
-                    Your space
-                  </p>
-                </div>
+                <p className="px-3 text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--muted)]">
+                  Your space
+                </p>
 
                 <nav className="mt-3 space-y-1">
                   <Link
@@ -222,27 +220,32 @@ export default async function HomePage() {
                 </nav>
               </section>
 
-              <section className="overflow-hidden rounded-[1.6rem] border border-[var(--border)] bg-[var(--surface)]">
-                <div className="bg-[var(--foreground)] px-4 py-4 text-[var(--background)]">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] opacity-60">
-                    Agoré note
-                  </p>
+              <section className="overflow-hidden rounded-[1.7rem] border border-[var(--border)] bg-[var(--surface)]">
+                <div className="relative bg-[var(--foreground)] px-4 py-4 text-[var(--background)]">
+                  <div className="absolute -right-4 -top-8 h-20 w-20 rounded-full bg-[var(--accent)] opacity-70" />
 
-                  <p className="mt-2 text-sm font-semibold leading-5">
-                    Not everything needs to be loud to be worth sharing.
-                  </p>
+                  <div className="relative">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] opacity-60">
+                      Agoré note
+                    </p>
+
+                    <p className="mt-2 text-sm font-semibold leading-5">
+                      A place for thoughts to meet people.
+                    </p>
+                  </div>
                 </div>
 
                 <div className="px-4 py-4">
                   <p className="text-xs leading-5 text-[var(--muted)]">
-                    Follow people. Find ideas. Start conversations.
+                    Follow people, discover ideas, and take conversations
+                    further.
                   </p>
 
                   <Link
                     href="/app/explore"
-                    className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-[var(--accent)]"
+                    className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--accent)]"
                   >
-                    Go exploring
+                    Explore Agoré
                     <ArrowUpRight size={13} />
                   </Link>
                 </div>
@@ -252,57 +255,56 @@ export default async function HomePage() {
 
           <section className="min-w-0">
             <section className="relative mb-7 overflow-hidden rounded-[2rem] border border-[var(--border)] bg-[var(--surface)]">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_88%_10%,var(--accent-soft),transparent_30%)]" />
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_92%_8%,var(--accent-soft),transparent_31%)]" />
 
-              <div className="absolute -right-10 bottom-[-90px] h-56 w-56 rounded-full border-[28px] border-[var(--accent-soft)] opacity-70" />
+              <div className="absolute -right-12 bottom-[-85px] h-52 w-52 rounded-full border-[26px] border-[var(--accent-soft)] opacity-80" />
 
-              <div className="relative grid gap-8 px-5 py-7 sm:px-8 sm:py-9 lg:grid-cols-[minmax(0,1fr)_190px] lg:gap-10">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full bg-[var(--accent)]" />
-
-                    <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[var(--accent)]">
-                      Agoré / Home
-                    </p>
-                  </div>
-
-                  <h1 className="mt-4 max-w-2xl text-[2.8rem] font-semibold leading-[0.96] tracking-[-0.065em] sm:text-5xl lg:text-[4.25rem]">
-                    What’s happening
-                    <br />
-                    around you,{" "}
-                    <span className="text-[var(--accent)]">
-                      {firstName}.
-                    </span>
-                  </h1>
-
-                  <p className="mt-5 max-w-xl text-[15px] leading-7 text-[var(--muted)] sm:text-base">
-                    People you follow, conversations you can join, and ideas
-                    worth stopping for — all in one place.
-                  </p>
-                </div>
-
-                <div className="flex flex-col justify-between border-l border-[var(--border)] pl-5">
+              <div className="relative px-5 py-7 sm:px-8 sm:py-9">
+                <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_200px] lg:gap-10">
                   <div>
-                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--muted)]">
-                      You
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-[var(--accent)]" />
 
-                    <p className="mt-2 text-lg font-semibold tracking-[-0.03em]">
-                      {profile.display_name}
-                    </p>
+                      <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--accent)]">
+                        Your Agoré
+                      </p>
+                    </div>
 
-                    <p className="mt-1 text-sm text-[var(--muted)]">
-                      @{profile.username}
+                    <h1 className="mt-4 max-w-2xl text-[2.7rem] font-semibold leading-[0.97] tracking-[-0.065em] sm:text-5xl lg:text-[4rem]">
+                      Good to see you,
+                      <br />
+                      {firstName}.
+                    </h1>
+
+                    <p className="mt-5 max-w-xl text-[15px] leading-7 text-[var(--muted)] sm:text-base sm:leading-7">
+                      See what people are saying, discover something new, and
+                      add your own voice to the space.
                     </p>
                   </div>
 
-                  <Link
-                    href={profilePath}
-                    className="mt-6 inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--accent)] transition hover:opacity-70"
-                  >
-                    View profile
-                    <ArrowUpRight size={15} />
-                  </Link>
+                  <div className="flex flex-col justify-between border-l border-[var(--border)] pl-5">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--muted)]">
+                        You
+                      </p>
+
+                      <p className="mt-2 text-lg font-semibold tracking-[-0.03em]">
+                        {profile.display_name}
+                      </p>
+
+                      <p className="mt-1 text-sm text-[var(--muted)]">
+                        @{profile.username}
+                      </p>
+                    </div>
+
+                    <Link
+                      href={profilePath}
+                      className="mt-6 inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--accent)] transition hover:opacity-70"
+                    >
+                      View profile
+                      <ArrowUpRight size={15} />
+                    </Link>
+                  </div>
                 </div>
               </div>
 
@@ -313,7 +315,7 @@ export default async function HomePage() {
                   </p>
 
                   <p className="mt-1.5 text-sm font-semibold">
-                    Put a thought somewhere.
+                    Put something into the space.
                   </p>
                 </div>
 
@@ -323,17 +325,17 @@ export default async function HomePage() {
                   </p>
 
                   <p className="mt-1.5 text-sm font-semibold">
-                    Find people and ideas.
+                    Find people worth following.
                   </p>
                 </div>
 
                 <div className="border-t border-[var(--border)] px-5 py-4 sm:border-l sm:border-t-0 sm:px-6">
                   <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--accent)]">
-                    Talk
+                    Converse
                   </p>
 
                   <p className="mt-1.5 text-sm font-semibold">
-                    Take it into conversation.
+                    Turn posts into conversations.
                   </p>
                 </div>
               </div>
@@ -385,7 +387,7 @@ export default async function HomePage() {
                     </p>
 
                     <p className="mt-1.5 text-sm font-semibold">
-                      There’s more to explore.
+                      There’s more here.
                     </p>
                   </div>
 
@@ -442,15 +444,15 @@ export default async function HomePage() {
 
               <section className="rounded-[1.7rem] border border-[var(--accent)]/20 bg-[var(--accent-soft)] p-5">
                 <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--accent)]">
-                  Remember
+                  Agoré thought
                 </p>
 
                 <p className="mt-2 text-sm font-semibold leading-6">
-                  Agoré works best when you actually participate.
+                  You don’t need a big audience to start a good conversation.
                 </p>
 
                 <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
-                  Say something. React to something. Start somewhere.
+                  One thought is enough to get things moving.
                 </p>
               </section>
             </div>
@@ -458,7 +460,7 @@ export default async function HomePage() {
         </div>
 
         <footer className="mt-12 hidden border-t border-[var(--border)] py-6 lg:block">
-          <div className="flex items-center justify-between gap-4 text-xs text-[var(--muted)]">
+          <div className="flex flex-col gap-3 text-xs text-[var(--muted)] sm:flex-row sm:items-center sm:justify-between">
             <p>Agoré · Your social space.</p>
 
             <div className="flex items-center gap-4">
