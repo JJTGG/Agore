@@ -17,9 +17,9 @@ import {
   RefreshCw,
   Search,
   Settings,
-  UserRound,
   X,
 } from "lucide-react";
+import AgoreAvatar from "@/components/agore-avatar";
 
 type Profile = {
   id: string;
@@ -712,7 +712,6 @@ export default function MessagesPage() {
                 const subtitle = getConversationSubtitle(
                   conversation,
                 );
-                const initials = getInitials(title);
 
                 return (
                   <Link
@@ -722,12 +721,16 @@ export default function MessagesPage() {
                     )}`}
                     className="flex items-center gap-3 px-4 py-4 transition hover:bg-[var(--surface-muted)] sm:px-5"
                   >
-                    <div
-                      aria-hidden="true"
-                      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[var(--accent-soft)] text-sm font-bold text-[var(--accent)]"
-                    >
-                      {initials}
-                    </div>
+                    <AgoreAvatar
+                      avatarPath={
+                        conversation.type === "group"
+                          ? conversation.image_path
+                          : conversation.participant?.avatar_path
+                      }
+                      name={title}
+                      className="h-12 w-12 shrink-0"
+                      textClassName="text-sm"
+                    />
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-3">
