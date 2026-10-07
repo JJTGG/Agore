@@ -110,7 +110,7 @@ function getNotificationHref(notification: Notification) {
 
     default:
       return notification.entity_id
-        ? `/home#post-${encodeURIComponent(notification.entity_id)}`
+        ? `/post/${encodeURIComponent(notification.entity_id)}`
         : null;
   }
 }
@@ -315,26 +315,26 @@ export default function NotificationsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f6f5f1] text-[#17191c]">
+    <main className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
       <div className="mx-auto min-h-screen w-full max-w-2xl px-4 py-5 sm:px-6">
-        <header className="mb-5 flex items-center justify-between">
+        <header className="mb-5 flex items-center justify-between gap-3">
           <Link
             href="/home"
-            className="inline-flex items-center gap-2 rounded-full border border-[#deddd7] bg-white px-4 py-2 text-sm font-medium transition hover:border-[#b9c7ea] hover:bg-[#f9fbff]"
+            className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-medium transition hover:border-[var(--accent)] hover:bg-[var(--surface-muted)]"
           >
             <ArrowLeft size={16} />
             Home
           </Link>
 
-          <span className="text-sm font-semibold tracking-[0.14em] text-[#2148b8]">
+          <span className="text-sm font-semibold tracking-[0.14em] text-[var(--accent)]">
             AGORÉ
           </span>
         </header>
 
-        <section className="overflow-hidden rounded-3xl border border-[#deddd7] bg-white">
-          <div className="flex items-center justify-between gap-4 border-b border-[#ebeae5] px-5 py-5 sm:px-6">
+        <section className="overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--surface)]">
+          <div className="flex items-center justify-between gap-4 border-b border-[var(--border)] px-5 py-5 sm:px-6">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#2148b8]">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
                 Notifications
               </p>
 
@@ -342,7 +342,7 @@ export default function NotificationsPage() {
                 Activity
               </h1>
 
-              <p className="mt-1 text-sm text-[#777b81]">
+              <p className="mt-1 text-sm text-[var(--muted)]">
                 Stay up to date with what is happening around you.
               </p>
             </div>
@@ -352,10 +352,13 @@ export default function NotificationsPage() {
                 type="button"
                 onClick={() => void markAllAsRead()}
                 disabled={markingAll || unreadCount === 0}
-                className="inline-flex h-10 items-center gap-2 rounded-full border border-[#deddd7] bg-white px-4 text-sm font-semibold text-[#4d535b] transition hover:bg-[#f8f7f3] disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-10 items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 text-sm font-semibold text-[var(--foreground)] transition hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {markingAll ? (
-                  <Loader2 size={16} className="animate-spin" />
+                  <Loader2
+                    size={16}
+                    className="animate-spin"
+                  />
                 ) : (
                   <CheckCheck size={16} />
                 )}
@@ -367,7 +370,7 @@ export default function NotificationsPage() {
                 onClick={() => void loadNotifications(true)}
                 disabled={refreshing || loading}
                 aria-label="Refresh notifications"
-                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#deddd7] bg-white text-[#555a60] transition hover:bg-[#f8f7f3] disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--muted)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <RefreshCw
                   size={16}
@@ -378,8 +381,12 @@ export default function NotificationsPage() {
           </div>
 
           {unreadCount > 0 && !loading ? (
-            <div className="flex items-center gap-2 border-b border-[#ebeae5] bg-[#f8faff] px-5 py-3 text-sm text-[#4d535b] sm:px-6">
-              <Bell size={15} className="text-[#2148b8]" />
+            <div className="flex items-center gap-2 border-b border-[var(--border)] bg-[var(--accent-soft)] px-5 py-3 text-sm text-[var(--foreground)] sm:px-6">
+              <Bell
+                size={15}
+                className="text-[var(--accent)]"
+              />
+
               <span>
                 {unreadCount} unread notification
                 {unreadCount === 1 ? "" : "s"}.
@@ -388,7 +395,7 @@ export default function NotificationsPage() {
           ) : null}
 
           {error ? (
-            <div className="border-b border-[#ead1d1] bg-[#fff7f7] px-5 py-4 text-sm font-medium text-[#8d2f2f] sm:px-6">
+            <div className="border-b border-[var(--border)] bg-[var(--surface-muted)] px-5 py-4 text-sm font-medium text-[var(--danger)] sm:px-6">
               {error}
             </div>
           ) : null}
@@ -401,11 +408,11 @@ export default function NotificationsPage() {
                   className="animate-pulse rounded-2xl px-4 py-4"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="h-11 w-11 rounded-full bg-[#e8e7e1]" />
+                    <div className="h-11 w-11 rounded-full bg-[var(--surface-muted)]" />
 
                     <div className="min-w-0 flex-1 space-y-2">
-                      <div className="h-4 w-3/4 rounded bg-[#e8e7e1]" />
-                      <div className="h-3 w-16 rounded bg-[#e8e7e1]" />
+                      <div className="h-4 w-3/4 rounded bg-[var(--surface-muted)]" />
+                      <div className="h-3 w-16 rounded bg-[var(--surface-muted)]" />
                     </div>
                   </div>
                 </div>
@@ -413,7 +420,7 @@ export default function NotificationsPage() {
             </div>
           ) : notifications.length === 0 ? (
             <div className="px-6 py-14 text-center">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#e9edfb] text-[#2148b8]">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]">
                 <Bell size={22} />
               </div>
 
@@ -421,7 +428,7 @@ export default function NotificationsPage() {
                 Nothing new
               </h2>
 
-              <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[#777b81]">
+              <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[var(--muted)]">
                 Notifications about follows, reactions, comments,
                 reposts, messages, and group activity will appear here.
               </p>
@@ -432,25 +439,29 @@ export default function NotificationsPage() {
                 const href = getNotificationHref(notification);
                 const unread = !notification.read_at;
                 const actorName =
-                  notification.actor?.display_name ?? "Agoré user";
+                  notification.actor?.display_name ??
+                  "Agoré user";
                 const initials = getInitials(actorName);
-                const isMarking = markingId === notification.id;
+                const isMarking =
+                  markingId === notification.id;
 
                 const content = (
                   <div
-                    className={`flex items-start gap-3 rounded-2xl px-4 py-4 transition ${
+                    className={[
+                      "flex items-start gap-3 rounded-2xl px-4 py-4 transition",
                       unread
-                        ? "bg-[#f7f9ff]"
-                        : "hover:bg-[#f8f7f3]"
-                    }`}
+                        ? "bg-[var(--accent-soft)]"
+                        : "hover:bg-[var(--surface-muted)]",
+                    ].join(" ")}
                   >
                     <div
                       aria-hidden="true"
-                      className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                      className={[
+                        "flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-xs font-bold",
                         unread
-                          ? "bg-[#dfe7ff] text-[#2148b8]"
-                          : "bg-[#ecebe6] text-[#686d73]"
-                      }`}
+                          ? "bg-[var(--accent)]/15 text-[var(--accent)]"
+                          : "bg-[var(--surface-muted)] text-[var(--muted)]",
+                      ].join(" ")}
                     >
                       {initials}
                     </div>
@@ -459,24 +470,29 @@ export default function NotificationsPage() {
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p
-                            className={`text-sm leading-6 ${
+                            className={[
+                              "text-sm leading-6",
                               unread
                                 ? "font-semibold"
-                                : "font-medium"
-                            }`}
+                                : "font-medium",
+                            ].join(" ")}
                           >
-                            {getNotificationText(notification)}
+                            {getNotificationText(
+                              notification,
+                            )}
                           </p>
 
-                          <p className="mt-1 text-xs text-[#85898f]">
-                            {formatDate(notification.created_at)}
+                          <p className="mt-1 text-xs text-[var(--muted)]">
+                            {formatDate(
+                              notification.created_at,
+                            )}
                           </p>
                         </div>
 
                         {unread ? (
                           <span
                             aria-label="Unread"
-                            className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-[#2148b8]"
+                            className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-[var(--accent)]"
                           />
                         ) : null}
                       </div>
@@ -492,7 +508,7 @@ export default function NotificationsPage() {
                         }}
                         disabled={isMarking}
                         aria-label="Mark notification as read"
-                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#deddd7] bg-white text-[#666b72] transition hover:bg-[#f8f7f3] disabled:cursor-not-allowed disabled:opacity-50"
+                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--muted)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {isMarking ? (
                           <Loader2
@@ -521,7 +537,9 @@ export default function NotificationsPage() {
                     {content}
                   </Link>
                 ) : (
-                  <div key={notification.id}>{content}</div>
+                  <div key={notification.id}>
+                    {content}
+                  </div>
                 );
               })}
             </div>
