@@ -7,6 +7,7 @@ import {
 } from "react";
 import Link from "next/link";
 import {
+  Bell,
   Compass,
   Home,
   MessageCircle,
@@ -116,6 +117,14 @@ export default function AgoreDesktopNav({
       >
         <MessageCircle size={17} />
         Messages
+      </Link>
+
+      <Link
+        href="/notifications"
+        className={itemClass}
+      >
+        <Bell size={17} />
+        Notifications
       </Link>
 
       <Link
