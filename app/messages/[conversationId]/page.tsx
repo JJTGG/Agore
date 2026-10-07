@@ -96,6 +96,17 @@ type Message = {
   } | null;
 };
 
+type ReplyTarget = Pick<
+  Message,
+  | "id"
+  | "sender_id"
+  | "content"
+  | "created_at"
+  | "sender"
+> & {
+  media?: MessageMedia[];
+};
+
 type GroupMember = {
   userId: string;
   role: string;
@@ -273,7 +284,7 @@ function wasEdited(message: Message) {
 
 type MessageBubbleProps = {
   message: Message;
-  replyTarget: Message | null;
+  replyTarget: ReplyTarget | null;
   isOwn: boolean;
   grouped: boolean;
   currentUserId: string | null;
@@ -281,7 +292,7 @@ type MessageBubbleProps = {
   editing: boolean;
   editDraft: string;
   editSaving: boolean;
-  onReply: (message: Message) => void;
+  onReply: (message: ReplyTarget) => void;
   onEdit: (message: Message) => void;
   onEditDraftChange: (value: string) => void;
   onSaveEdit: (messageId: string) => Promise<void>;
@@ -649,7 +660,7 @@ export default function ConversationPage() {
   const [
     replyingTo,
     setReplyingTo,
-  ] = useState<Message | null>(null);
+  ] = useState<ReplyTarget | null>(null);
 
   const [
     editingMessageId,
@@ -1247,7 +1258,7 @@ export default function ConversationPage() {
   }
 
   function startReply(
-    message: Message,
+    message: ReplyTarget,
   ) {
     setEditingMessageId(null);
     setEditDraft("");
@@ -2450,276 +2461,313 @@ export default function ConversationPage() {
               </button>
             </header>
 
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              <div className="border-b border-[var(--border)] px-5 py-6 sm:px-6">
-                <div className="flex items-center gap-4">
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
+              <div className="flex items-center gap-4">
+                <div className="relative">
                   <AgoreAvatar
-                    name={title}
                     avatarPath={
                       conversation.image_path
                     }
+                    name={title}
                     className="h-16 w-16"
                     textClassName="text-base"
                   />
 
-                  <div className="min-w-0">
-                    <p className="truncate text-lg font-bold">
-                      {title}
-                    </p>
-
-                    <p className="mt-1 text-sm text-[var(--muted)]">
-                      {groupMembers.length}{" "}
-                      member
-                      {groupMembers.length ===
-                      1
-                        ? ""
-                        : "s"}
-                    </p>
+                  <div className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-[var(--surface)] bg-[var(--accent-soft)] text-[var(--accent)]">
+                    <Users size={12} />
                   </div>
                 </div>
 
-                {currentUserRole ===
-                "admin" ? (
-                  <form
-                    onSubmit={
-                      saveGroupSettings
-                    }
-                    className="mt-6 space-y-4"
-                  >
-                    <label className="block">
-                      <span className="text-sm font-semibold">
-                        Group name
-                      </span>
+                <div className="min-w-0">
+                  <p className="truncate text-lg font-bold tracking-[-0.02em]">
+                    {title}
+                  </p>
 
-                      <input
-                        value={groupName}
-                        onChange={(event) =>
-                          setGroupName(
-                            event.target
-                              .value,
-                          )
-                        }
-                        maxLength={80}
-                        disabled={
-                          savingGroup
-                        }
-                        className="mt-2 w-full rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)] px-4 py-3 text-sm outline-none transition focus:border-[var(--accent)]/50 focus:ring-2 focus:ring-[var(--accent)]/10 disabled:opacity-50"
-                      />
-                    </label>
+                  <p className="mt-1 text-sm text-[var(--muted)]">
+                    {subtitle}
+                  </p>
+                </div>
+              </div>
 
-                    <label className="block">
-                      <span className="text-sm font-semibold">
-                        Description
-                      </span>
+              {currentUserRole ===
+              "admin" ? (
+                <form
+                  onSubmit={
+                    saveGroupSettings
+                  }
+                  className="mt-6 rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)] p-4"
+                >
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">
+                    <Settings size={13} />
+                    Group settings
+                  </div>
 
-                      <textarea
-                        value={
-                          groupDescription
-                        }
-                        onChange={(event) =>
-                          setGroupDescription(
-                            event.target
-                              .value,
-                          )
-                        }
-                        maxLength={500}
-                        rows={3}
-                        disabled={
-                          savingGroup
-                        }
-                        className="mt-2 w-full resize-none rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)] px-4 py-3 text-sm leading-6 outline-none transition focus:border-[var(--accent)]/50 focus:ring-2 focus:ring-[var(--accent)]/10 disabled:opacity-50"
-                      />
-                    </label>
+                  <label className="mt-4 block">
+                    <span className="text-xs font-semibold text-[var(--muted-strong)]">
+                      Group name
+                    </span>
 
+                    <input
+                      value={groupName}
+                      onChange={(event) =>
+                        setGroupName(
+                          event.target
+                            .value,
+                        )
+                      }
+                      maxLength={80}
+                      disabled={savingGroup}
+                      className="mt-1.5 h-11 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 text-sm outline-none transition focus:border-[var(--accent)]/50 focus:ring-2 focus:ring-[var(--accent)]/10 disabled:opacity-50"
+                    />
+                  </label>
+
+                  <label className="mt-4 block">
+                    <span className="text-xs font-semibold text-[var(--muted-strong)]">
+                      Description
+                    </span>
+
+                    <textarea
+                      value={
+                        groupDescription
+                      }
+                      onChange={(event) =>
+                        setGroupDescription(
+                          event.target
+                            .value,
+                        )
+                      }
+                      maxLength={500}
+                      rows={3}
+                      disabled={savingGroup}
+                      className="mt-1.5 min-h-20 w-full resize-none rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-3 text-sm leading-6 outline-none transition focus:border-[var(--accent)]/50 focus:ring-2 focus:ring-[var(--accent)]/10 disabled:opacity-50"
+                    />
+                  </label>
+
+                  <div className="mt-4 flex justify-end">
                     <button
                       type="submit"
                       disabled={
                         savingGroup ||
                         !groupName.trim()
                       }
-                      className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-40"
+                      className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       {savingGroup ? (
                         <Loader2
-                          size={16}
+                          size={14}
                           className="animate-spin"
                         />
                       ) : (
-                        <Edit3 size={16} />
+                        <Settings
+                          size={14}
+                        />
                       )}
-
-                      {savingGroup
-                        ? "Saving…"
-                        : "Save details"}
+                      Save changes
                     </button>
-                  </form>
-                ) : conversation.description ? (
-                  <p className="mt-5 text-sm leading-6 text-[var(--muted-strong)]">
-                    {
-                      conversation.description
-                    }
-                  </p>
-                ) : null}
-              </div>
+                  </div>
+                </form>
+              ) : null}
 
-              <div className="px-5 py-5 sm:px-6">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Users
-                      size={17}
-                      className="text-[var(--accent)]"
-                    />
-                    <p className="text-sm font-semibold">
+              <section className="mt-6">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">
                       Members
+                    </p>
+
+                    <p className="mt-1 text-sm text-[var(--muted)]">
+                      {groupMembers.length}{" "}
+                      active member
+                      {groupMembers.length ===
+                      1
+                        ? ""
+                        : "s"}
                     </p>
                   </div>
 
-                  {currentUserRole ===
-                  "admin" ? (
-                    <span className="text-[11px] font-medium text-[var(--muted)]">
-                      Admin controls
-                    </span>
-                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void loadGroupMembers()
+                    }
+                    disabled={
+                      groupLoading
+                    }
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[var(--muted-strong)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)] disabled:opacity-40"
+                    aria-label="Refresh members"
+                    title="Refresh members"
+                  >
+                    <RefreshCw
+                      size={15}
+                      className={
+                        groupLoading
+                          ? "animate-spin"
+                          : undefined
+                      }
+                    />
+                  </button>
                 </div>
 
-                {groupLoading ? (
-                  <div className="flex items-center justify-center py-10">
-                    <Loader2
-                      size={20}
-                      className="animate-spin text-[var(--accent)]"
-                    />
+                {groupActionError ? (
+                  <div className="mt-3 rounded-xl border border-[var(--danger)]/20 bg-[var(--danger-soft)] px-3 py-2.5">
+                    <p className="text-xs font-semibold leading-5 text-[var(--danger)]">
+                      {groupActionError}
+                    </p>
                   </div>
-                ) : groupMembers.length ===
-                  0 ? (
-                  <p className="mt-4 text-sm text-[var(--muted)]">
-                    No active members found.
-                  </p>
-                ) : (
-                  <div className="mt-4 space-y-1">
-                    {groupMembers.map(
-                      (member) => {
-                        const profile =
-                          member.profile;
+                ) : null}
 
-                        const displayName =
-                          profile?.display_name ??
-                          "Agoré user";
+                <div className="mt-3 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)]">
+                  {groupLoading &&
+                  groupMembers.length ===
+                    0 ? (
+                    <div className="flex items-center justify-center px-4 py-8 text-[var(--muted)]">
+                      <Loader2
+                        size={18}
+                        className="animate-spin"
+                      />
+                    </div>
+                  ) : groupMembers.length ===
+                    0 ? (
+                    <div className="px-4 py-8 text-center">
+                      <p className="text-sm font-semibold">
+                        No active members found
+                      </p>
 
-                        const isCurrentUser =
-                          member.userId ===
-                          currentUserId;
+                      <p className="mt-1 text-xs text-[var(--muted)]">
+                        Refresh the group to try again.
+                      </p>
+                    </div>
+                  ) : (
+                    <div>
+                      {groupMembers.map(
+                        (member) => {
+                          const profile =
+                            member.profile;
 
-                        const removeLoading =
-                          memberActionLoading ===
-                          `remove:${member.userId}`;
+                          const memberName =
+                            profile?.display_name ??
+                            "Agoré user";
 
-                        const roleLoading =
-                          memberActionLoading ===
-                          `role:${member.userId}`;
+                          const isSelf =
+                            member.userId ===
+                            currentUserId;
 
-                        return (
-                          <div
-                            key={
-                              member.userId
-                            }
-                            className="rounded-2xl px-3 py-3 transition hover:bg-[var(--surface-muted)]"
-                          >
-                            <div className="flex items-center gap-3">
+                          const actionLoading =
+                            memberActionLoading?.endsWith(
+                              `:${member.userId}`,
+                            ) ?? false;
+
+                          const canManage =
+                            currentUserRole ===
+                              "admin" &&
+                            !isSelf;
+
+                          return (
+                            <div
+                              key={
+                                member.userId
+                              }
+                              className="flex items-center gap-3 border-b border-[var(--border)] px-3 py-3 last:border-b-0"
+                            >
                               <AgoreAvatar
                                 avatarPath={
-                                  profile?.avatar_path
+                                  profile
+                                    ?.avatar_path
                                 }
                                 name={
-                                  displayName
+                                  memberName
                                 }
                                 className="h-10 w-10"
-                                textClassName="text-xs"
+                                textClassName="text-[10px]"
                               />
 
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-2">
                                   <p className="truncate text-sm font-semibold">
                                     {
-                                      displayName
+                                      memberName
                                     }
                                   </p>
 
+                                  {isSelf ? (
+                                    <span className="rounded-full bg-[var(--accent-soft)] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-[var(--accent)]">
+                                      You
+                                    </span>
+                                  ) : null}
+
                                   {member.role ===
                                   "admin" ? (
-                                    <span className="shrink-0 rounded-full bg-[var(--accent-soft)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--accent)]">
+                                    <span className="rounded-full bg-[var(--surface-muted)] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-[var(--muted-strong)]">
                                       Admin
                                     </span>
                                   ) : null}
                                 </div>
 
-                                <p className="mt-0.5 truncate text-xs text-[var(--muted)]">
-                                  @
-                                  {profile?.username ??
-                                    "user"}
-                                  {isCurrentUser
-                                    ? " · You"
-                                    : ""}
-                                </p>
+                                {profile
+                                  ?.username ? (
+                                  <p className="mt-0.5 truncate text-xs text-[var(--muted)]">
+                                    @
+                                    {
+                                      profile.username
+                                    }
+                                  </p>
+                                ) : null}
                               </div>
 
-                              {isCurrentUser ||
-                              currentUserRole ===
-                                "admin" ? (
-                                <div className="flex shrink-0 items-center gap-1">
-                                  {currentUserRole ===
-                                    "admin" &&
-                                  !isCurrentUser ? (
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        void updateMemberRole(
-                                          member.userId,
-                                          member.role ===
-                                            "admin"
-                                            ? "member"
-                                            : "admin",
-                                        )
-                                      }
-                                      disabled={Boolean(
-                                        memberActionLoading,
-                                      )}
-                                      aria-label={
+                              {canManage ? (
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      void updateMemberRole(
+                                        member.userId,
                                         member.role ===
-                                        "admin"
-                                          ? `Remove admin role from ${displayName}`
-                                          : `Promote ${displayName} to admin`
-                                      }
-                                      title={
-                                        member.role ===
-                                        "admin"
-                                          ? "Remove admin role"
-                                          : "Make admin"
-                                      }
-                                      className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] text-[var(--muted-strong)] transition hover:bg-[var(--accent-soft)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40"
-                                    >
-                                      {roleLoading ? (
-                                        <Loader2
-                                          size={
-                                            15
-                                          }
-                                          className="animate-spin"
-                                        />
-                                      ) : member.role ===
-                                        "admin" ? (
-                                        <ShieldOff
-                                          size={
-                                            15
-                                          }
-                                        />
-                                      ) : (
-                                        <Shield
-                                          size={
-                                            15
-                                          }
-                                        />
-                                      )}
-                                    </button>
-                                  ) : null}
+                                          "admin"
+                                          ? "member"
+                                          : "admin",
+                                      )
+                                    }
+                                    disabled={
+                                      memberActionLoading !==
+                                        null ||
+                                      groupLoading
+                                    }
+                                    title={
+                                      member.role ===
+                                      "admin"
+                                        ? "Remove admin"
+                                        : "Make admin"
+                                    }
+                                    aria-label={
+                                      member.role ===
+                                      "admin"
+                                        ? `Remove admin from ${memberName}`
+                                        : `Make ${memberName} an admin`
+                                    }
+                                    className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[var(--muted-strong)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-40"
+                                  >
+                                    {actionLoading ? (
+                                      <Loader2
+                                        size={
+                                          15
+                                        }
+                                        className="animate-spin"
+                                      />
+                                    ) : member.role ===
+                                      "admin" ? (
+                                      <ShieldOff
+                                        size={
+                                          15
+                                        }
+                                      />
+                                    ) : (
+                                      <Shield
+                                        size={
+                                          15
+                                        }
+                                      />
+                                    )}
+                                  </button>
 
                                   <button
                                     type="button"
@@ -2728,22 +2776,17 @@ export default function ConversationPage() {
                                         member.userId,
                                       )
                                     }
-                                    disabled={Boolean(
-                                      memberActionLoading,
-                                    )}
-                                    aria-label={
-                                      isCurrentUser
-                                        ? "Leave group"
-                                        : `Remove ${displayName}`
+                                    disabled={
+                                      memberActionLoading !==
+                                        null ||
+                                      groupLoading
                                     }
-                                    title={
-                                      isCurrentUser
-                                        ? "Leave group"
-                                        : "Remove member"
-                                    }
-                                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] text-[var(--muted-strong)] transition hover:bg-[var(--danger-soft)] hover:text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-40"
+                                    title="Remove member"
+                                    aria-label={`Remove ${memberName}`}
+                                    className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[var(--muted-strong)] transition hover:bg-[var(--danger-soft)] hover:text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-40"
                                   >
-                                    {removeLoading ? (
+                                    {memberActionLoading ===
+                                    `remove:${member.userId}` ? (
                                       <Loader2
                                         size={
                                           15
@@ -2761,71 +2804,66 @@ export default function ConversationPage() {
                                 </div>
                               ) : null}
                             </div>
-                          </div>
-                        );
-                      },
-                    )}
-                  </div>
-                )}
-              </div>
+                          );
+                        },
+                      )}
+                    </div>
+                  )}
+                </div>
+              </section>
 
               {currentUserRole ===
               "admin" ? (
-                <div className="border-t border-[var(--border)] px-5 py-5 sm:px-6">
-                  <div className="flex items-center gap-2">
-                    <Plus
-                      size={17}
-                      className="text-[var(--accent)]"
-                    />
-                    <p className="text-sm font-semibold">
+                <section className="mt-6">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">
                       Add members
+                    </p>
+
+                    <p className="mt-1 text-sm text-[var(--muted)]">
+                      Search for another Agoré user to add to this group.
                     </p>
                   </div>
 
-                  <div className="mt-3 flex gap-2">
-                    <div className="relative min-w-0 flex-1">
-                      <Search
-                        size={17}
-                        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"
-                      />
+                  <div className="mt-3 flex items-center gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)] px-3">
+                    <Search
+                      size={16}
+                      className="shrink-0 text-[var(--muted)]"
+                    />
 
-                      <input
-                        value={memberQuery}
-                        onChange={(event) => {
-                          const value =
-                            event.target
-                              .value;
+                    <input
+                      value={memberQuery}
+                      onChange={(event) => {
+                        const value =
+                          event.target
+                            .value;
 
-                          setMemberQuery(
-                            value,
+                        setMemberQuery(
+                          value,
+                        );
+
+                        if (
+                          value.trim()
+                            .length <
+                          2
+                        ) {
+                          setMemberResults(
+                            [],
                           );
-
-                          if (
-                            value.trim()
-                              .length < 2
-                          ) {
-                            setMemberResults(
-                              [],
-                            );
-                          }
-                        }}
-                        onKeyDown={(event) => {
-                          if (
-                            event.key ===
-                            "Enter"
-                          ) {
-                            event.preventDefault();
-                            void searchMembers();
-                          }
-                        }}
-                        maxLength={50}
-                        placeholder="Search people…"
-                        disabled={
-                          searchingMembers
                         }
-                        className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)] py-3 pl-10 pr-4 text-sm outline-none transition placeholder:text-[var(--muted)] focus:border-[var(--accent)]/50 focus:ring-2 focus:ring-[var(--accent)]/10 disabled:opacity-50"
-                      />
-                    </div>
+                      }}
+                      onKeyDown={(event) => {
+                        if (
+                          event.key ===
+                          "Enter"
+                        ) {
+                          event.preventDefault();
+                          void searchMembers();
+                        }
+                      }}
+                      placeholder="Search people…"
+                      className="h-11 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-[var(--muted)]"
+                    />
 
                     <button
                       type="button"
@@ -2835,18 +2873,22 @@ export default function ConversationPage() {
                       disabled={
                         searchingMembers ||
                         memberQuery.trim()
-                          .length < 2
+                          .length <
+                          2
                       }
-                      className="rounded-2xl bg-[var(--accent-soft)] px-4 text-sm font-semibold text-[var(--accent)] transition hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-40"
+                      className="inline-flex h-9 shrink-0 items-center gap-2 rounded-full bg-[var(--accent)] px-3 text-xs font-semibold text-white transition hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       {searchingMembers ? (
                         <Loader2
-                          size={17}
+                          size={13}
                           className="animate-spin"
                         />
                       ) : (
-                        "Search"
+                        <Search
+                          size={13}
+                        />
                       )}
+                      Search
                     </button>
                   </div>
 
@@ -2855,25 +2897,15 @@ export default function ConversationPage() {
                     <div className="mt-3 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)]">
                       {memberResults.map(
                         (person) => {
-                          const actionLoading =
-                            memberActionLoading ===
+                          const actionKey =
                             `add:${person.id}`;
 
                           return (
-                            <button
+                            <div
                               key={
                                 person.id
                               }
-                              type="button"
-                              onClick={() =>
-                                void addMember(
-                                  person.id,
-                                )
-                              }
-                              disabled={Boolean(
-                                memberActionLoading,
-                              )}
-                              className="flex w-full items-center gap-3 border-b border-[var(--border)] px-3 py-3 text-left transition last:border-b-0 hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+                              className="flex items-center gap-3 border-b border-[var(--border)] px-3 py-3 last:border-b-0"
                             >
                               <AgoreAvatar
                                 avatarPath={
@@ -2883,7 +2915,7 @@ export default function ConversationPage() {
                                   person.display_name
                                 }
                                 className="h-10 w-10"
-                                textClassName="text-xs"
+                                textClassName="text-[10px]"
                               />
 
                               <div className="min-w-0 flex-1">
@@ -2901,23 +2933,38 @@ export default function ConversationPage() {
                                 </p>
                               </div>
 
-                              <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--accent-soft)] text-[var(--accent)]">
-                                {actionLoading ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void addMember(
+                                    person.id,
+                                  )
+                                }
+                                disabled={
+                                  memberActionLoading !==
+                                    null ||
+                                  groupLoading
+                                }
+                                className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 text-xs font-semibold text-[var(--foreground)] transition hover:border-[var(--accent)]/40 hover:bg-[var(--accent-soft)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                {memberActionLoading ===
+                                actionKey ? (
                                   <Loader2
                                     size={
-                                      15
+                                      13
                                     }
                                     className="animate-spin"
                                   />
                                 ) : (
                                   <Plus
                                     size={
-                                      15
+                                      13
                                     }
                                   />
                                 )}
-                              </span>
-                            </button>
+                                Add
+                              </button>
+                            </div>
                           );
                         },
                       )}
@@ -2925,47 +2972,60 @@ export default function ConversationPage() {
                   ) : memberQuery.trim()
                       .length >= 2 &&
                     !searchingMembers ? (
-                    <p className="mt-3 rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)] px-4 py-3 text-sm text-[var(--muted)]">
-                      No available people found.
-                    </p>
+                    <div className="mt-3 rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)] px-4 py-5 text-center">
+                      <p className="text-sm font-semibold">
+                        No new members found
+                      </p>
+
+                      <p className="mt-1 text-xs text-[var(--muted)]">
+                        Try a different name or username.
+                      </p>
+                    </div>
                   ) : null}
-                </div>
-              ) : (
-                <div className="border-t border-[var(--border)] px-5 py-5 sm:px-6">
+                </section>
+              ) : null}
+
+              <section className="mt-6">
+                <div className="rounded-2xl border border-[var(--danger)]/20 bg-[var(--danger-soft)] p-4">
+                  <p className="text-sm font-semibold text-[var(--danger)]">
+                    Leave group
+                  </p>
+
+                  <p className="mt-1 text-xs leading-5 text-[var(--danger)]/80">
+                    You will stop receiving messages from this group until you are added again.
+                  </p>
+
                   <button
                     type="button"
                     onClick={() =>
-                      currentUserId
-                        ? void removeMember(
-                            currentUserId,
-                          )
-                        : undefined
+                      void removeMember(
+                        currentUserId ??
+                          "",
+                      )
                     }
                     disabled={
-                      Boolean(
-                        memberActionLoading,
-                      ) ||
-                      !currentUserId
+                      !currentUserId ||
+                      memberActionLoading !==
+                        null ||
+                      groupLoading
                     }
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-[var(--danger)]/20 bg-[var(--danger-soft)] px-4 py-3 text-sm font-semibold text-[var(--danger)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="mt-3 inline-flex items-center gap-2 rounded-full border border-[var(--danger)]/20 bg-[var(--surface)] px-3.5 py-2 text-xs font-semibold text-[var(--danger)] transition hover:bg-[var(--danger)]/5 disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    <UserMinus size={16} />
+                    {memberActionLoading ===
+                    `remove:${currentUserId}` ? (
+                      <Loader2
+                        size={13}
+                        className="animate-spin"
+                      />
+                    ) : (
+                      <UserMinus
+                        size={13}
+                      />
+                    )}
                     Leave group
                   </button>
                 </div>
-              )}
-
-              {groupActionError ? (
-                <div className="border-t border-[var(--border)] px-5 py-5 sm:px-6">
-                  <div className="rounded-2xl border border-[var(--danger)]/20 bg-[var(--danger-soft)] px-4 py-3">
-                    <p className="text-sm font-medium text-[var(--danger)]">
-                      {
-                        groupActionError
-                      }
-                    </p>
-                  </div>
-                </div>
-              ) : null}
+              </section>
             </div>
           </div>
         </div>
