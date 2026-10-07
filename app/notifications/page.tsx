@@ -153,9 +153,7 @@ export default function NotificationsPage() {
           },
         );
 
-        const data = (await response.json()) as
-          | NotificationsResponse
-          | { error?: string };
+        const data = await response.json();
 
         if (response.status === 401) {
           window.location.href = "/auth";
@@ -164,21 +162,26 @@ export default function NotificationsPage() {
 
         if (!response.ok) {
           throw new Error(
-            "error" in data && data.error
+            data &&
+            typeof data === "object" &&
+            "error" in data &&
+            typeof data.error === "string"
               ? data.error
               : "Unable to load notifications.",
           );
         }
 
+        const successData = data as NotificationsResponse;
+
         setNotifications(
-          Array.isArray(data.notifications)
-            ? data.notifications
+          Array.isArray(successData.notifications)
+            ? successData.notifications
             : [],
         );
 
         setUnreadCount(
-          typeof data.unreadCount === "number"
-            ? data.unreadCount
+          typeof successData.unreadCount === "number"
+            ? successData.unreadCount
             : 0,
         );
       } catch (requestError) {
@@ -426,15 +429,12 @@ export default function NotificationsPage() {
           ) : (
             <div className="space-y-1 p-2">
               {notifications.map((notification) => {
-                const href =
-                  getNotificationHref(notification);
+                const href = getNotificationHref(notification);
                 const unread = !notification.read_at;
                 const actorName =
-                  notification.actor?.display_name ??
-                  "Agoré user";
+                  notification.actor?.display_name ?? "Agoré user";
                 const initials = getInitials(actorName);
-                const isMarking =
-                  markingId === notification.id;
+                const isMarking = markingId === notification.id;
 
                 const content = (
                   <div
@@ -465,15 +465,11 @@ export default function NotificationsPage() {
                                 : "font-medium"
                             }`}
                           >
-                            {getNotificationText(
-                              notification,
-                            )}
+                            {getNotificationText(notification)}
                           </p>
 
                           <p className="mt-1 text-xs text-[#85898f]">
-                            {formatDate(
-                              notification.created_at,
-                            )}
+                            {formatDate(notification.created_at)}
                           </p>
                         </div>
 
@@ -492,9 +488,7 @@ export default function NotificationsPage() {
                         onClick={(event) => {
                           event.preventDefault();
                           event.stopPropagation();
-                          void markAsRead(
-                            notification.id,
-                          );
+                          void markAsRead(notification.id);
                         }}
                         disabled={isMarking}
                         aria-label="Mark notification as read"
