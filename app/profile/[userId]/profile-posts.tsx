@@ -829,30 +829,46 @@ export default function ProfilePosts({
           </div>
         ) : (
           <div className="space-y-4 p-4 sm:p-5">
-            {reposts.map(
-              (repost) => (
-                <RepostCard
-                  key={
-                    repost.repost_id
-                  }
-                  repost={
-                    repost
-                  }
-                  viewerId={
-                    viewerId
-                  }
-                  profileId={
-                    userId
-                  }
-                  onPostUpdated={
-                    handlePostUpdated
-                  }
-                  onPostDeleted={
-                    handlePostDeleted
-                  }
-                />
-              ),
-            )}
+            {activeTab === "posts"
+              ? posts.map((post) => (
+                  <PostCard
+                    key={post.id}
+                    post={post}
+                    viewerId={
+                      viewerId
+                    }
+                    onPostUpdated={
+                      handlePostUpdated
+                    }
+                    onPostDeleted={
+                      handlePostDeleted
+                    }
+                  />
+                ))
+              : reposts.map(
+                  (repost) => (
+                    <RepostCard
+                      key={
+                        repost.repost_id
+                      }
+                      repost={
+                        repost
+                      }
+                      viewerId={
+                        viewerId
+                      }
+                      profileId={
+                        userId
+                      }
+                      onPostUpdated={
+                        handlePostUpdated
+                      }
+                      onPostDeleted={
+                        handlePostDeleted
+                      }
+                    />
+                  ),
+                )}
           </div>
         )}
 
