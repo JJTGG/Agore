@@ -13,6 +13,8 @@ import {
   useState,
 } from "react";
 
+import AgoreAvatar from "@/components/agore-avatar";
+
 type ConnectionTab =
   | "followers"
   | "following";
@@ -56,70 +58,6 @@ function formatConnectionDate(
       year: "numeric",
     },
   ).format(date);
-}
-
-function getInitials(
-  name: string,
-) {
-  const parts = name
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
-
-  if (parts.length === 0) {
-    return "A";
-  }
-
-  if (parts.length === 1) {
-    return parts[0]
-      .slice(0, 2)
-      .toUpperCase();
-  }
-
-  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
-}
-
-function ConnectionAvatar({
-  connection,
-}: {
-  connection: ProfileConnection;
-}) {
-  const [
-    imageFailed,
-    setImageFailed,
-  ] = useState(false);
-
-  const initials = getInitials(
-    connection.display_name,
-  );
-
-  const showImage =
-    Boolean(
-      connection.avatar_path,
-    ) && !imageFailed;
-
-  if (showImage) {
-    return (
-      <img
-        src={connection.avatar_path ?? ""}
-        alt=""
-        className="h-11 w-11 shrink-0 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] object-cover"
-        loading="lazy"
-        onError={() =>
-          setImageFailed(true)
-        }
-      />
-    );
-  }
-
-  return (
-    <span
-      aria-hidden="true"
-      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--accent-soft)] text-xs font-bold text-[var(--accent)]"
-    >
-      {initials}
-    </span>
-  );
 }
 
 export default function ProfileConnections({
@@ -456,10 +394,17 @@ export default function ProfileConnections({
                     }
                     className="flex items-center gap-3 px-5 py-4 transition hover:bg-[var(--surface-muted)]"
                   >
-                    <ConnectionAvatar
-                      connection={
-                        connection
-                      />
+                    <AgoreAvatar
+                      avatarPath={
+                        connection.avatar_path
+                      }
+                      name={
+                        connection.display_name
+                      }
+                      alt={`${connection.display_name}'s profile photo`}
+                      className="h-11 w-11 shrink-0"
+                      textClassName="text-xs"
+                    />
 
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-semibold">
