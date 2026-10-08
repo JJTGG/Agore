@@ -39,6 +39,18 @@ type SourceMedia = {
   created_at: string;
 };
 
+type ForwardedMediaInsert = {
+  message_id: string;
+  media_type: SourceMedia["media_type"];
+  storage_path: string;
+  file_name: string;
+  mime_type: string | null;
+  size_bytes: number;
+  width: number | null;
+  height: number | null;
+  duration_ms: number | null;
+};
+
 async function getAuthenticatedUser() {
   const supabase = await createClient();
 
@@ -59,19 +71,15 @@ async function verifyConversationMembership(
   conversationId: string,
   userId: string,
 ) {
-  const { data: membership, error } =
-    await admin
-      .from("conversation_members")
-      .select(
-        "conversation_id, user_id, role, joined_at, left_at",
-      )
-      .eq(
-        "conversation_id",
-        conversationId,
-      )
-      .eq("user_id", userId)
-      .is("left_at", null)
-      .maybeSingle();
+  const { data: membership, error } = await admin
+    .from("conversation_members")
+    .select(
+      "conversation_id, user_id, role, joined_at, left_at",
+    )
+    .eq("conversation_id", conversationId)
+    .eq("user_id", userId)
+    .is("left_at", null)
+    .maybeSingle();
 
   if (error) {
     console.error(
@@ -81,8 +89,7 @@ async function verifyConversationMembership(
 
     return {
       membership: null,
-      error:
-        "Unable to access this conversation.",
+      error: "Unable to access this conversation.",
     };
   }
 
@@ -99,6 +106,83 @@ async function verifyConversationMembership(
   };
 }
 
+function getForwardedStoragePath(
+  messageId: string,
+  sourcePath: string,
+) {
+  const sourceSegments = sourcePath.split("/");
+
+  if (
+    sourceSegments.length !== 2 ||
+    sourceSegments[0] !== messageId ||
+    !sourceSegments[1]
+  ) {
+    return null;
+  }
+
+  const sourceFileName = sourceSegments[1];
+  const lastDot = sourceFileName.lastIndexOf(".");
+
+  let extension = "";
+
+  if (
+    lastDot > 0 &&
+    lastDot < sourceFileName.length - 1
+  ) {
+    const candidate = sourceFileName
+      .slice(lastDot + 1)
+      .trim()
+      .toLowerCase();
+
+    if (/^[a-z0-9]{1,10}$/.test(candidate)) {
+      extension = `.${candidate}`;
+    }
+  }
+
+  return `${messageId}/${crypto.randomUUID()}${extension}`;
+}
+
+async function removeStorageObjects(
+  admin: ReturnType<typeof createAdminClient>,
+  storagePaths: string[],
+) {
+  if (storagePaths.length === 0) {
+    return;
+  }
+
+  const { error } = await admin.storage
+    .from("message-media")
+    .remove(storagePaths);
+
+  if (error) {
+    console.error(
+      "Failed to clean up Agore forwarded media objects:",
+      error,
+    );
+  }
+}
+
+async function removeForwardedMessage(
+  admin: ReturnType<typeof createAdminClient>,
+  conversationId: string,
+  messageId: string,
+  senderId: string,
+) {
+  const { error } = await admin
+    .from("messages")
+    .delete()
+    .eq("id", messageId)
+    .eq("conversation_id", conversationId)
+    .eq("sender_id", senderId);
+
+  if (error) {
+    console.error(
+      "Failed to clean up Agore forwarded message:",
+      error,
+    );
+  }
+}
+
 async function notifyConversationMembers(
   admin: ReturnType<typeof createAdminClient>,
   conversationId: string,
@@ -111,10 +195,7 @@ async function notifyConversationMembers(
   } = await admin
     .from("conversation_members")
     .select("user_id")
-    .eq(
-      "conversation_id",
-      conversationId,
-    )
+    .eq("conversation_id", conversationId)
     .is("left_at", null)
     .neq("user_id", senderId);
 
@@ -221,8 +302,7 @@ export async function POST(
   } = parsedParams.data;
 
   const targetConversationId =
-    parsedBody.data
-      .targetConversationId;
+    parsedBody.data.targetConversationId;
 
   if (
     conversationId ===
@@ -418,6 +498,46 @@ export async function POST(
     );
   }
 
+  const forwardedMediaPlan =
+    media.map((item) => {
+      const targetStoragePath =
+        getForwardedStoragePath(
+          messageId,
+          item.storage_path,
+        );
+
+      return {
+        source: item,
+        targetStoragePath,
+      };
+    });
+
+  const invalidForwardedMedia =
+    forwardedMediaPlan.some(
+      (item) =>
+        !item.targetStoragePath,
+    );
+
+  if (
+    invalidForwardedMedia
+  ) {
+    console.error(
+      "Agore forwarding encountered an invalid source media path.",
+      {
+        messageId,
+        media,
+      },
+    );
+
+    return NextResponse.json(
+      {
+        error:
+          "This message contains an invalid attachment.",
+      },
+      { status: 500 },
+    );
+  }
+
   const forwardedFromMessageId =
     typedSourceMessage.forwarded_from_message_id ??
     typedSourceMessage.id;
@@ -471,64 +591,106 @@ export async function POST(
   const typedForwardedMessage =
     forwardedMessage as SourceMessage;
 
-  if (media.length > 0) {
-    const mediaRows =
-      media.map((item) => ({
-        message_id:
-          typedForwardedMessage.id,
-        media_type:
-          item.media_type,
-        storage_path:
-          item.storage_path,
-        file_name:
-          item.file_name,
-        mime_type:
-          item.mime_type,
-        size_bytes:
-          item.size_bytes,
-        width: item.width,
-        height: item.height,
-        duration_ms:
-          item.duration_ms,
-      }));
+  const copiedStoragePaths: string[] =
+    [];
 
-    const {
-      error:
-        mediaInsertError,
-    } = await admin
-      .from("message_media")
-      .insert(mediaRows);
+  try {
+    for (const item of forwardedMediaPlan) {
+      const targetStoragePath =
+        item.targetStoragePath;
 
-    if (mediaInsertError) {
-      console.error(
-        "Failed to attach Agore forwarded message media:",
-        mediaInsertError,
-      );
+      if (!targetStoragePath) {
+        throw new Error(
+          "Invalid target storage path.",
+        );
+      }
 
-      await admin
-        .from("messages")
-        .delete()
-        .eq(
-          "id",
-          typedForwardedMessage.id,
-        )
-        .eq(
-          "conversation_id",
-          targetConversationId,
-        )
-        .eq(
-          "sender_id",
-          user.id,
+      const {
+        error: copyError,
+      } = await admin.storage
+        .from("message-media")
+        .copy(
+          item.source.storage_path,
+          targetStoragePath,
         );
 
-      return NextResponse.json(
-        {
-          error:
-            "Unable to forward the message attachments.",
-        },
-        { status: 500 },
+      if (copyError) {
+        throw new Error(
+          "Unable to copy a forwarded media object.",
+        );
+      }
+
+      copiedStoragePaths.push(
+        targetStoragePath,
       );
     }
+
+    if (
+      copiedStoragePaths.length >
+      0
+    ) {
+      const mediaRows: ForwardedMediaInsert[] =
+        forwardedMediaPlan.map(
+          (item) => ({
+            message_id:
+              typedForwardedMessage.id,
+            media_type:
+              item.source.media_type,
+            storage_path:
+              item.targetStoragePath!,
+            file_name:
+              item.source.file_name,
+            mime_type:
+              item.source.mime_type,
+            size_bytes:
+              item.source.size_bytes,
+            width:
+              item.source.width,
+            height:
+              item.source.height,
+            duration_ms:
+              item.source.duration_ms,
+          }),
+        );
+
+      const {
+        error:
+          mediaInsertError,
+      } = await admin
+        .from("message_media")
+        .insert(mediaRows);
+
+      if (mediaInsertError) {
+        throw new Error(
+          "Unable to attach forwarded message media.",
+        );
+      }
+    }
+  } catch (error) {
+    console.error(
+      "Failed to copy Agore forwarded message media:",
+      error,
+    );
+
+    await removeStorageObjects(
+      admin,
+      copiedStoragePaths,
+    );
+
+    await removeForwardedMessage(
+      admin,
+      targetConversationId,
+      typedForwardedMessage.id,
+      user.id,
+    );
+
+    return NextResponse.json(
+      {
+        error:
+          "Unable to forward the message attachments.",
+      },
+      { status: 500 },
+    );
   }
 
   const now =
@@ -563,6 +725,42 @@ export async function POST(
     typedForwardedMessage.id,
   );
 
+  const {
+    data: forwardedMedia,
+    error:
+      forwardedMediaLookupError,
+  } = await admin
+    .from("message_media")
+    .select(
+      `
+        id,
+        message_id,
+        media_type,
+        storage_path,
+        file_name,
+        mime_type,
+        size_bytes,
+        width,
+        height,
+        duration_ms,
+        created_at
+      `,
+    )
+    .eq(
+      "message_id",
+      typedForwardedMessage.id,
+    )
+    .order("created_at", {
+      ascending: true,
+    });
+
+  if (forwardedMediaLookupError) {
+    console.error(
+      "Failed to reload Agore forwarded media metadata:",
+      forwardedMediaLookupError,
+    );
+  }
+
   return NextResponse.json(
     {
       conversation_id:
@@ -571,7 +769,9 @@ export async function POST(
         messageId,
       message: {
         ...typedForwardedMessage,
-        media,
+        media:
+          forwardedMedia ??
+          [],
         forwarded: true,
       },
     },
