@@ -1,7 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import {
+  useParams,
+  useRouter,
+} from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -250,6 +253,9 @@ export default function ProfilePage() {
       return;
     }
 
+    const wasBlocked =
+      profile.is_blocked;
+
     setActionLoading(
       "block",
     );
@@ -257,7 +263,7 @@ export default function ProfilePage() {
 
     try {
       const method =
-        profile.is_blocked
+        wasBlocked
           ? "DELETE"
           : "POST";
 
@@ -284,40 +290,16 @@ export default function ProfilePage() {
         return;
       }
 
-      if (
-        !profile.is_blocked
-      ) {
-        setProfile(
-          (current) =>
-            current
-              ? {
-                  ...current,
-                  is_blocked:
-                    true,
-                  is_following:
-                    false,
-                }
-              : current,
-        );
-
+      if (!wasBlocked) {
         setConnectionsOpen(
           false,
         );
         setReportOpen(
           false,
         );
-      } else {
-        setProfile(
-          (current) =>
-            current
-              ? {
-                  ...current,
-                  is_blocked:
-                    false,
-                }
-              : current,
-        );
       }
+
+      await loadProfile();
     } catch {
       setError(
         "Unable to update block status.",
@@ -598,25 +580,19 @@ export default function ProfilePage() {
                               "follow" ? (
                                 <Loader2
                                   className="animate-spin"
-                                  size={
-                                    16
-                                  }
+                                  size={16}
                                 />
                               ) : profile.is_following ? (
                                 <>
                                   <Check
-                                    size={
-                                      16
-                                    }
+                                    size={16}
                                   />
                                   Following
                                 </>
                               ) : (
                                 <>
                                   <UserPlus
-                                    size={
-                                      16
-                                    }
+                                    size={16}
                                   />
                                   Follow
                                 </>
@@ -638,15 +614,11 @@ export default function ProfilePage() {
                               {messageLoading ? (
                                 <Loader2
                                   className="animate-spin"
-                                  size={
-                                    16
-                                  }
+                                  size={16}
                                 />
                               ) : (
                                 <MessageCircle
-                                  size={
-                                    16
-                                  }
+                                  size={16}
                                 />
                               )}
 
@@ -678,9 +650,7 @@ export default function ProfilePage() {
                           "block" ? (
                             <Loader2
                               className="animate-spin"
-                              size={
-                                16
-                              }
+                              size={16}
                             />
                           ) : profile.is_blocked ? (
                             <ShieldOff
@@ -756,15 +726,11 @@ export default function ProfilePage() {
                           "block" ? (
                             <Loader2
                               className="animate-spin"
-                              size={
-                                16
-                              }
+                              size={16}
                             />
                           ) : (
                             <ShieldOff
-                              size={
-                                16
-                              }
+                              size={16}
                             />
                           )}
 
