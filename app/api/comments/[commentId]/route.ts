@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+
+const uuidSchema = z.string().uuid();
 
 const updateCommentSchema = z.object({
   content: z
@@ -16,7 +20,25 @@ type RouteContext = {
   }>;
 };
 
-export async function PATCH(request: Request, context: RouteContext) {
+const commentSelect = `
+  id,
+  post_id,
+  author_id,
+  parent_comment_id,
+  content,
+  created_at,
+  updated_at,
+  profiles!comments_author_id_fkey!inner (
+    display_name,
+    username,
+    avatar_path
+  )
+`;
+
+export async function PATCH(
+  request: Request,
+  context: RouteContext,
+) {
   const supabase = await createClient();
 
   const {
@@ -33,9 +55,11 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   const { commentId } = await context.params;
 
-  if (!commentId) {
+  const parsedCommentId = uuidSchema.safeParse(commentId);
+
+  if (!parsedCommentId.success) {
     return NextResponse.json(
-      { error: "Comment ID is required." },
+      { error: "Invalid comment ID." },
       { status: 400 },
     );
   }
@@ -64,12 +88,16 @@ export async function PATCH(request: Request, context: RouteContext) {
     );
   }
 
-  const { data: existingComment, error: existingCommentError } =
-    await supabase
-      .from("comments")
-      .select("id")
-      .eq("id", commentId)
-      .maybeSingle();
+  const {
+    data: existingComment,
+    error: existingCommentError,
+  } = await supabase
+    .from("comments")
+    .select(
+      "id, post_id, author_id, deleted_at",
+    )
+    .eq("id", parsedCommentId.data)
+    .maybeSingle();
 
   if (existingCommentError) {
     console.error(
@@ -90,31 +118,39 @@ export async function PATCH(request: Request, context: RouteContext) {
     );
   }
 
-  const { data: comment, error: updateError } = await supabase
+  if (existingComment.author_id !== user.id) {
+    return NextResponse.json(
+      { error: "You can only edit your own comments." },
+      { status: 403 },
+    );
+  }
+
+  if (existingComment.deleted_at) {
+    return NextResponse.json(
+      { error: "Deleted comments cannot be edited." },
+      { status: 409 },
+    );
+  }
+
+  const {
+    data: comment,
+    error: updateError,
+  } = await supabase
     .from("comments")
     .update({
       content: parsedBody.data.content,
     })
-    .eq("id", commentId)
-    .select(
-      `
-        id,
-        post_id,
-        author_id,
-        parent_comment_id,
-        content,
-        created_at,
-        updated_at,
-        profiles (
-          display_name,
-          username
-        )
-      `,
-    )
-    .single();
+    .eq("id", parsedCommentId.data)
+    .eq("author_id", user.id)
+    .is("deleted_at", null)
+    .select(commentSelect)
+    .maybeSingle();
 
   if (updateError) {
-    console.error("Failed to update Agore comment:", updateError);
+    console.error(
+      "Failed to update Agore comment:",
+      updateError,
+    );
 
     return NextResponse.json(
       { error: "Unable to update the comment." },
@@ -122,10 +158,20 @@ export async function PATCH(request: Request, context: RouteContext) {
     );
   }
 
+  if (!comment) {
+    return NextResponse.json(
+      { error: "Comment could not be updated." },
+      { status: 409 },
+    );
+  }
+
   return NextResponse.json({ comment });
 }
 
-export async function DELETE(_: Request, context: RouteContext) {
+export async function DELETE(
+  _: Request,
+  context: RouteContext,
+) {
   const supabase = await createClient();
 
   const {
@@ -142,19 +188,27 @@ export async function DELETE(_: Request, context: RouteContext) {
 
   const { commentId } = await context.params;
 
-  if (!commentId) {
+  const parsedCommentId = uuidSchema.safeParse(commentId);
+
+  if (!parsedCommentId.success) {
     return NextResponse.json(
-      { error: "Comment ID is required." },
+      { error: "Invalid comment ID." },
       { status: 400 },
     );
   }
 
-  const { data: existingComment, error: existingCommentError } =
-    await supabase
-      .from("comments")
-      .select("id")
-      .eq("id", commentId)
-      .maybeSingle();
+  const admin = createAdminClient();
+
+  const {
+    data: existingComment,
+    error: existingCommentError,
+  } = await admin
+    .from("comments")
+    .select(
+      "id, post_id, author_id, parent_comment_id, deleted_at",
+    )
+    .eq("id", parsedCommentId.data)
+    .maybeSingle();
 
   if (existingCommentError) {
     console.error(
@@ -175,16 +229,63 @@ export async function DELETE(_: Request, context: RouteContext) {
     );
   }
 
-  const { error: deleteError } = await supabase
+  if (existingComment.author_id !== user.id) {
+    return NextResponse.json(
+      { error: "You can only delete your own comments." },
+      { status: 403 },
+    );
+  }
+
+  if (existingComment.deleted_at) {
+    return new NextResponse(null, {
+      status: 204,
+    });
+  }
+
+  const deletedAt = new Date().toISOString();
+
+  if (existingComment.parent_comment_id === null) {
+    const { error: replyDeleteError } = await admin
+      .from("comments")
+      .update({
+        deleted_at: deletedAt,
+      })
+      .eq(
+        "parent_comment_id",
+        parsedCommentId.data,
+      )
+      .is("deleted_at", null);
+
+    if (replyDeleteError) {
+      console.error(
+        "Failed to delete Agore comment replies:",
+        replyDeleteError,
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            "Unable to complete comment deletion.",
+        },
+        { status: 500 },
+      );
+    }
+  }
+
+  const { error: deleteError } = await admin
     .from("comments")
     .update({
-      deleted_at: new Date().toISOString(),
+      deleted_at: deletedAt,
     })
-    .eq("id", commentId)
+    .eq("id", parsedCommentId.data)
+    .eq("author_id", user.id)
     .is("deleted_at", null);
 
   if (deleteError) {
-    console.error("Failed to delete Agore comment:", deleteError);
+    console.error(
+      "Failed to delete Agore comment:",
+      deleteError,
+    );
 
     return NextResponse.json(
       { error: "Unable to delete the comment." },
@@ -192,5 +293,7 @@ export async function DELETE(_: Request, context: RouteContext) {
     );
   }
 
-  return new NextResponse(null, { status: 204 });
+  return new NextResponse(null, {
+    status: 204,
+  });
 }
