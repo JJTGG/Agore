@@ -3,8 +3,8 @@
 import Link from "next/link";
 import {
   Loader2,
-  Users,
   UserRoundCheck,
+  Users,
   X,
 } from "lucide-react";
 import {
@@ -13,23 +13,15 @@ import {
   useState,
 } from "react";
 
-import AgoreAvatar from "@/components/agore-avatar";
-import { createClient } from "@/lib/supabase/browser";
-
 type ConnectionTab =
   | "followers"
   | "following";
 
-type ConnectionProfile = {
+type ProfileConnection = {
   id: string;
   display_name: string;
   username: string;
   avatar_path: string | null;
-};
-
-type FollowRow = {
-  follower_id: string;
-  following_id: string;
   created_at: string;
 };
 
@@ -40,7 +32,12 @@ type ProfileConnectionsProps = {
   onClose: () => void;
 };
 
-const supabase = createClient();
+type ConnectionsResponse = {
+  blocked?: boolean;
+  followers?: ProfileConnection[];
+  following?: ProfileConnection[];
+  error?: string;
+};
 
 function formatConnectionDate(
   value: string,
@@ -61,6 +58,70 @@ function formatConnectionDate(
   ).format(date);
 }
 
+function getInitials(
+  name: string,
+) {
+  const parts = name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (parts.length === 0) {
+    return "A";
+  }
+
+  if (parts.length === 1) {
+    return parts[0]
+      .slice(0, 2)
+      .toUpperCase();
+  }
+
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+}
+
+function ConnectionAvatar({
+  connection,
+}: {
+  connection: ProfileConnection;
+}) {
+  const [
+    imageFailed,
+    setImageFailed,
+  ] = useState(false);
+
+  const initials = getInitials(
+    connection.display_name,
+  );
+
+  const showImage =
+    Boolean(
+      connection.avatar_path,
+    ) && !imageFailed;
+
+  if (showImage) {
+    return (
+      <img
+        src={connection.avatar_path ?? ""}
+        alt=""
+        className="h-11 w-11 shrink-0 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] object-cover"
+        loading="lazy"
+        onError={() =>
+          setImageFailed(true)
+        }
+      />
+    );
+  }
+
+  return (
+    <span
+      aria-hidden="true"
+      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--accent-soft)] text-xs font-bold text-[var(--accent)]"
+    >
+      {initials}
+    </span>
+  );
+}
+
 export default function ProfileConnections({
   userId,
   open,
@@ -78,38 +139,19 @@ export default function ProfileConnections({
     followers,
     setFollowers,
   ] = useState<
-    ConnectionProfile[]
+    ProfileConnection[]
   >([]);
 
   const [
     following,
     setFollowing,
   ] = useState<
-    ConnectionProfile[]
+    ProfileConnection[]
   >([]);
-
-  const [
-    followerDates,
-    setFollowerDates,
-  ] = useState<
-    Record<string, string>
-  >({});
-
-  const [
-    followingDates,
-    setFollowingDates,
-  ] = useState<
-    Record<string, string>
-  >({});
 
   const [
     loading,
     setLoading,
-  ] = useState(false);
-
-  const [
-    loaded,
-    setLoaded,
   ] = useState(false);
 
   const [
@@ -123,10 +165,13 @@ export default function ProfileConnections({
     }
 
     setActiveTab(initialTab);
-  }, [initialTab, open]);
+  }, [
+    initialTab,
+    open,
+  ]);
 
   useEffect(() => {
-    if (!open || loaded) {
+    if (!open || !userId) {
       return;
     }
 
@@ -137,202 +182,59 @@ export default function ProfileConnections({
       setError("");
 
       try {
-        const {
-          data: { user },
-          error: userError,
-        } =
-          await supabase.auth.getUser();
+        const response =
+          await fetch(
+            `/api/users/${encodeURIComponent(
+              userId,
+            )}/connections`,
+            {
+              method: "GET",
+              cache: "no-store",
+            },
+          );
 
-        if (userError || !user) {
+        const data =
+          (await response.json()) as ConnectionsResponse;
+
+        if (!response.ok) {
           throw new Error(
-            "Authentication required.",
+            data.error ??
+              "Unable to load connections.",
           );
-        }
-
-        const {
-          data: follows,
-          error: followsError,
-        } = await supabase
-          .from("follows")
-          .select(
-            "follower_id, following_id, created_at",
-          )
-          .or(
-            `follower_id.eq.${userId},following_id.eq.${userId}`,
-          )
-          .order("created_at", {
-            ascending: false,
-          })
-          .limit(100);
-
-        if (followsError) {
-          throw followsError;
-        }
-
-        const rows =
-          (follows ??
-            []) as FollowRow[];
-
-        const followerRows =
-          rows.filter(
-            (row) =>
-              row.following_id ===
-              userId,
-          );
-
-        const followingRows =
-          rows.filter(
-            (row) =>
-              row.follower_id ===
-              userId,
-          );
-
-        const connectionIds = [
-          ...new Set([
-            ...followerRows.map(
-              (row) =>
-                row.follower_id,
-            ),
-            ...followingRows.map(
-              (row) =>
-                row.following_id,
-            ),
-          ]),
-        ];
-
-        let profiles: ConnectionProfile[] =
-          [];
-
-        if (
-          connectionIds.length >
-          0
-        ) {
-          const {
-            data: profileRows,
-            error: profilesError,
-          } = await supabase
-            .from("profiles")
-            .select(
-              "id, display_name, username, avatar_path",
-            )
-            .in(
-              "id",
-              connectionIds,
-            )
-            .eq(
-              "account_status",
-              "active",
-            );
-
-          if (profilesError) {
-            throw profilesError;
-          }
-
-          profiles =
-            (profileRows ??
-              []) as ConnectionProfile[];
         }
 
         if (!active) {
           return;
         }
 
-        const profileMap =
-          new Map(
-            profiles.map(
-              (profile) => [
-                profile.id,
-                profile,
-              ],
-            ),
-          );
-
-        const orderedFollowers =
-          followerRows
-            .map((row) =>
-              profileMap.get(
-                row.follower_id,
-              ),
-            )
-            .filter(
-              (
-                profile,
-              ): profile is ConnectionProfile =>
-                Boolean(profile),
-            );
-
-        const orderedFollowing =
-          followingRows
-            .map((row) =>
-              profileMap.get(
-                row.following_id,
-              ),
-            )
-            .filter(
-              (
-                profile,
-              ): profile is ConnectionProfile =>
-                Boolean(profile),
-            );
-
-        const nextFollowerDates =
-          Object.fromEntries(
-            followerRows
-              .filter((row) =>
-                profileMap.has(
-                  row.follower_id,
-                ),
-              )
-              .map((row) => [
-                row.follower_id,
-                row.created_at,
-              ]),
-          );
-
-        const nextFollowingDates =
-          Object.fromEntries(
-            followingRows
-              .filter((row) =>
-                profileMap.has(
-                  row.following_id,
-                ),
-              )
-              .map((row) => [
-                row.following_id,
-                row.created_at,
-              ]),
-          );
-
         setFollowers(
-          orderedFollowers,
+          Array.isArray(
+            data.followers,
+          )
+            ? data.followers
+            : [],
         );
 
         setFollowing(
-          orderedFollowing,
+          Array.isArray(
+            data.following,
+          )
+            ? data.following
+            : [],
         );
-
-        setFollowerDates(
-          nextFollowerDates,
-        );
-
-        setFollowingDates(
-          nextFollowingDates,
-        );
-
-        setLoaded(true);
-      } catch (
-        requestError
-      ) {
+      } catch (requestError) {
         if (!active) {
           return;
         }
 
         setError(
-          requestError instanceof
-            Error
+          requestError instanceof Error
             ? requestError.message
             : "Unable to load connections.",
         );
+
+        setFollowers([]);
+        setFollowing([]);
       } finally {
         if (active) {
           setLoading(false);
@@ -346,7 +248,6 @@ export default function ProfileConnections({
       active = false;
     };
   }, [
-    loaded,
     open,
     userId,
   ]);
@@ -364,12 +265,6 @@ export default function ProfileConnections({
         following,
       ],
     );
-
-  const activeDates =
-    activeTab ===
-    "followers"
-      ? followerDates
-      : followingDates;
 
   const heading =
     activeTab ===
@@ -453,6 +348,7 @@ export default function ProfileConnections({
             ].join(" ")}
           >
             <Users size={15} />
+
             Followers
 
             {followers.length >
@@ -491,6 +387,7 @@ export default function ProfileConnections({
             <UserRoundCheck
               size={15}
             />
+
             Following
 
             {following.length >
@@ -532,55 +429,37 @@ export default function ProfileConnections({
             0 ? (
             <div className="px-6 py-14 text-center">
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]">
-                {activeTab ===
-                "followers" ? (
-                  <Users size={19} />
-                ) : (
-                  <UserRoundCheck
-                    size={19}
-                  />
-                )}
+                <Users size={19} />
               </div>
 
               <p className="mt-4 text-sm font-semibold">
-                No{" "}
-                {activeTab ===
-                "followers"
-                  ? "followers"
-                  : "following"}{" "}
-                yet.
+                No {activeTab} yet.
               </p>
 
-              <p className="mt-1 text-sm leading-5 text-[var(--muted)]">
-                This part of the social graph is empty for now.
+              <p className="mx-auto mt-1 max-w-xs text-sm leading-6 text-[var(--muted)]">
+                Connections that are visible to you will appear here.
               </p>
             </div>
           ) : (
             <div className="divide-y divide-[var(--border)]">
               {activeConnections.map(
-                (connection) => (
+                (
+                  connection,
+                ) => (
                   <Link
-                    key={
-                      connection.id
-                    }
+                    key={`${activeTab}-${connection.id}`}
                     href={`/profile/${encodeURIComponent(
                       connection.id,
                     )}`}
                     onClick={
                       onClose
                     }
-                    className="flex items-center gap-3 px-5 py-3.5 transition hover:bg-[var(--surface-muted)]"
+                    className="flex items-center gap-3 px-5 py-4 transition hover:bg-[var(--surface-muted)]"
                   >
-                    <AgoreAvatar
-                      avatarPath={
-                        connection.avatar_path
-                      }
-                      name={
-                        connection.display_name
-                      }
-                      className="h-11 w-11 shrink-0"
-                      textClassName="text-xs"
-                    />
+                    <ConnectionAvatar
+                      connection={
+                        connection
+                      />
 
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-semibold">
@@ -597,24 +476,16 @@ export default function ProfileConnections({
                       </p>
                     </div>
 
-                    {activeDates[
-                      connection.id
-                    ] ? (
-                      <time
-                        dateTime={
-                          activeDates[
-                            connection.id
-                          ]
-                        }
-                        className="hidden shrink-0 text-[10px] text-[var(--muted)] sm:block"
-                      >
-                        {formatConnectionDate(
-                          activeDates[
-                            connection.id
-                          ],
-                        )}
-                      </time>
-                    ) : null}
+                    <time
+                      dateTime={
+                        connection.created_at
+                      }
+                      className="hidden shrink-0 text-right text-[10px] text-[var(--muted)] sm:block"
+                    >
+                      {formatConnectionDate(
+                        connection.created_at,
+                      )}
+                    </time>
                   </Link>
                 ),
               )}
