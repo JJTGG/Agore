@@ -257,13 +257,13 @@ export async function GET(
           height,
           sort_order,
           created_at,
-          posts!post_media_post_id_fkey (
+          posts!post_media_post_id_fkey!inner (
             id,
             author_id,
             content,
             created_at,
             deleted_at,
-            profiles!posts_author_id_fkey (
+            profiles!posts_author_id_fkey!inner (
               account_status
             )
           )
@@ -292,8 +292,7 @@ export async function GET(
       )
       .range(
         0,
-        parsedQuery.data.limit -
-          1,
+        parsedQuery.data.limit - 1,
       );
 
   if (mediaError) {
@@ -314,8 +313,7 @@ export async function GET(
   }
 
   const rows =
-    (mediaRows ??
-      []) as MediaRow[];
+    (mediaRows ?? []) as MediaRow[];
 
   const posts = new Map<
     string,
@@ -338,11 +336,8 @@ export async function GET(
 
   for (const row of rows) {
     const post =
-      Array.isArray(
-        row.posts,
-      )
-        ? row.posts[0] ??
-          null
+      Array.isArray(row.posts)
+        ? row.posts[0] ?? null
         : null;
 
     if (!post) {
@@ -353,8 +348,7 @@ export async function GET(
       Array.isArray(
         post.profiles,
       )
-        ? post.profiles[0] ??
-          null
+        ? post.profiles[0] ?? null
         : null;
 
     if (
@@ -365,9 +359,7 @@ export async function GET(
     }
 
     let entry =
-      posts.get(
-        post.id,
-      );
+      posts.get(post.id);
 
     if (!entry) {
       entry = {
