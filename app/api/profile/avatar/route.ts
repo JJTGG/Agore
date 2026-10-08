@@ -1,19 +1,24 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
-const MAX_AVATAR_SIZE = 5 * 1024 * 1024;
+const MAX_AVATAR_SIZE =
+  5 * 1024 * 1024;
 
-const ALLOWED_TYPES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-]);
+const ALLOWED_TYPES =
+  new Set([
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+  ]);
 
 function hasValidSignature(
   bytes: Uint8Array,
   contentType: string,
 ) {
-  if (contentType === "image/jpeg") {
+  if (
+    contentType ===
+    "image/jpeg"
+  ) {
     return (
       bytes.length >= 3 &&
       bytes[0] === 0xff &&
@@ -22,7 +27,10 @@ function hasValidSignature(
     );
   }
 
-  if (contentType === "image/png") {
+  if (
+    contentType ===
+    "image/png"
+  ) {
     return (
       bytes.length >= 8 &&
       bytes[0] === 0x89 &&
@@ -36,7 +44,10 @@ function hasValidSignature(
     );
   }
 
-  if (contentType === "image/webp") {
+  if (
+    contentType ===
+    "image/webp"
+  ) {
     return (
       bytes.length >= 12 &&
       bytes[0] === 0x52 &&
@@ -53,89 +64,197 @@ function hasValidSignature(
   return false;
 }
 
-export async function POST(request: Request) {
-  const supabase = await createClient();
+function getAvatarPath(
+  userId: string,
+) {
+  return `${userId}/${crypto.randomUUID()}`;
+}
+
+export async function POST(
+  request: Request,
+) {
+  const supabase =
+    await createClient();
 
   const {
     data: { user },
     error: userError,
-  } = await supabase.auth.getUser();
+  } =
+    await supabase.auth.getUser();
 
-  if (userError || !user) {
+  if (
+    userError ||
+    !user
+  ) {
     return NextResponse.json(
-      { error: "Authentication required." },
-      { status: 401 },
+      {
+        error:
+          "Authentication required.",
+      },
+      {
+        status: 401,
+      },
     );
   }
 
   let formData: FormData;
 
   try {
-    formData = await request.formData();
+    formData =
+      await request.formData();
   } catch {
     return NextResponse.json(
-      { error: "Invalid upload request." },
-      { status: 400 },
+      {
+        error:
+          "Invalid upload request.",
+      },
+      {
+        status: 400,
+      },
     );
   }
 
-  const fileValue = formData.get("file");
+  const fileValue =
+    formData.get("file");
 
-  if (!(fileValue instanceof File)) {
+  if (
+    !(fileValue instanceof File)
+  ) {
     return NextResponse.json(
-      { error: "An avatar image is required." },
-      { status: 400 },
+      {
+        error:
+          "An avatar image is required.",
+      },
+      {
+        status: 400,
+      },
     );
   }
 
-  if (fileValue.size <= 0) {
+  if (
+    fileValue.size <= 0
+  ) {
     return NextResponse.json(
-      { error: "The selected image is empty." },
-      { status: 400 },
+      {
+        error:
+          "The selected image is empty.",
+      },
+      {
+        status: 400,
+      },
     );
   }
 
-  if (fileValue.size > MAX_AVATAR_SIZE) {
+  if (
+    fileValue.size >
+    MAX_AVATAR_SIZE
+  ) {
     return NextResponse.json(
-      { error: "Avatar must be 5 MB or smaller." },
-      { status: 400 },
+      {
+        error:
+          "Avatar must be 5 MB or smaller.",
+      },
+      {
+        status: 400,
+      },
     );
   }
 
-  if (!ALLOWED_TYPES.has(fileValue.type)) {
+  if (
+    !ALLOWED_TYPES.has(
+      fileValue.type,
+    )
+  ) {
     return NextResponse.json(
       {
         error:
           "Avatar must be a JPEG, PNG, or WebP image.",
       },
-      { status: 400 },
+      {
+        status: 400,
+      },
     );
   }
 
-  const buffer = new Uint8Array(
-    await fileValue.arrayBuffer(),
-  );
+  const buffer =
+    new Uint8Array(
+      await fileValue.arrayBuffer(),
+    );
 
-  if (!hasValidSignature(buffer, fileValue.type)) {
+  if (
+    !hasValidSignature(
+      buffer,
+      fileValue.type,
+    )
+  ) {
     return NextResponse.json(
       {
         error:
           "The selected file is not a valid image.",
       },
-      { status: 400 },
+      {
+        status: 400,
+      },
     );
   }
 
-  const avatarPath = `${user.id}/avatar`;
+  const {
+    data: currentProfile,
+    error: currentProfileError,
+  } =
+    await supabase
+      .from("profiles")
+      .select(
+        "id, display_name, username, bio, avatar_path, updated_at",
+      )
+      .eq(
+        "id",
+        user.id,
+      )
+      .single();
 
-  const { error: uploadError } =
-    await supabase.storage
-      .from("avatars")
-      .upload(avatarPath, fileValue, {
-        cacheControl: "3600",
-        contentType: fileValue.type,
-        upsert: true,
-      });
+  if (
+    currentProfileError
+  ) {
+    console.error(
+      "Failed to load Agore profile before avatar upload:",
+      currentProfileError,
+    );
+
+    return NextResponse.json(
+      {
+        error:
+          "Unable to load your profile.",
+      },
+      {
+        status: 500,
+      },
+    );
+  }
+
+  const previousAvatarPath =
+    currentProfile.avatar_path;
+
+  const newAvatarPath =
+    getAvatarPath(
+      user.id,
+    );
+
+  const {
+    error: uploadError,
+  } = await supabase.storage
+    .from("avatars")
+    .upload(
+      newAvatarPath,
+      fileValue,
+      {
+        cacheControl:
+          "3600",
+        contentType:
+          fileValue.type,
+        upsert: false,
+      },
+    );
 
   if (uploadError) {
     console.error(
@@ -144,27 +263,40 @@ export async function POST(request: Request) {
     );
 
     return NextResponse.json(
-      { error: "Unable to upload your avatar." },
-      { status: 500 },
+      {
+        error:
+          "Unable to upload your avatar.",
+      },
+      {
+        status: 500,
+      },
     );
   }
 
   const {
-    data: profile,
+    data: updatedProfile,
     error: updateError,
-  } = await supabase
-    .from("profiles")
-    .update({
-      avatar_path: avatarPath,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", user.id)
-    .select(
-      "id, display_name, username, bio, avatar_path, updated_at",
-    )
-    .single();
+  } =
+    await supabase
+      .from("profiles")
+      .update({
+        avatar_path:
+          newAvatarPath,
+        updated_at:
+          new Date().toISOString(),
+      })
+      .eq(
+        "id",
+        user.id,
+      )
+      .select(
+        "id, display_name, username, bio, avatar_path, updated_at",
+      )
+      .single();
 
-  if (updateError) {
+  if (
+    updateError
+  ) {
     console.error(
       "Failed to save Agore avatar path:",
       updateError,
@@ -172,65 +304,127 @@ export async function POST(request: Request) {
 
     await supabase.storage
       .from("avatars")
-      .remove([avatarPath]);
+      .remove([
+        newAvatarPath,
+      ]);
 
     return NextResponse.json(
       {
         error:
           "Avatar uploaded, but your profile could not be updated.",
       },
-      { status: 500 },
+      {
+        status: 500,
+      },
     );
   }
 
+  if (
+    previousAvatarPath &&
+    previousAvatarPath !==
+      newAvatarPath
+  ) {
+    const {
+      error: cleanupError,
+    } =
+      await supabase.storage
+        .from("avatars")
+        .remove([
+          previousAvatarPath,
+        ]);
+
+    if (cleanupError) {
+      console.error(
+        "Agore avatar replaced, but previous avatar cleanup failed:",
+        cleanupError,
+      );
+
+      return NextResponse.json({
+        profile:
+          updatedProfile,
+        avatar_path:
+          newAvatarPath,
+        storage_cleanup_pending:
+          true,
+      });
+    }
+  }
+
   return NextResponse.json({
-    profile,
-    avatar_path: avatarPath,
+    profile:
+      updatedProfile,
+    avatar_path:
+      newAvatarPath,
   });
 }
 
 export async function DELETE() {
-  const supabase = await createClient();
+  const supabase =
+    await createClient();
 
   const {
     data: { user },
     error: userError,
-  } = await supabase.auth.getUser();
+  } =
+    await supabase.auth.getUser();
 
-  if (userError || !user) {
+  if (
+    userError ||
+    !user
+  ) {
     return NextResponse.json(
-      { error: "Authentication required." },
-      { status: 401 },
+      {
+        error:
+          "Authentication required.",
+      },
+      {
+        status: 401,
+      },
     );
   }
 
   const {
     data: currentProfile,
     error: profileError,
-  } = await supabase
-    .from("profiles")
-    .select(
-      "id, display_name, username, bio, avatar_path, updated_at",
-    )
-    .eq("id", user.id)
-    .single();
+  } =
+    await supabase
+      .from("profiles")
+      .select(
+        "id, display_name, username, bio, avatar_path, updated_at",
+      )
+      .eq(
+        "id",
+        user.id,
+      )
+      .single();
 
-  if (profileError) {
+  if (
+    profileError
+  ) {
     console.error(
       "Failed to load Agore profile before avatar removal:",
       profileError,
     );
 
     return NextResponse.json(
-      { error: "Unable to load your profile." },
-      { status: 500 },
+      {
+        error:
+          "Unable to load your profile.",
+      },
+      {
+        status: 500,
+      },
     );
   }
 
-  if (!currentProfile.avatar_path) {
+  if (
+    !currentProfile.avatar_path
+  ) {
     return NextResponse.json({
-      profile: currentProfile,
-      avatar_path: null,
+      profile:
+        currentProfile,
+      avatar_path:
+        null,
     });
   }
 
@@ -240,23 +434,30 @@ export async function DELETE() {
   const {
     data: updatedProfile,
     error: updateError,
-  } = await supabase
-    .from("profiles")
-    .update({
-      avatar_path: null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", user.id)
-    .eq(
-      "avatar_path",
-      avatarPath,
-    )
-    .select(
-      "id, display_name, username, bio, avatar_path, updated_at",
-    )
-    .single();
+  } =
+    await supabase
+      .from("profiles")
+      .update({
+        avatar_path: null,
+        updated_at:
+          new Date().toISOString(),
+      })
+      .eq(
+        "id",
+        user.id,
+      )
+      .eq(
+        "avatar_path",
+        avatarPath,
+      )
+      .select(
+        "id, display_name, username, bio, avatar_path, updated_at",
+      )
+      .single();
 
-  if (updateError) {
+  if (
+    updateError
+  ) {
     console.error(
       "Failed to remove Agore avatar reference:",
       updateError,
@@ -267,15 +468,20 @@ export async function DELETE() {
         error:
           "Unable to remove your profile photo.",
       },
-      { status: 500 },
+      {
+        status: 500,
+      },
     );
   }
 
   const {
     error: storageError,
-  } = await supabase.storage
-    .from("avatars")
-    .remove([avatarPath]);
+  } =
+    await supabase.storage
+      .from("avatars")
+      .remove([
+        avatarPath,
+      ]);
 
   if (storageError) {
     console.error(
@@ -284,14 +490,19 @@ export async function DELETE() {
     );
 
     return NextResponse.json({
-      profile: updatedProfile,
-      avatar_path: null,
-      storage_cleanup_pending: true,
+      profile:
+        updatedProfile,
+      avatar_path:
+        null,
+      storage_cleanup_pending:
+        true,
     });
   }
 
   return NextResponse.json({
-    profile: updatedProfile,
-    avatar_path: null,
+    profile:
+      updatedProfile,
+    avatar_path:
+      null,
   });
 }
