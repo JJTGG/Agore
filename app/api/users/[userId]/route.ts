@@ -17,13 +17,15 @@ type BlockRow = {
   blocked_id: string;
 };
 
+type ConnectionProfile = {
+  id: string;
+  account_status: string;
+};
+
 type ConnectionFollowRow = {
   follower_id?: string;
   following_id?: string;
-  profiles?: {
-    id: string;
-    account_status: string;
-  } | null;
+  profiles?: ConnectionProfile[] | null;
 };
 
 function getBlockedConnectionIds(
@@ -44,7 +46,9 @@ function countVisibleConnections(
   rows: ConnectionFollowRow[],
   viewerId: string,
   blockedConnectionIds: Set<string>,
-  direction: "followers" | "following",
+  direction:
+    | "followers"
+    | "following",
 ) {
   const ids = new Set<string>();
 
@@ -54,19 +58,29 @@ function countVisibleConnections(
         ? row.follower_id
         : row.following_id;
 
+    const connectionProfile =
+      Array.isArray(
+        row.profiles,
+      )
+        ? row.profiles[0] ??
+          null
+        : null;
+
     if (
       !connectionId ||
       connectionId === viewerId ||
       blockedConnectionIds.has(
         connectionId,
       ) ||
-      row.profiles?.account_status !==
+      connectionProfile?.account_status !==
         "active"
     ) {
       continue;
     }
 
-    ids.add(connectionId);
+    ids.add(
+      connectionId,
+    );
   }
 
   return ids.size;
@@ -322,7 +336,8 @@ export async function GET(
           "following",
         );
 
-  let isFollowing = false;
+  let isFollowing =
+    false;
 
   if (
     targetUserId !== user.id &&
@@ -339,20 +354,15 @@ export async function GET(
   return NextResponse.json({
     profile: {
       ...profile,
-
       is_self:
         targetUserId ===
         user.id,
-
       is_following:
         isFollowing,
-
       is_blocked:
         viewerBlockedTarget,
-
       follower_count:
         followerCount,
-
       following_count:
         followingCount,
     },
