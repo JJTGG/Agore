@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import AgoreAvatar from "@/components/agore-avatar";
+import GroupAvatarEditor from "./group-avatar-editor";
 import MessageActionMenu from "./message-action-menu";
 import MessageReactions from "./message-reactions";
 import MessageStatus from "./message-status";
@@ -1029,52 +1030,7 @@ export default function ConversationPage() {
   const title = useMemo(() => {
     if (!conversation) {
       return "Messages";
-    }
-
-    if (
-      conversation.type ===
-      "group"
-    ) {
-      return (
-        conversation.name?.trim() ||
-        "Unnamed group"
-      );
-    }
-
-    return (
-      conversation.participant
-        ?.display_name ||
-      "Agoré user"
-    );
-  }, [conversation]);
-
-  const subtitle = useMemo(() => {
-    if (!conversation) {
-      return "";
-    }
-
-    if (
-      conversation.type ===
-      "group"
-    ) {
-      return groupMembers.length >
-        0
-        ? `${groupMembers.length} members`
-        : "Group conversation";
-    }
-
-    return conversation.participant
-      ? `@${conversation.participant.username}`
-      : "Direct conversation";
-  }, [
-    conversation,
-    groupMembers.length,
-  ]);
-
-  const participantAvatar =
-    conversation?.type ===
-    "direct"
-      ? conversation
+        ? conversation
           .participant
           ?.avatar_path
       : null;
@@ -1496,7 +1452,6 @@ export default function ConversationPage() {
             }
           },
         );
-
     return () => {
       void supabase.removeChannel(
         channel,
@@ -2059,6 +2014,10 @@ export default function ConversationPage() {
     if (
       !content ||
       sending ||
+      !conversationId
+    ) {
+      return;
+    }
       !conversationId
     ) {
       return;
@@ -2699,9 +2658,21 @@ export default function ConversationPage() {
           <header className="flex shrink-0 items-center gap-3 border-b border-[var(--border)] px-4 py-3 sm:px-5">
             <AgoreAvatar
               avatarPath={
-                participantAvatar
+                conversation?.type ===
+                "group"
+                  ? conversation.image_path
+                  : participantAvatar
               }
               name={title}
+              bucketName={
+                conversation?.type ===
+                "group"
+                  ? "group-media"
+                  : "avatars"
+              }
+              refreshKey={
+                conversation?.updated_at
+              }
               className="h-11 w-11"
               textClassName="text-xs"
             />
@@ -3090,6 +3061,786 @@ export default function ConversationPage() {
                   }
                 />
 
+                <div className="min-w-0 flex-1">
+                  <div className="relative rounded-[1.25rem] border border-[var(--border)] bg-[var(--surface)] transition focus-within:border-[var(--accent)]/50 focus-within:ring-2 focus-within:ring-[var(--accent)]/10">
+                    {editingMessageId ? (
+                      <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-2">
+                        <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--accent)]">
+                          Editing message
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={
+                            cancelEdit
+                          }
+                          disabled={
+                            editSaving
+                          }
+                          className="rounded-full px-2 py-1 text-[10px] font-semibold text-[var(--muted)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)] disabled:opacity-40"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : null}
+
+                    <textarea
+                      value={
+                        editingMessageId
+                          ? editDraft
+                          : draft
+                      }
+                      onChange={(
+                        event,
+                      ) => {
+                        if (
+                          editingMessageId
+                        ) {
+                          setEditDraft(
+                            event.target
+                              .value,
+                          );
+                        } else {
+                          setDraft(
+                            event.target
+                              .value,
+                          );
+                        }
+                      }}
+                      onKeyDown={(
+                        event,
+                      ) => {
+                        if (
+                          event.key ===
+                            "Enter" &&
+                          (event.ctrlKey ||
+                            event.metaKey)
+                        ) {
+                          event.preventDefault();
+
+                          if (
+                            editingMessageId
+                          ) {
+                            void saveEdit(
+                              editingMessageId,
+                            );
+                          } else {
+                            event.currentTarget.form?.requestSubmit();
+                          }
+                        }
+                      }}
+                      maxLength={5000}
+                      rows={1}
+                      autoFocus={
+                        Boolean(
+                          editingMessageId,
+                        )
+                      }
+                      disabled={
+                        sending ||
+                        editSaving ||
+                        !conversation
+                      }
+                      placeholder={
+                        editingMessageId
+                          ? "Edit your message…"
+                          : "Write a message…"
+                      }
+                      aria-label={
+                        editingMessageId
+                          ? "Edit message"
+                          : "Write a message"
+                      }
+                      className="max-h-36 min-h-11 w-full resize-none overflow-y-auto bg-transparent px-4 py-3 text-sm leading-5 outline-none placeholder:text-[var(--muted)] disabled:cursor-not-allowed disabled:opacity-50"
+                    />
+                  </div>
+                </div>
+
+                <VoiceNoteComposer
+                  conversationId={
+                    conversationId
+                  }
+                  disabled={
+                    sending ||
+                    Boolean(
+                      editingMessageId,
+                    ) ||
+                    !conversation
+                  }
+                  onSent={
+                    handleVoiceSent
+                  }
+                  onError={
+                    handleVoiceError
+                  }
+                />
+
+                <button
+                  type={
+                    editingMessageId
+                      ? "button"
+                      : "submit"
+                  }
+                  onClick={
+                    editingMessageId
+                      ? () =>
+                          void saveEdit(
+                            editingMessageId,
+                          )
+                      : undefined
+                  }
+                  disabled={
+                    sending ||
+                    editSaving ||
+                    !conversation ||
+                    Boolean(
+                      editingMessageId
+                        ? !editDraft.trim()
+                        : !draft.trim(),
+                    )
+                  }
+                  aria-label={
+                    editingMessageId
+                      ? "Save edited message"
+                      : replyingTo
+                        ? "Send reply"
+                        : "Send message"
+                  }
+                  className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-white shadow-sm transition hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {sending ||
+                  editSaving ? (
+                    <Loader2
+                      size={17}
+                      className="animate-spin"
+                    />
+                  ) : editingMessageId ? (
+                    <Edit3
+                      size={17}
+                    />
+                  ) : (
+                    <ArrowDown
+                      size={17}
+                      className="rotate-[-90deg]"
+                    />
+                  )}
+                </button>
+              </div>
+
+              <p className="mt-2 px-1 text-[10px] text-[var(--muted)]">
+                Enter for a new line · Ctrl/Cmd + Enter to send
+              </p>
+            </div>
+          </form>
+        </section>
+      </div>
+
+      {showJumpToLatest ? (
+        <div className="pointer-events-none fixed inset-x-0 bottom-24 z-20 flex justify-end px-4 sm:bottom-28 sm:px-6">
+          <button
+            type="button"
+            onClick={
+              scrollToLatest
+            }
+            className="pointer-events-auto inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface-raised)] text-[var(--foreground)] shadow-lg transition hover:border-[var(--accent)]/40 hover:bg-[var(--accent-soft)] hover:text-[var(--accent)]"
+            aria-label="Jump to latest messages"
+          >
+            <ArrowDown
+              size={17}
+            />
+          </button>
+        </div>
+      ) : null}
+
+      {forwardingMessage ? (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-5"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="forward-title"
+        >
+          <div className="flex max-h-[90vh] w-full max-w-xl flex-col overflow-hidden rounded-t-[1.75rem] border border-[var(--border)] bg-[var(--surface)] shadow-2xl sm:rounded-[1.75rem]">
+            <header className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-5 py-4">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[var(--accent)]">
+                  Forward
+                </p>
+
+                <h2
+                  id="forward-title"
+                  className="mt-1 text-lg font-bold tracking-[-0.02em]"
+                >
+                  Send to another chat
+                </h2>
+              </div>
+
+              <button
+                type="button"
+                onClick={
+                  closeForwardDialog
+                }
+                disabled={
+                  forwardSending
+                }
+                aria-label="Close forward dialog"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] text-[var(--muted-strong)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)] disabled:opacity-40"
+              >
+                <X
+                  size={17}
+                />
+              </button>
+            </header>
+
+            <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+              <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-3">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent)]">
+                    <Forward
+                      size={16}
+                    />
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--accent)]">
+                      Forwarded message
+                    </p>
+
+                    <p className="mt-1 line-clamp-3 whitespace-pre-wrap break-words text-sm leading-6 text-[var(--foreground)]">
+                      {getMessagePreview(
+                        forwardingMessage,
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <label className="mt-4 block">
+                <span className="sr-only">
+                  Search conversations
+                </span>
+
+                <div className="flex items-center gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5">
+                  <Search
+                    size={16}
+                    className="shrink-0 text-[var(--muted)]"
+                  />
+
+                  <input
+                    value={
+                      forwardSearch
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      setForwardSearch(
+                        event.target
+                          .value,
+                      )
+                    }
+                    placeholder="Search conversations…"
+                    className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-[var(--muted)]"
+                    disabled={
+                      forwardingLoading ||
+                      forwardSending
+                    }
+                  />
+                </div>
+              </label>
+
+              {forwardError ? (
+                <div className="mt-3 rounded-xl border border-[var(--danger)]/20 bg-[var(--danger-soft)] px-3 py-2.5">
+                  <p className="text-xs font-semibold leading-5 text-[var(--danger)]">
+                    {
+                      forwardError
+                    }
+                  </p>
+                </div>
+              ) : null}
+
+              {forwardingLoading ? (
+                <div className="flex items-center justify-center py-10 text-[var(--muted)]">
+                  <Loader2
+                    size={20}
+                    className="animate-spin"
+                  />
+                </div>
+              ) : searchedForwardConversations.length ===
+                0 ? (
+                <div className="py-10 text-center">
+                  <p className="text-sm font-semibold">
+                    No conversations found
+                  </p>
+
+                  <p className="mt-1 text-xs text-[var(--muted)]">
+                    Choose another search term.
+                  </p>
+                </div>
+              ) : (
+                <div className="mt-3 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
+                  {searchedForwardConversations.map(
+                    (
+                      target,
+                    ) => {
+                      const name =
+                        target.type ===
+                        "group"
+                          ? target.name ??
+                            "Unnamed group"
+                          : target
+                              .participant
+                              ?.display_name ??
+                            "Agoré user";
+
+                      const secondary =
+                        target.type ===
+                        "group"
+                          ? target.description ??
+                            "Group conversation"
+                          : target
+                              .participant
+                              ?.username
+                            ? `@${target.participant.username}`
+                            : "Direct conversation";
+
+                      return (
+                        <button
+                          key={
+                            target.id
+                          }
+                          type="button"
+                          onClick={() =>
+                            void forwardMessage(
+                              target.id,
+                            )
+                          }
+                          disabled={
+                            forwardSending
+                          }
+                          className="flex w-full items-center gap-3 border-b border-[var(--border)] px-3 py-3 text-left transition last:border-b-0 hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <AgoreAvatar
+                            avatarPath={
+                              target.type ===
+                              "group"
+                                ? target.image_path
+                                : target
+                                    .participant
+                                    ?.avatar_path
+                            }
+                            name={
+                              name
+                            }
+                            bucketName={
+                              target.type ===
+                              "group"
+                                ? "group-media"
+                                : "avatars"
+                            }
+                            className="h-11 w-11 shrink-0"
+                            textClassName="text-xs"
+                          />
+
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-semibold">
+                              {
+                                name
+                              }
+                            </p>
+
+                            <p className="mt-0.5 truncate text-xs text-[var(--muted)]">
+                              {
+                                secondary
+                              }
+                            </p>
+                          </div>
+
+                          {forwardSending ? (
+                            <Loader2
+                              size={16}
+                              className="shrink-0 animate-spin text-[var(--accent)]"
+                            />
+                          ) : (
+                            <Forward
+                              size={16}
+                              className="shrink-0 text-[var(--muted)]"
+                            />
+                          )}
+                        </button>
+                      );
+                    },
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {groupOpen &&
+      conversation?.type ===
+        "group" ? (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-5"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="group-settings-title"
+        >
+          <div className="flex max-h-[94vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[1.75rem] border border-[var(--border)] bg-[var(--surface)] shadow-2xl sm:rounded-[1.75rem]">
+            <header className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-5 py-4 sm:px-6">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--accent)]">
+                  Group
+                </p>
+
+                <h2
+                  id="group-settings-title"
+                  className="mt-1 text-xl font-bold tracking-[-0.03em]"
+                >
+                  Group details
+                </h2>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setGroupOpen(
+                    false,
+                  );
+                  setGroupActionError(
+                    "",
+                  );
+                  setMemberQuery(
+                    "",
+                  );
+                  setMemberResults(
+                    [],
+                  );
+                }}
+                aria-label="Close group details"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] text-[var(--muted-strong)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)]"
+              >
+                <X size={17} />
+              </button>
+            </header>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
+              <div className="flex items-start gap-4">
+                <GroupAvatarEditor
+                  conversationId={
+                    conversationId
+                  }
+                  groupName={title}
+                  imagePath={
+                    conversation.image_path
+                  }
+                  onUpdated={(
+                    updatedConversation,
+                  ) => {
+                    setConversation(
+                      (current) =>
+                        current
+                          ? {
+                              ...current,
+                              image_path:
+                                updatedConversation.image_path,
+                              updated_at:
+                                updatedConversation.updated_at ??
+                                current.updated_at,
+                            }
+                          : current,
+                    );
+                  }}
+                  disabled={
+                    savingGroup
+                  }
+                />
+
+                <div className="min-w-0 pt-1">
+                  <div className="flex items-center gap-2">
+                    <p className="truncate text-lg font-bold tracking-[-0.02em]">
+                      {title}
+                    </p>
+
+                    <Users
+                      size={15}
+                      className="shrink-0 text-[var(--accent)]"
+                    />
+                  </div>
+
+                  <p className="mt-1 text-sm text-[var(--muted)]">
+                    {subtitle}
+                  </p>
+                </div>
+              </div>
+
+              {currentUserRole ===
+              "admin" ? (
+                <form
+                  onSubmit={
+                    saveGroupSettings
+                  }
+                  className="mt-6 rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)] p-4"
+                >
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">
+                    <Settings
+                      size={13}
+                    />
+                    Group settings
+                  </div>
+
+                  <label className="mt-4 block">
+                    <span className="text-xs font-semibold text-[var(--muted-strong)]">
+                      Group name
+                    </span>
+
+                    <input
+                      value={
+                        groupName
+                      }
+                      onChange={(
+                        event,
+                      ) =>
+                        setGroupName(
+                          event.target
+                            .value,
+                        )
+                      }
+                      maxLength={80}
+                      disabled={
+                        savingGroup
+                      }
+                      className="mt-1.5 h-11 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 text-sm outline-none transition focus:border-[var(--accent)]/50 focus:ring-2 focus:ring-[var(--accent)]/10 disabled:opacity-50"
+                    />
+                  </label>
+
+                  <label className="mt-4 block">
+                    <span className="text-xs font-semibold text-[var(--muted-strong)]">
+                      Description
+                    </span>
+
+                    <textarea
+                      value={
+                        groupDescription
+                      }
+                      onChange={(
+                        event,
+                      ) =>
+                        setGroupDescription(
+                          event.target
+                            .value,
+                        )
+                      }
+                      maxLength={500}
+                      rows={3}
+                      disabled={
+                        savingGroup
+                      }
+                      className="mt-1.5 min-h-20 w-full resize-none rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-3 text-sm leading-6 outline-none transition focus:border-[var(--accent)]/50 focus:ring-2 focus:ring-[var(--accent)]/10 disabled:opacity-50"
+                    />
+                  </label>
+
+                  <div className="mt-4 flex justify-end">
+                    <button
+                      type="submit"
+                      disabled={
+                        savingGroup ||
+                        !groupName.trim()
+                      }
+                      className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {savingGroup ? (
+                        <Loader2
+                          size={14}
+                          className="animate-spin"
+                        />
+                      ) : (
+                        <Settings
+                          size={14}
+                        />
+                      )}
+                      Save changes
+                    </button>
+                  </div>
+                </form>
+              ) : null}
+
+              <section className="mt-6">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">
+                      Members
+                    </p>
+
+                    <p className="mt-1 text-sm text-[var(--muted)]">
+                      {
+                        groupMembers.length
+                      }{" "}
+                      active member
+                      {groupMembers.length ===
+                      1
+                        ? ""
+                        : "s"}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void loadGroupMembers()
+                    }
+                    disabled={
+                      groupLoading
+                    }
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[var(--muted-strong)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)] disabled:opacity-40"
+                    aria-label="Refresh members"
+                    title="Refresh members"
+                  >
+                    <RefreshCw
+                      size={15}
+                      className={
+                        groupLoading
+                          ? "animate-spin"
+                          : undefined
+                      }
+                    />
+                  </button>
+                </div>
+
+                {groupActionError ? (
+                  <div className="mt-3 rounded-xl border border-[var(--danger)]/20 bg-[var(--danger-soft)] px-3 py-2.5">
+                    <p className="text-xs font-semibold leading-5 text-[var(--danger)]">
+                      {
+                        groupActionError
+                      }
+                    </p>
+                  </div>
+                ) : null}
+
+                {currentUserRole ===
+                "admin" ? (
+                  <div className="mt-4 rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)] p-4">
+                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">
+                      <Plus
+                        size={13}
+                      />
+                      Add member
+                    </div>
+
+                    <div className="mt-3 flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2">
+                      <Search
+                        size={15}
+                        className="shrink-0 text-[var(--muted)]"
+                      />
+
+                      <input
+                        value={
+                          memberQuery
+                        }
+                        onChange={(
+                          event,
+                        ) =>
+                          setMemberQuery(
+                            event.target
+                              .value,
+                          )
+                        }
+                        placeholder="Search people…"
+                        className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-[var(--muted)]"
+                        disabled={
+                          searchingMembers ||
+                          Boolean(
+                            memberActionLoading,
+                          )
+                        }
+                      />
+
+                      {searchingMembers ? (
+                        <Loader2
+                          size={15}
+                          className="shrink-0 animate-spin text-[var(--accent)]"
+                        />
+                      ) : null}
+                    </div>
+
+                    {memberResults.length >
+                    0 ? (
+                      <div className="mt-3 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]">
+                        {memberResults.map(
+                          (
+                            person,
+                          ) => (
+                            <button
+                              key={
+                                person.id
+                              }
+                              type="button"
+                              onClick={() =>
+                                void addMember(
+                                  person.id,
+                                )
+                              }
+                              disabled={
+                                memberActionLoading ===
+                                `add:${person.id}`
+                              }
+                              className="flex w-full items-center gap-3 border-b border-[var(--border)] px-3 py-3 text-left transition last:border-b-0 hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <AgoreAvatar
+                                avatarPath={
+                                  person.avatar_path
+                                }
+                                name={
+                                  person.display_name
+                                }
+                                className="h-10 w-10 shrink-0"
+                                textClassName="text-[10px]"
+                              />
+
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-semibold">
+                                  {
+                                    person.display_name
+                                  }
+                                </p>
+
+                                <p className="mt-0.5 truncate text-xs text-[var(--muted)]">
+                                  @
+                                  {
+                                    person.username
+                                  }
+                                </p>
+                              </div>
+
+                              {memberActionLoading ===
+                              `add:${person.id}` ? (
+                                <Loader2
+                                  size={15}
+                                  className="shrink-0 animate-spin text-[var(--accent)]"
+                                />
+                              ) : (
+                                <Plus
+                                  size={16}
+                                  className="shrink-0 text-[var(--accent)]"
+                                />
+                              )}
+                            </button>
+                          ),
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+                    sending ||
+                    !conversation
+                  }
+                  onSent={
+                    handleMediaSent
+                  }
+                  onError={
+                    handleMediaError
+                  }
+                />
+
                 <div className="min-w-0 flex-1 rounded-[1.35rem] border border-[var(--border)] bg-[var(--surface)] transition focus-within:border-[var(--accent)]/50 focus-within:ring-2 focus-within:ring-[var(--accent)]/10">
                   <textarea
                     value={draft}
@@ -3438,133 +4189,6 @@ export default function ConversationPage() {
           </div>
         </div>
       ) : null}
-
-      {groupOpen &&
-      conversation?.type ===
-        "group" ? (
-        <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-5"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="group-settings-title"
-        >
-          <div className="flex max-h-[94vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[1.75rem] border border-[var(--border)] bg-[var(--surface)] shadow-2xl sm:rounded-[1.75rem]">
-            <header className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-5 py-4 sm:px-6">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--accent)]">
-                  Group
-                </p>
-
-                <h2
-                  id="group-settings-title"
-                  className="mt-1 text-xl font-bold tracking-[-0.03em]"
-                >
-                  Group details
-                </h2>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setGroupOpen(
-                    false,
-                  );
-                  setGroupActionError(
-                    "",
-                  );
-                  setMemberQuery(
-                    "",
-                  );
-                  setMemberResults(
-                    [],
-                  );
-                }}
-                aria-label="Close group details"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] text-[var(--muted-strong)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)]"
-              >
-                <X size={17} />
-              </button>
-            </header>
-
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
-              <div className="flex items-center gap-4">
-                <div className="relative">
-                  <AgoreAvatar
-                    avatarPath={
-                      conversation.image_path
-                    }
-                    name={title}
-                    className="h-16 w-16"
-                    textClassName="text-base"
-                  />
-
-                  <div className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-[var(--surface)] bg-[var(--accent-soft)] text-[var(--accent)]">
-                    <Users
-                      size={12}
-                    />
-                  </div>
-                </div>
-
-                <div className="min-w-0">
-                  <p className="truncate text-lg font-bold tracking-[-0.02em]">
-                    {title}
-                  </p>
-
-                  <p className="mt-1 text-sm text-[var(--muted)]">
-                    {subtitle}
-                  </p>
-                </div>
-              </div>
-
-              {currentUserRole ===
-              "admin" ? (
-                <form
-                  onSubmit={
-                    saveGroupSettings
-                  }
-                  className="mt-6 rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)] p-4"
-                >
-                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">
-                    <Settings
-                      size={13}
-                    />
-                    Group settings
-                  </div>
-
-                  <label className="mt-4 block">
-                    <span className="text-xs font-semibold text-[var(--muted-strong)]">
-                      Group name
-                    </span>
-
-                    <input
-                      value={
-                        groupName
-                      }
-                      onChange={(
-                        event,
-                      ) =>
-                        setGroupName(
-                          event.target
-                            .value,
-                        )
-                      }
-                      maxLength={80}
-                      disabled={
-                        savingGroup
-                      }
-                      className="mt-1.5 h-11 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 text-sm outline-none transition focus:border-[var(--accent)]/50 focus:ring-2 focus:ring-[var(--accent)]/10 disabled:opacity-50"
-                    />
-                  </label>
-
-                  <label className="mt-4 block">
-                    <span className="text-xs font-semibold text-[var(--muted-strong)]">
-                      Description
-                    </span>
-
-                    <textarea
-                      value={
-                        groupDescription
-                      }
                       onChange={(
                         event,
                       ) =>
@@ -3823,6 +4447,41 @@ export default function ConversationPage() {
                                         member.userId,
                                       )
                                     }
+                                    disabled={
+                                      memberActionLoading !==
+                                        null ||
+                                      groupLoading
+                                    }
+                                    title="Remove member"
+                                    aria-label={`Remove ${memberName}`}
+                                    className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[var(--muted-strong)] transition hover:bg-[var(--danger-soft)] hover:text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-40"
+                                  >
+                                    {memberActionLoading ===
+                                    `remove:${member.userId}` ? (
+                                      <Loader2
+                                        size={
+                                          15
+                                        }
+                                        className="animate-spin"
+                                      />
+                                    ) : (
+                                      <UserMinus
+                                        size={
+                                          15
+                                        }
+                                      />
+                                    )}
+                                  </button>
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        },
+                      )}
+                    </div>
+                  )}
+                </div>
+              </section>
                                     disabled={
                                       memberActionLoading !==
                                         null ||
