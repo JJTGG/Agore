@@ -71,7 +71,9 @@ async function getBlockedUserIds(
   const { data, error } = await admin
     .from("blocks")
     .select("blocker_id, blocked_id")
-    .or(`blocker_id.eq.${userId},blocked_id.eq.${userId}`);
+    .or(
+      `blocker_id.eq.${userId},blocked_id.eq.${userId}`,
+    );
 
   if (error) {
     console.error(
@@ -79,14 +81,22 @@ async function getBlockedUserIds(
       error,
     );
 
-    throw new Error("Unable to prepare search.");
+    throw new Error(
+      "Unable to prepare search.",
+    );
   }
 
-  const blockedIds = new Set<string>([userId]);
+  const blockedIds = new Set<string>([
+    userId,
+  ]);
 
   for (const relationship of data ?? []) {
-    blockedIds.add(relationship.blocker_id);
-    blockedIds.add(relationship.blocked_id);
+    blockedIds.add(
+      relationship.blocker_id,
+    );
+    blockedIds.add(
+      relationship.blocked_id,
+    );
   }
 
   return Array.from(blockedIds);
@@ -109,63 +119,94 @@ function excludeIds<T extends { not: Function }>(
 }
 
 export async function GET(request: Request) {
-  const { user } = await getAuthenticatedUser();
+  const { user } =
+    await getAuthenticatedUser();
 
   if (!user) {
     return NextResponse.json(
-      { error: "Authentication required." },
+      {
+        error:
+          "Authentication required.",
+      },
       { status: 401 },
     );
   }
 
-  const { searchParams } = new URL(request.url);
+  const { searchParams } =
+    new URL(request.url);
 
-  const parsedQuery = searchSchema.safeParse({
-    q: searchParams.get("q") ?? "",
-    limit: searchParams.get("limit") ?? undefined,
-  });
+  const parsedQuery =
+    searchSchema.safeParse({
+      q:
+        searchParams.get("q") ??
+        "",
+      limit:
+        searchParams.get(
+          "limit",
+        ) ?? undefined,
+    });
 
   if (!parsedQuery.success) {
     return NextResponse.json(
       {
         error:
-          parsedQuery.error.issues[0]?.message ??
+          parsedQuery.error.issues[0]
+            ?.message ??
           "Invalid search query.",
       },
       { status: 400 },
     );
   }
 
-  const searchTerm = escapeSearchTerm(parsedQuery.data.q);
-  const limit = parsedQuery.data.limit;
+  const searchTerm =
+    escapeSearchTerm(
+      parsedQuery.data.q,
+    );
 
-  const admin = createAdminClient();
+  const limit =
+    parsedQuery.data.limit;
+
+  const admin =
+    createAdminClient();
 
   let blockedUserIds: string[];
 
   try {
-    blockedUserIds = await getBlockedUserIds(admin, user.id);
+    blockedUserIds =
+      await getBlockedUserIds(
+        admin,
+        user.id,
+      );
   } catch {
     return NextResponse.json(
-      { error: "Unable to search." },
+      {
+        error:
+          "Unable to search.",
+      },
       { status: 500 },
     );
   }
 
-  const searchableBlockedIds = blockedUserIds.filter(
-    (id) => id !== user.id,
-  );
+  const searchableBlockedIds =
+    blockedUserIds.filter(
+      (id) => id !== user.id,
+    );
 
   let peopleQuery = admin
     .from("profiles")
     .select(
       "id, display_name, username, bio, avatar_path",
     )
-    .eq("account_status", "active")
+    .eq(
+      "account_status",
+      "active",
+    )
     .or(
       `username.ilike.${searchTerm}%,display_name.ilike.%${searchTerm}%`,
     )
-    .order("username", { ascending: true })
+    .order("username", {
+      ascending: true,
+    })
     .limit(limit);
 
   peopleQuery = excludeIds(
@@ -183,7 +224,7 @@ export async function GET(request: Request) {
         content,
         created_at,
         updated_at,
-        author:profiles!posts_author_id_fkey (
+        author:profiles!posts_author_id_fkey!inner (
           id,
           display_name,
           username,
@@ -192,9 +233,21 @@ export async function GET(request: Request) {
         )
       `,
     )
-    .eq("deleted_at", null)
-    .ilike("content", `%${searchTerm}%`)
-    .order("created_at", { ascending: false })
+    .eq(
+      "deleted_at",
+      null,
+    )
+    .eq(
+      "author.account_status",
+      "active",
+    )
+    .ilike(
+      "content",
+      `%${searchTerm}%`,
+    )
+    .order("created_at", {
+      ascending: false,
+    })
     .limit(limit);
 
   postsQuery = excludeIds(
@@ -205,12 +258,21 @@ export async function GET(request: Request) {
 
   const {
     data: memberships,
-    error: membershipError,
+    error:
+      membershipError,
   } = await admin
     .from("conversation_members")
-    .select("conversation_id")
-    .eq("user_id", user.id)
-    .is("left_at", null);
+    .select(
+      "conversation_id",
+    )
+    .eq(
+      "user_id",
+      user.id,
+    )
+    .is(
+      "left_at",
+      null,
+    );
 
   if (membershipError) {
     console.error(
@@ -219,23 +281,34 @@ export async function GET(request: Request) {
     );
 
     return NextResponse.json(
-      { error: "Unable to search groups." },
+      {
+        error:
+          "Unable to search groups.",
+      },
       { status: 500 },
     );
   }
 
-  const groupConversationIds = [
-    ...new Set(
-      (memberships ?? []).map(
-        (membership) => membership.conversation_id,
+  const groupConversationIds =
+    [
+      ...new Set(
+        (memberships ?? []).map(
+          (membership) =>
+            membership.conversation_id,
+        ),
       ),
-    ),
-  ];
+    ];
 
   let groups: Group[] = [];
 
-  if (groupConversationIds.length > 0) {
-    const { data: groupRows, error: groupsError } = await admin
+  if (
+    groupConversationIds.length >
+    0
+  ) {
+    const {
+      data: groupRows,
+      error: groupsError,
+    } = await admin
       .from("conversations")
       .select(
         `
@@ -248,12 +321,23 @@ export async function GET(request: Request) {
           updated_at
         `,
       )
-      .eq("type", "group")
-      .in("id", groupConversationIds)
+      .eq(
+        "type",
+        "group",
+      )
+      .in(
+        "id",
+        groupConversationIds,
+      )
       .or(
         `name.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%`,
       )
-      .order("updated_at", { ascending: false })
+      .order(
+        "updated_at",
+        {
+          ascending: false,
+        },
+      )
       .limit(limit);
 
     if (groupsError) {
@@ -263,17 +347,28 @@ export async function GET(request: Request) {
       );
 
       return NextResponse.json(
-        { error: "Unable to search groups." },
+        {
+          error:
+            "Unable to search groups.",
+        },
         { status: 500 },
       );
     }
 
-    groups = (groupRows ?? []) as Group[];
+    groups =
+      (groupRows ??
+        []) as Group[];
   }
 
   const [
-    { data: people, error: peopleError },
-    { data: postRows, error: postsError },
+    {
+      data: people,
+      error: peopleError,
+    },
+    {
+      data: postRows,
+      error: postsError,
+    },
   ] = await Promise.all([
     peopleQuery,
     postsQuery,
@@ -286,7 +381,10 @@ export async function GET(request: Request) {
     );
 
     return NextResponse.json(
-      { error: "Unable to search people." },
+      {
+        error:
+          "Unable to search people.",
+      },
       { status: 500 },
     );
   }
@@ -298,21 +396,33 @@ export async function GET(request: Request) {
     );
 
     return NextResponse.json(
-      { error: "Unable to search posts." },
+      {
+        error:
+          "Unable to search posts.",
+      },
       { status: 500 },
     );
   }
 
-  const posts = ((postRows ?? []) as PostQueryRow[]).map(
-    (post) => ({
-      ...post,
-      author: post.author?.[0] ?? null,
-    }),
-  );
+  const posts =
+    (
+      (postRows ??
+        []) as PostQueryRow[]
+    ).map(
+      (post) => ({
+        ...post,
+        author:
+          post.author?.[0] ??
+          null,
+      }),
+    );
 
   return NextResponse.json({
-    query: parsedQuery.data.q,
-    people: (people ?? []) as Profile[],
+    query:
+      parsedQuery.data.q,
+    people:
+      (people ??
+        []) as Profile[],
     posts,
     groups,
   });
