@@ -923,6 +923,7 @@ export default function ProfilePage() {
             {!profile.is_blocked ? (
               <>
                 <ProfilePosts
+                  key={profile.id}
                   userId={
                     profile.id
                   }
