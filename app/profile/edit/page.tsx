@@ -1,7 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import {
+  FormEvent,
+  useEffect,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -9,6 +13,8 @@ import {
   Check,
   Loader2,
   Save,
+  Trash2,
+  X,
 } from "lucide-react";
 
 import AgoreAvatar from "@/components/agore-avatar";
@@ -79,6 +85,16 @@ export default function EditProfilePage() {
   const [
     avatarUploading,
     setAvatarUploading,
+  ] = useState(false);
+
+  const [
+    avatarRemoving,
+    setAvatarRemoving,
+  ] = useState(false);
+
+  const [
+    removeAvatarConfirm,
+    setRemoveAvatarConfirm,
   ] = useState(false);
 
   const [error, setError] =
@@ -222,13 +238,15 @@ export default function EditProfilePage() {
 
     if (
       !file ||
-      avatarUploading
+      avatarUploading ||
+      avatarRemoving
     ) {
       return;
     }
 
     setError("");
     setSuccess("");
+    setRemoveAvatarConfirm(false);
 
     if (
       !ALLOWED_AVATAR_TYPES.has(
@@ -334,6 +352,81 @@ export default function EditProfilePage() {
     }
   }
 
+  async function handleAvatarRemove() {
+    if (
+      !profile?.avatar_path ||
+      avatarUploading ||
+      avatarRemoving
+    ) {
+      return;
+    }
+
+    setAvatarRemoving(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      const response =
+        await fetch(
+          "/api/profile/avatar",
+          {
+            method: "DELETE",
+          },
+        );
+
+      const data =
+        await response.json();
+
+      if (
+        response.status ===
+        401
+      ) {
+        router.replace("/auth");
+        return;
+      }
+
+      if (!response.ok) {
+        setError(
+          data.error ??
+            "Unable to remove your profile photo.",
+        );
+        return;
+      }
+
+      if (!data.profile) {
+        setError(
+          "Your profile photo was removed, but the updated profile was not returned.",
+        );
+        setAvatarUrl(null);
+        return;
+      }
+
+      const updatedProfile =
+        data.profile as Profile;
+
+      setProfile(
+        updatedProfile,
+      );
+
+      setAvatarUrl(null);
+      setRemoveAvatarConfirm(
+        false,
+      );
+
+      setSuccess(
+        "Profile photo removed.",
+      );
+    } catch {
+      setError(
+        "Unable to remove your profile photo.",
+      );
+    } finally {
+      setAvatarRemoving(
+        false,
+      );
+    }
+  }
+
   async function handleSubmit(
     event: FormEvent<HTMLFormElement>,
   ) {
@@ -342,7 +435,8 @@ export default function EditProfilePage() {
     if (
       !profile ||
       saving ||
-      avatarUploading
+      avatarUploading ||
+      avatarRemoving
     ) {
       return;
     }
@@ -445,6 +539,10 @@ export default function EditProfilePage() {
       bio.trim() !==
         (profile.bio ?? ""));
 
+  const avatarBusy =
+    avatarUploading ||
+    avatarRemoving;
+
   return (
     <main className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
       <div className="mx-auto min-h-screen w-full max-w-2xl px-4 py-5 sm:px-6 sm:py-8">
@@ -482,7 +580,7 @@ export default function EditProfilePage() {
           </div>
 
           <div className="border-b border-[var(--border)] bg-[var(--surface-raised)] px-5 py-5 sm:px-7">
-            <div className="flex items-center gap-4">
+            <div className="flex items-start gap-4">
               <div className="relative shrink-0">
                 {avatarUrl ? (
                   <img
@@ -501,7 +599,7 @@ export default function EditProfilePage() {
                   />
                 )}
 
-                {avatarUploading ? (
+                {avatarBusy ? (
                   <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/45 text-white">
                     <Loader2
                       size={21}
@@ -511,7 +609,7 @@ export default function EditProfilePage() {
                 ) : null}
               </div>
 
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="truncate text-base font-bold">
                   {previewName}
                 </p>
@@ -520,46 +618,112 @@ export default function EditProfilePage() {
                   @{previewUsername}
                 </p>
 
-                <label
-                  htmlFor="avatar"
-                  className={`mt-3 inline-flex cursor-pointer items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2 text-xs font-semibold transition hover:border-[var(--accent)]/40 hover:bg-[var(--accent-soft)] hover:text-[var(--accent)] ${
-                    avatarUploading
-                      ? "pointer-events-none opacity-55"
-                      : ""
-                  }`}
-                >
-                  {avatarUploading ? (
-                    <Loader2
-                      size={14}
-                      className="animate-spin"
-                    />
-                  ) : (
-                    <Camera
-                      size={14}
-                    />
-                  )}
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <label
+                    htmlFor="avatar"
+                    className={`inline-flex cursor-pointer items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2 text-xs font-semibold transition hover:border-[var(--accent)]/40 hover:bg-[var(--accent-soft)] hover:text-[var(--accent)] ${
+                      avatarBusy
+                        ? "pointer-events-none opacity-55"
+                        : ""
+                    }`}
+                  >
+                    {avatarUploading ? (
+                      <Loader2
+                        size={14}
+                        className="animate-spin"
+                      />
+                    ) : (
+                      <Camera
+                        size={14}
+                      />
+                    )}
 
-                  {avatarUploading
-                    ? "Uploading…"
-                    : "Change photo"}
-                </label>
+                    {avatarUploading
+                      ? "Uploading…"
+                      : "Change photo"}
+                  </label>
 
-                <input
-                  id="avatar"
-                  name="avatar"
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  onChange={
-                    handleAvatarChange
-                  }
-                  disabled={
-                    avatarUploading
-                  }
-                  className="sr-only"
-                />
+                  {profile?.avatar_path ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setRemoveAvatarConfirm(
+                          true,
+                        )
+                      }
+                      disabled={
+                        avatarBusy
+                      }
+                      className="inline-flex items-center gap-2 rounded-full border border-[var(--danger)]/20 bg-[var(--danger-soft)] px-3.5 py-2 text-xs font-semibold text-[var(--danger)] transition hover:border-[var(--danger)]/40 hover:bg-[var(--danger)]/10 disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      <Trash2
+                        size={14}
+                      />
+                      Remove photo
+                    </button>
+                  ) : null}
+                </div>
+
+                {removeAvatarConfirm ? (
+                  <div className="mt-3 max-w-sm rounded-2xl border border-[var(--danger)]/20 bg-[var(--danger-soft)] px-3.5 py-3">
+                    <p className="text-xs font-semibold text-[var(--danger)]">
+                      Remove your current profile photo?
+                    </p>
+
+                    <div className="mt-2.5 flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void handleAvatarRemove()
+                        }
+                        disabled={
+                          avatarBusy
+                        }
+                        className="inline-flex items-center gap-1.5 rounded-full bg-[var(--danger)] px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        {avatarRemoving ? (
+                          <Loader2
+                            size={13}
+                            className="animate-spin"
+                          />
+                        ) : (
+                          <Trash2
+                            size={13}
+                          />
+                        )}
+
+                        {avatarRemoving
+                          ? "Removing…"
+                          : "Remove"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setRemoveAvatarConfirm(
+                            false,
+                          )
+                        }
+                        disabled={
+                          avatarBusy
+                        }
+                        className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--foreground)] transition hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        <X
+                          size={13}
+                        />
+                        Keep it
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
 
                 <p className="mt-2 text-[11px] leading-5 text-[var(--muted)]">
                   JPEG, PNG, or WebP · maximum 5 MB
+                </p>
+
+                <p className="mt-0.5 text-[11px] leading-5 text-[var(--muted)]">
+                  Photo changes are saved immediately.
                 </p>
               </div>
             </div>
@@ -784,7 +948,7 @@ export default function EditProfilePage() {
                     type="submit"
                     disabled={
                       saving ||
-                      avatarUploading ||
+                      avatarBusy ||
                       !hasProfileChanges
                     }
                     className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-40"
@@ -813,7 +977,7 @@ export default function EditProfilePage() {
         {profile ? (
           <section className="mt-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3.5">
             <p className="text-[11px] leading-5 text-[var(--muted)]">
-              Your profile photo is saved immediately when uploaded. Name, username, and bio are saved together when you press Save changes.
+              Your profile photo is saved immediately when uploaded or removed. Name, username, and bio are saved together when you press Save changes.
             </p>
           </section>
         ) : null}
