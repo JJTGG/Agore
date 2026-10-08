@@ -5,6 +5,7 @@ import {
   Copy,
   CornerUpLeft,
   Edit3,
+  Forward,
   Loader2,
   MoreHorizontal,
   Trash2,
@@ -16,6 +17,7 @@ type MessageActionMenuProps = {
   content: string | null;
   disabled?: boolean;
   onReply: () => void;
+  onForward: () => void;
   onEdit: () => void;
   onDelete: () => Promise<void>;
 };
@@ -25,6 +27,7 @@ export default function MessageActionMenu({
   content,
   disabled = false,
   onReply,
+  onForward,
   onEdit,
   onDelete,
 }: MessageActionMenuProps) {
@@ -155,6 +158,19 @@ export default function MessageActionMenu({
     }
   }
 
+  function handleForward() {
+    if (
+      disabled ||
+      deleting ||
+      copying
+    ) {
+      return;
+    }
+
+    setOpen(false);
+    onForward();
+  }
+
   return (
     <div
       ref={menuRef}
@@ -209,6 +225,21 @@ export default function MessageActionMenu({
           >
             <CornerUpLeft size={15} />
             Reply
+          </button>
+
+          <button
+            type="button"
+            role="menuitem"
+            onClick={handleForward}
+            disabled={
+              disabled ||
+              deleting ||
+              copying
+            }
+            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-[var(--foreground)] transition hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Forward size={15} />
+            Forward
           </button>
 
           {content?.trim() ? (
