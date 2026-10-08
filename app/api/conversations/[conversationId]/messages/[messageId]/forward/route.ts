@@ -18,6 +18,8 @@ type SourceMessage = {
   conversation_id: string;
   sender_id: string | null;
   content: string | null;
+  reply_to_message_id: string | null;
+  forwarded_from_message_id: string | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -57,15 +59,19 @@ async function verifyConversationMembership(
   conversationId: string,
   userId: string,
 ) {
-  const { data: membership, error } = await admin
-    .from("conversation_members")
-    .select(
-      "conversation_id, user_id, role, joined_at, left_at",
-    )
-    .eq("conversation_id", conversationId)
-    .eq("user_id", userId)
-    .is("left_at", null)
-    .maybeSingle();
+  const { data: membership, error } =
+    await admin
+      .from("conversation_members")
+      .select(
+        "conversation_id, user_id, role, joined_at, left_at",
+      )
+      .eq(
+        "conversation_id",
+        conversationId,
+      )
+      .eq("user_id", userId)
+      .is("left_at", null)
+      .maybeSingle();
 
   if (error) {
     console.error(
@@ -105,7 +111,10 @@ async function notifyConversationMembers(
   } = await admin
     .from("conversation_members")
     .select("user_id")
-    .eq("conversation_id", conversationId)
+    .eq(
+      "conversation_id",
+      conversationId,
+    )
     .is("left_at", null)
     .neq("user_id", senderId);
 
@@ -118,7 +127,10 @@ async function notifyConversationMembers(
     return;
   }
 
-  if (!members || members.length === 0) {
+  if (
+    !members ||
+    members.length === 0
+  ) {
     return;
   }
 
@@ -225,11 +237,14 @@ export async function POST(
     );
   }
 
-  const admin = createAdminClient();
+  const admin =
+    createAdminClient();
 
   const {
-    membership: sourceMembership,
-    error: sourceMembershipError,
+    membership:
+      sourceMembership,
+    error:
+      sourceMembershipError,
   } =
     await verifyConversationMembership(
       admin,
@@ -255,8 +270,10 @@ export async function POST(
   }
 
   const {
-    membership: targetMembership,
-    error: targetMembershipError,
+    membership:
+      targetMembership,
+    error:
+      targetMembershipError,
   } =
     await verifyConversationMembership(
       admin,
@@ -283,7 +300,8 @@ export async function POST(
 
   const {
     data: sourceMessage,
-    error: sourceMessageError,
+    error:
+      sourceMessageError,
   } = await admin
     .from("messages")
     .select(
@@ -292,13 +310,18 @@ export async function POST(
         conversation_id,
         sender_id,
         content,
+        reply_to_message_id,
+        forwarded_from_message_id,
         created_at,
         updated_at,
         deleted_at
       `,
     )
     .eq("id", messageId)
-    .eq("conversation_id", conversationId)
+    .eq(
+      "conversation_id",
+      conversationId,
+    )
     .is("deleted_at", null)
     .maybeSingle();
 
@@ -331,7 +354,8 @@ export async function POST(
 
   const {
     data: sourceMedia,
-    error: sourceMediaError,
+    error:
+      sourceMediaError,
   } = await admin
     .from("message_media")
     .select(
@@ -349,7 +373,10 @@ export async function POST(
         created_at
       `,
     )
-    .eq("message_id", messageId)
+    .eq(
+      "message_id",
+      messageId,
+    )
     .order("created_at", {
       ascending: true,
     });
@@ -370,14 +397,18 @@ export async function POST(
   }
 
   const media =
-    (sourceMedia ?? []) as SourceMedia[];
+    (sourceMedia ??
+      []) as SourceMedia[];
 
   const hasContent =
     Boolean(
       typedSourceMessage.content?.trim(),
     );
 
-  if (!hasContent && media.length === 0) {
+  if (
+    !hasContent &&
+    media.length === 0
+  ) {
     return NextResponse.json(
       {
         error:
@@ -387,30 +418,40 @@ export async function POST(
     );
   }
 
-  const { data: forwardedMessage, error: insertError } =
-    await admin
-      .from("messages")
-      .insert({
-        conversation_id:
-          targetConversationId,
-        sender_id: user.id,
-        content:
-          typedSourceMessage.content,
-        reply_to_message_id: null,
-      })
-      .select(
-        `
-          id,
-          conversation_id,
-          sender_id,
-          content,
-          reply_to_message_id,
-          created_at,
-          updated_at,
-          deleted_at
-        `,
-      )
-      .single();
+  const forwardedFromMessageId =
+    typedSourceMessage.forwarded_from_message_id ??
+    typedSourceMessage.id;
+
+  const {
+    data: forwardedMessage,
+    error: insertError,
+  } = await admin
+    .from("messages")
+    .insert({
+      conversation_id:
+        targetConversationId,
+      sender_id: user.id,
+      content:
+        typedSourceMessage.content,
+      reply_to_message_id:
+        null,
+      forwarded_from_message_id:
+        forwardedFromMessageId,
+    })
+    .select(
+      `
+        id,
+        conversation_id,
+        sender_id,
+        content,
+        reply_to_message_id,
+        forwarded_from_message_id,
+        created_at,
+        updated_at,
+        deleted_at
+      `,
+    )
+    .single();
 
   if (insertError) {
     console.error(
@@ -428,9 +469,7 @@ export async function POST(
   }
 
   const typedForwardedMessage =
-    forwardedMessage as SourceMessage & {
-      reply_to_message_id: string | null;
-    };
+    forwardedMessage as SourceMessage;
 
   if (media.length > 0) {
     const mediaRows =
@@ -447,16 +486,15 @@ export async function POST(
           item.mime_type,
         size_bytes:
           item.size_bytes,
-        width:
-          item.width,
-        height:
-          item.height,
+        width: item.width,
+        height: item.height,
         duration_ms:
           item.duration_ms,
       }));
 
     const {
-      error: mediaInsertError,
+      error:
+        mediaInsertError,
     } = await admin
       .from("message_media")
       .insert(mediaRows);
@@ -497,7 +535,8 @@ export async function POST(
     new Date().toISOString();
 
   const {
-    error: conversationUpdateError,
+    error:
+      conversationUpdateError,
   } = await admin
     .from("conversations")
     .update({
@@ -528,7 +567,8 @@ export async function POST(
     {
       conversation_id:
         targetConversationId,
-      source_message_id: messageId,
+      source_message_id:
+        messageId,
       message: {
         ...typedForwardedMessage,
         media,
