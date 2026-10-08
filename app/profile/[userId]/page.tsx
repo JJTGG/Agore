@@ -11,6 +11,7 @@ import {
   Loader2,
   MessageCircle,
   Settings,
+  ShieldOff,
   UserPlus,
 } from "lucide-react";
 
@@ -158,7 +159,8 @@ export default function ProfilePage() {
       !profile ||
       actionLoading ||
       messageLoading ||
-      isOwner
+      isOwner ||
+      profile.is_blocked
     ) {
       return;
     }
@@ -257,11 +259,13 @@ export default function ProfilePage() {
         );
 
       const data =
-        await response.json();
+        response.status === 204
+          ? null
+          : await response.json();
 
       if (!response.ok) {
         setError(
-          data.error ??
+          data?.error ??
             "Unable to update block status.",
         );
         return;
@@ -281,6 +285,10 @@ export default function ProfilePage() {
                     false,
                 }
               : current,
+        );
+
+        setConnectionsOpen(
+          false,
         );
       } else {
         setProfile(
@@ -376,6 +384,13 @@ export default function ProfilePage() {
   function openConnections(
     tab: ConnectionTab,
   ) {
+    if (
+      !profile ||
+      profile.is_blocked
+    ) {
+      return;
+    }
+
     setConnectionsTab(tab);
     setConnectionsOpen(
       true,
@@ -461,7 +476,7 @@ export default function ProfilePage() {
             <section className="overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--surface)]">
               <div className="border-b border-[var(--border)] px-6 pb-6 pt-7 sm:px-8">
                 <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="flex items-start gap-4">
+                  <div className="flex min-w-0 items-start gap-4">
                     <AgoreAvatar
                       avatarPath={
                         profile.avatar_path
@@ -469,16 +484,27 @@ export default function ProfilePage() {
                       name={
                         profile.display_name
                       }
-                      className="h-20 w-20"
+                      className="h-20 w-20 shrink-0"
                       textClassName="text-xl"
                     />
 
                     <div className="min-w-0">
-                      <h1 className="truncate text-2xl font-semibold tracking-[-0.03em]">
-                        {
-                          profile.display_name
-                        }
-                      </h1>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h1 className="truncate text-2xl font-semibold tracking-[-0.03em]">
+                          {
+                            profile.display_name
+                          }
+                        </h1>
+
+                        {profile.is_blocked ? (
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--danger-soft)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--danger)]">
+                            <Ban
+                              size={11}
+                            />
+                            Blocked
+                          </span>
+                        ) : null}
+                      </div>
 
                       <p className="mt-1 text-sm text-[var(--muted)]">
                         @
@@ -487,13 +513,14 @@ export default function ProfilePage() {
                         }
                       </p>
 
-                      {profile.bio ? (
+                      {profile.bio &&
+                      !profile.is_blocked ? (
                         <p className="mt-4 max-w-xl whitespace-pre-wrap text-[15px] leading-6 text-[var(--foreground)]">
                           {
                             profile.bio
                           }
                         </p>
-                      ) : (
+                      ) : profile.is_blocked ? null : (
                         <p className="mt-4 text-sm text-[var(--muted)]">
                           No bio yet.
                         </p>
@@ -516,76 +543,82 @@ export default function ProfilePage() {
                       </Link>
                     ) : (
                       <>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            void toggleFollow()
-                          }
-                          disabled={
-                            actionLoading !==
-                              null ||
-                            messageLoading ||
-                            profile.is_blocked
-                          }
-                          className="inline-flex items-center justify-center gap-2 rounded-full bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {actionLoading ===
-                          "follow" ? (
-                            <Loader2
-                              className="animate-spin"
-                              size={16}
-                            />
-                          ) : profile.is_following ? (
-                            <>
-                              <Check
-                                size={
-                                  16
-                                }
-                              />
-                              Following
-                            </>
-                          ) : (
-                            <>
-                              <UserPlus
-                                size={
-                                  16
-                                }
-                              />
-                              Follow
-                            </>
-                          )}
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() =>
-                            void startDirectConversation()
-                          }
-                          disabled={
-                            actionLoading !==
-                              null ||
-                            messageLoading ||
-                            profile.is_blocked
-                          }
-                          className="inline-flex items-center justify-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm font-semibold text-[var(--foreground)] transition hover:border-[var(--accent)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-55"
-                        >
-                          {messageLoading ? (
-                            <Loader2
-                              className="animate-spin"
-                              size={16}
-                            />
-                          ) : (
-                            <MessageCircle
-                              size={
-                                16
+                        {!profile.is_blocked ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void toggleFollow()
                               }
-                            />
-                          )}
+                              disabled={
+                                actionLoading !==
+                                  null ||
+                                messageLoading
+                              }
+                              className="inline-flex items-center justify-center gap-2 rounded-full bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {actionLoading ===
+                              "follow" ? (
+                                <Loader2
+                                  className="animate-spin"
+                                  size={
+                                    16
+                                  }
+                                />
+                              ) : profile.is_following ? (
+                                <>
+                                  <Check
+                                    size={
+                                      16
+                                    }
+                                  />
+                                  Following
+                                </>
+                              ) : (
+                                <>
+                                  <UserPlus
+                                    size={
+                                      16
+                                    }
+                                  />
+                                  Follow
+                                </>
+                              )}
+                            </button>
 
-                          {messageLoading
-                            ? "Opening…"
-                            : "Message"}
-                        </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void startDirectConversation()
+                              }
+                              disabled={
+                                actionLoading !==
+                                  null ||
+                                messageLoading
+                              }
+                              className="inline-flex items-center justify-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm font-semibold text-[var(--foreground)] transition hover:border-[var(--accent)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-55"
+                            >
+                              {messageLoading ? (
+                                <Loader2
+                                  className="animate-spin"
+                                  size={
+                                    16
+                                  }
+                                />
+                              ) : (
+                                <MessageCircle
+                                  size={
+                                    16
+                                  }
+                                />
+                              )}
+
+                              {messageLoading
+                                ? "Opening…"
+                                : "Message"}
+                            </button>
+                          </>
+                        ) : null}
 
                         <button
                           type="button"
@@ -597,19 +630,28 @@ export default function ProfilePage() {
                               null ||
                             messageLoading
                           }
-                          className="inline-flex items-center justify-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm font-semibold text-[var(--foreground)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-60"
+                          className={[
+                            "inline-flex items-center justify-center gap-2 rounded-full border px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60",
+                            profile.is_blocked
+                              ? "border-[var(--accent)] bg-[var(--accent)] text-white hover:bg-[var(--accent-strong)]"
+                              : "border-[var(--border)] bg-[var(--surface)] text-[var(--foreground)] hover:border-[var(--danger)] hover:bg-[var(--danger-soft)] hover:text-[var(--danger)]",
+                          ].join(" ")}
                         >
                           {actionLoading ===
                           "block" ? (
                             <Loader2
                               className="animate-spin"
+                              size={
+                                16
+                              }
+                            />
+                          ) : profile.is_blocked ? (
+                            <ShieldOff
                               size={16}
                             />
                           ) : (
                             <Ban
-                              size={
-                                16
-                              }
+                              size={16}
                             />
                           )}
 
@@ -623,79 +665,144 @@ export default function ProfilePage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 divide-x divide-[var(--border)]">
-                <button
-                  type="button"
-                  onClick={() =>
-                    openConnections(
-                      "following",
-                    )
-                  }
-                  aria-label={`View ${profile.following_count} following`}
-                  className="group px-6 py-5 text-center transition hover:bg-[var(--surface-muted)] sm:px-8"
-                >
-                  <p className="text-xl font-semibold transition group-hover:text-[var(--accent)]">
-                    {
-                      profile.following_count
-                    }
-                  </p>
+              {profile.is_blocked ? (
+                <div className="px-6 py-8 sm:px-8">
+                  <div className="rounded-3xl border border-[var(--danger)]/20 bg-[var(--danger-soft)] p-6">
+                    <div className="flex items-start gap-4">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[var(--surface)] text-[var(--danger)]">
+                        <ShieldOff
+                          size={20}
+                        />
+                      </div>
 
-                  <p className="mt-1 text-sm text-[var(--muted)] transition group-hover:text-[var(--foreground)]">
-                    Following
-                  </p>
-                </button>
+                      <div className="min-w-0">
+                        <h2 className="text-base font-semibold">
+                          You blocked this person
+                        </h2>
 
-                <button
-                  type="button"
-                  onClick={() =>
-                    openConnections(
-                      "followers",
-                    )
-                  }
-                  aria-label={`View ${profile.follower_count} followers`}
-                  className="group px-6 py-5 text-center transition hover:bg-[var(--surface-muted)] sm:px-8"
-                >
-                  <p className="text-xl font-semibold transition group-hover:text-[var(--accent)]">
-                    {
-                      profile.follower_count
-                    }
-                  </p>
+                        <p className="mt-1 max-w-xl text-sm leading-6 text-[var(--muted-strong)]">
+                          Their activity,
+                          connections,
+                          and messaging
+                          actions are hidden
+                          until you unblock
+                          them.
+                        </p>
 
-                  <p className="mt-1 text-sm text-[var(--muted)] transition group-hover:text-[var(--foreground)]">
-                    Followers
-                  </p>
-                </button>
-              </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void toggleBlock()
+                          }
+                          disabled={
+                            actionLoading !==
+                            null
+                          }
+                          className="mt-5 inline-flex items-center justify-center gap-2 rounded-full bg-[var(--foreground)] px-4 py-2.5 text-sm font-semibold text-[var(--background)] transition hover:bg-[var(--accent)] hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {actionLoading ===
+                          "block" ? (
+                            <Loader2
+                              className="animate-spin"
+                              size={
+                                16
+                              }
+                            />
+                          ) : (
+                            <ShieldOff
+                              size={
+                                16
+                              }
+                            />
+                          )}
 
-              {error ? (
-                <div className="border-t border-[var(--border)] px-6 py-4 sm:px-8">
-                  <p className="text-sm font-medium text-[var(--danger)]">
-                    {error}
-                  </p>
+                          Unblock
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              ) : null}
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 divide-x divide-[var(--border)]">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        openConnections(
+                          "following",
+                        )
+                      }
+                      aria-label={`View ${profile.following_count} following`}
+                      className="group px-6 py-5 text-center transition hover:bg-[var(--surface-muted)] sm:px-8"
+                    >
+                      <p className="text-xl font-semibold transition group-hover:text-[var(--accent)]">
+                        {
+                          profile.following_count
+                        }
+                      </p>
+
+                      <p className="mt-1 text-sm text-[var(--muted)] transition group-hover:text-[var(--foreground)]">
+                        Following
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        openConnections(
+                          "followers",
+                        )
+                      }
+                      aria-label={`View ${profile.follower_count} followers`}
+                      className="group px-6 py-5 text-center transition hover:bg-[var(--surface-muted)] sm:px-8"
+                    >
+                      <p className="text-xl font-semibold transition group-hover:text-[var(--accent)]">
+                        {
+                          profile.follower_count
+                        }
+                      </p>
+
+                      <p className="mt-1 text-sm text-[var(--muted)] transition group-hover:text-[var(--foreground)]">
+                        Followers
+                      </p>
+                    </button>
+                  </div>
+
+                  {error ? (
+                    <div className="border-t border-[var(--border)] px-6 py-4 sm:px-8">
+                      <p className="text-sm font-medium text-[var(--danger)]">
+                        {error}
+                      </p>
+                    </div>
+                  ) : null}
+                </>
+              )}
             </section>
 
-            <ProfilePosts
-              userId={
-                profile.id
-              }
-            />
+            {!profile.is_blocked ? (
+              <>
+                <ProfilePosts
+                  userId={
+                    profile.id
+                  }
+                />
 
-            <ProfileConnections
-              userId={
-                profile.id
-              }
-              open={
-                connectionsOpen
-              }
-              initialTab={
-                connectionsTab
-              }
-              onClose={
-                closeConnections
-              }
-            />
+                <ProfileConnections
+                  userId={
+                    profile.id
+                  }
+                  open={
+                    connectionsOpen
+                  }
+                  initialTab={
+                    connectionsTab
+                  }
+                  onClose={
+                    closeConnections
+                  }
+                />
+              </>
+            ) : null}
           </>
         ) : null}
       </div>
