@@ -12,6 +12,66 @@ type RouteContext = {
   }>;
 };
 
+type BlockRow = {
+  blocker_id: string;
+  blocked_id: string;
+};
+
+type ConnectionFollowRow = {
+  follower_id?: string;
+  following_id?: string;
+  profiles?: {
+    id: string;
+    account_status: string;
+  } | null;
+};
+
+function getBlockedConnectionIds(
+  rows: BlockRow[],
+  viewerId: string,
+) {
+  return new Set(
+    rows.map((relationship) =>
+      relationship.blocker_id ===
+      viewerId
+        ? relationship.blocked_id
+        : relationship.blocker_id,
+    ),
+  );
+}
+
+function countVisibleConnections(
+  rows: ConnectionFollowRow[],
+  viewerId: string,
+  blockedConnectionIds: Set<string>,
+  direction: "followers" | "following",
+) {
+  const ids = new Set<string>();
+
+  for (const row of rows) {
+    const connectionId =
+      direction === "followers"
+        ? row.follower_id
+        : row.following_id;
+
+    if (
+      !connectionId ||
+      connectionId === viewerId ||
+      blockedConnectionIds.has(
+        connectionId,
+      ) ||
+      row.profiles?.account_status !==
+        "active"
+    ) {
+      continue;
+    }
+
+    ids.add(connectionId);
+  }
+
+  return ids.size;
+}
+
 export async function GET(
   _: Request,
   context: RouteContext,
@@ -63,29 +123,74 @@ export async function GET(
   const admin =
     createAdminClient();
 
-  const {
-    data: blockRelationship,
-    error: blockError,
-  } = await admin
-    .from("blocks")
-    .select(
-      "blocker_id, blocked_id",
-    )
-    .or(
-      `and(blocker_id.eq.${user.id},blocked_id.eq.${targetUserId}),and(blocker_id.eq.${targetUserId},blocked_id.eq.${user.id})`,
-    )
-    .limit(1);
+  const [
+    blockResult,
+    followersResult,
+    followingResult,
+  ] = await Promise.all([
+    admin
+      .from("blocks")
+      .select(
+        "blocker_id, blocked_id",
+      )
+      .or(
+        `blocker_id.eq.${user.id},blocked_id.eq.${user.id}`,
+      ),
 
-  if (blockError) {
+    admin
+      .from("follows")
+      .select(
+        `
+          follower_id,
+          profiles!follows_follower_id_fkey (
+            id,
+            account_status
+          )
+        `,
+      )
+      .eq(
+        "following_id",
+        targetUserId,
+      ),
+
+    admin
+      .from("follows")
+      .select(
+        `
+          following_id,
+          profiles!follows_following_id_fkey (
+            id,
+            account_status
+          )
+        `,
+      )
+      .eq(
+        "follower_id",
+        targetUserId,
+      ),
+  ]);
+
+  if (
+    blockResult.error ||
+    followersResult.error ||
+    followingResult.error
+  ) {
     console.error(
-      "Failed to check Agore profile block relationship:",
-      blockError,
+      "Failed to load Agore profile relationships:",
+      {
+        blockError:
+          blockResult.error,
+        followersError:
+          followersResult.error,
+        followingError:
+          followingResult.error,
+      },
     );
 
     return NextResponse.json(
       {
         error:
-          "Unable to load the profile.",
+          "Unable to load the profile relationships.",
       },
       {
         status: 500,
@@ -93,11 +198,12 @@ export async function GET(
     );
   }
 
+  const blockRelationships =
+    (blockResult.data ??
+      []) as BlockRow[];
+
   const targetBlockedViewer =
-    (
-      blockRelationship ??
-      []
-    ).some(
+    blockRelationships.some(
       (relationship) =>
         relationship.blocker_id ===
           targetUserId &&
@@ -106,10 +212,7 @@ export async function GET(
     );
 
   const viewerBlockedTarget =
-    (
-      blockRelationship ??
-      []
-    ).some(
+    blockRelationships.some(
       (relationship) =>
         relationship.blocker_id ===
           user.id &&
@@ -185,87 +288,52 @@ export async function GET(
     );
   }
 
-  const [
-    followersResult,
-    followingResult,
-    followResult,
-  ] = await Promise.all([
-    supabase
-      .from("follows")
-      .select(
-        "follower_id",
-        {
-          count: "exact",
-          head: true,
-        },
-      )
-      .eq(
-        "following_id",
-        targetUserId,
-      ),
+  const blockedConnectionIds =
+    getBlockedConnectionIds(
+      blockRelationships,
+      user.id,
+    );
 
-    supabase
-      .from("follows")
-      .select(
-        "following_id",
-        {
-          count: "exact",
-          head: true,
-        },
-      )
-      .eq(
-        "follower_id",
-        targetUserId,
-      ),
+  const followerRows =
+    (followersResult.data ??
+      []) as ConnectionFollowRow[];
 
-    targetUserId ===
-    user.id
-      ? Promise.resolve({
-          data: null,
-          error: null,
-        })
-      : supabase
-          .from("follows")
-          .select(
-            "follower_id",
-          )
-          .eq(
-            "follower_id",
-            user.id,
-          )
-          .eq(
-            "following_id",
-            targetUserId,
-          )
-          .maybeSingle(),
-  ]);
+  const followingRows =
+    (followingResult.data ??
+      []) as ConnectionFollowRow[];
+
+  const followerCount =
+    viewerBlockedTarget
+      ? 0
+      : countVisibleConnections(
+          followerRows,
+          user.id,
+          blockedConnectionIds,
+          "followers",
+        );
+
+  const followingCount =
+    viewerBlockedTarget
+      ? 0
+      : countVisibleConnections(
+          followingRows,
+          user.id,
+          blockedConnectionIds,
+          "following",
+        );
+
+  let isFollowing = false;
 
   if (
-    followersResult.error ||
-    followingResult.error ||
-    followResult.error
+    targetUserId !== user.id &&
+    !viewerBlockedTarget
   ) {
-    console.error(
-      "Failed to load Agore profile relationships:",
-      {
-        followersError:
-          followersResult.error,
-        followingError:
-          followingResult.error,
-        followError:
-          followResult.error,
-      },
-    );
-
-    return NextResponse.json(
-      {
-        error:
-          "Unable to load the profile relationships.",
-      },
-      {
-        status: 500,
-      },
-    );
+    isFollowing =
+      followerRows.some(
+        (row) =>
+          row.follower_id ===
+          user.id,
+      );
   }
 
   return NextResponse.json({
@@ -277,20 +345,16 @@ export async function GET(
         user.id,
 
       is_following:
-        Boolean(
-          followResult.data,
-        ),
+        isFollowing,
 
       is_blocked:
         viewerBlockedTarget,
 
       follower_count:
-        followersResult.count ??
-        0,
+        followerCount,
 
       following_count:
-        followingResult.count ??
-        0,
+        followingCount,
     },
   });
 }
