@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+
 import { createNotification } from "@/lib/notifications";
 import { createClient } from "@/lib/supabase/server";
+
+const uuidSchema = z.string().uuid();
 
 const createCommentSchema = z.object({
   content: z
@@ -13,7 +16,7 @@ const createCommentSchema = z.object({
 });
 
 const listCommentsSchema = z.object({
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  limit: z.coerce.number().int().min(1).max(100).default(100),
 });
 
 type RouteContext = {
@@ -22,7 +25,25 @@ type RouteContext = {
   }>;
 };
 
-export async function GET(request: Request, context: RouteContext) {
+const commentSelect = `
+  id,
+  post_id,
+  author_id,
+  parent_comment_id,
+  content,
+  created_at,
+  updated_at,
+  profiles!comments_author_id_fkey!inner (
+    display_name,
+    username,
+    avatar_path
+  )
+`;
+
+export async function GET(
+  request: Request,
+  context: RouteContext,
+) {
   const supabase = await createClient();
 
   const {
@@ -39,9 +60,11 @@ export async function GET(request: Request, context: RouteContext) {
 
   const { postId } = await context.params;
 
-  if (!postId) {
+  const parsedPostId = uuidSchema.safeParse(postId);
+
+  if (!parsedPostId.success) {
     return NextResponse.json(
-      { error: "Post ID is required." },
+      { error: "Invalid post ID." },
       { status: 400 },
     );
   }
@@ -62,7 +85,7 @@ export async function GET(request: Request, context: RouteContext) {
   const { data: post, error: postError } = await supabase
     .from("posts")
     .select("id")
-    .eq("id", postId)
+    .eq("id", parsedPostId.data)
     .maybeSingle();
 
   if (postError) {
@@ -84,26 +107,20 @@ export async function GET(request: Request, context: RouteContext) {
     );
   }
 
-  const { data: comments, error: commentsError } = await supabase
-    .from("comments")
-    .select(
-      `
-        id,
-        post_id,
-        author_id,
-        parent_comment_id,
-        content,
-        created_at,
-        updated_at,
-        profiles (
-          display_name,
-          username
-        )
-      `,
-    )
-    .eq("post_id", postId)
-    .order("created_at", { ascending: true })
-    .limit(parsedQuery.data.limit);
+  const { data: comments, error: commentsError, count } =
+    await supabase
+      .from("comments")
+      .select(commentSelect, {
+        count: "exact",
+      })
+      .eq("post_id", parsedPostId.data)
+      .order("created_at", {
+        ascending: true,
+      })
+      .order("id", {
+        ascending: true,
+      })
+      .limit(parsedQuery.data.limit);
 
   if (commentsError) {
     console.error(
@@ -119,10 +136,14 @@ export async function GET(request: Request, context: RouteContext) {
 
   return NextResponse.json({
     comments: comments ?? [],
+    commentCount: count ?? 0,
   });
 }
 
-export async function POST(request: Request, context: RouteContext) {
+export async function POST(
+  request: Request,
+  context: RouteContext,
+) {
   const supabase = await createClient();
 
   const {
@@ -139,35 +160,12 @@ export async function POST(request: Request, context: RouteContext) {
 
   const { postId } = await context.params;
 
-  if (!postId) {
+  const parsedPostId = uuidSchema.safeParse(postId);
+
+  if (!parsedPostId.success) {
     return NextResponse.json(
-      { error: "Post ID is required." },
+      { error: "Invalid post ID." },
       { status: 400 },
-    );
-  }
-
-  const { data: post, error: postError } = await supabase
-    .from("posts")
-    .select("id, author_id")
-    .eq("id", postId)
-    .maybeSingle();
-
-  if (postError) {
-    console.error(
-      "Failed to verify Agore post for comment:",
-      postError,
-    );
-
-    return NextResponse.json(
-      { error: "Unable to create the comment." },
-      { status: 500 },
-    );
-  }
-
-  if (!post) {
-    return NextResponse.json(
-      { error: "Post not found." },
-      { status: 404 },
     );
   }
 
@@ -195,15 +193,45 @@ export async function POST(request: Request, context: RouteContext) {
     );
   }
 
+  const { data: post, error: postError } = await supabase
+    .from("posts")
+    .select("id, author_id")
+    .eq("id", parsedPostId.data)
+    .maybeSingle();
+
+  if (postError) {
+    console.error(
+      "Failed to verify Agore post for comment:",
+      postError,
+    );
+
+    return NextResponse.json(
+      { error: "Unable to create the comment." },
+      { status: 500 },
+    );
+  }
+
+  if (!post) {
+    return NextResponse.json(
+      { error: "Post not found." },
+      { status: 404 },
+    );
+  }
+
   const parentCommentId =
     parsedBody.data.parentCommentId ?? null;
 
   let parentCommentAuthorId: string | null = null;
 
   if (parentCommentId) {
-    const { data: parentComment, error: parentError } = await supabase
+    const {
+      data: parentComment,
+      error: parentError,
+    } = await supabase
       .from("comments")
-      .select("id, post_id, author_id")
+      .select(
+        "id, post_id, author_id, parent_comment_id",
+      )
       .eq("id", parentCommentId)
       .maybeSingle();
 
@@ -219,9 +247,32 @@ export async function POST(request: Request, context: RouteContext) {
       );
     }
 
-    if (!parentComment || parentComment.post_id !== postId) {
+    if (!parentComment) {
       return NextResponse.json(
-        { error: "Parent comment not found for this post." },
+        {
+          error:
+            "Parent comment not found or is no longer available.",
+        },
+        { status: 400 },
+      );
+    }
+
+    if (parentComment.post_id !== parsedPostId.data) {
+      return NextResponse.json(
+        {
+          error:
+            "Parent comment must belong to this post.",
+        },
+        { status: 400 },
+      );
+    }
+
+    if (parentComment.parent_comment_id !== null) {
+      return NextResponse.json(
+        {
+          error:
+            "Replies can only target top-level comments.",
+        },
         { status: 400 },
       );
     }
@@ -229,29 +280,18 @@ export async function POST(request: Request, context: RouteContext) {
     parentCommentAuthorId = parentComment.author_id;
   }
 
-  const { data: comment, error: commentError } = await supabase
+  const {
+    data: comment,
+    error: commentError,
+  } = await supabase
     .from("comments")
     .insert({
-      post_id: postId,
+      post_id: parsedPostId.data,
       author_id: user.id,
       parent_comment_id: parentCommentId,
       content: parsedBody.data.content,
     })
-    .select(
-      `
-        id,
-        post_id,
-        author_id,
-        parent_comment_id,
-        content,
-        created_at,
-        updated_at,
-        profiles (
-          display_name,
-          username
-        )
-      `,
-    )
+    .select(commentSelect)
     .single();
 
   if (commentError) {
@@ -270,7 +310,7 @@ export async function POST(request: Request, context: RouteContext) {
     recipientId: post.author_id,
     actorId: user.id,
     type: "comment",
-    entityId: postId,
+    entityId: parsedPostId.data,
     data: {
       commentId: comment.id,
       parentCommentId,
@@ -285,7 +325,7 @@ export async function POST(request: Request, context: RouteContext) {
       recipientId: parentCommentAuthorId,
       actorId: user.id,
       type: "comment",
-      entityId: postId,
+      entityId: parsedPostId.data,
       data: {
         commentId: comment.id,
         parentCommentId,
