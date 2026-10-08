@@ -32,6 +32,7 @@ import AgoreAvatar from "@/components/agore-avatar";
 import MessageActionMenu from "./message-action-menu";
 import MessageReactions from "./message-reactions";
 import MessageStatus from "./message-status";
+import ConversationPresence from "./conversation-presence";
 import MessageMediaContent from "./message-media-content";
 import MediaMessageComposer from "./media-message-composer";
 import VoiceMessagePlayer from "./voice-message-player";
@@ -2151,7 +2152,25 @@ export default function ConversationPage() {
               </h1>
 
               <p className="truncate text-xs text-[var(--muted)]">
-                {subtitle}
+                {conversation?.type ===
+                "direct" ? (
+                  <ConversationPresence
+                    conversationId={
+                      conversation.id
+                    }
+                    currentUserId={
+                      currentUserId
+                    }
+                    participantId={
+                      conversation
+                        .participant
+                        ?.id ?? null
+                    }
+                    fallback={subtitle}
+                  />
+                ) : (
+                  subtitle
+                )}
               </p>
             </div>
 
@@ -2290,9 +2309,11 @@ export default function ConversationPage() {
                         previousDay ? (
                           <div className="mb-5 mt-2 flex items-center gap-3">
                             <div className="h-px flex-1 bg-[var(--border)]" />
+
                             <span className="rounded-full border border-[var(--border)] bg-[var(--surface-raised)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--muted)]">
                               {currentDay}
                             </span>
+
                             <div className="h-px flex-1 bg-[var(--border)]" />
                           </div>
                         ) : null}
