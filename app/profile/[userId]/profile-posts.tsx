@@ -174,7 +174,9 @@ function PostCard({
             </div>
 
             <time
-              dateTime={post.created_at}
+              dateTime={
+                post.created_at
+              }
               className="shrink-0 text-right text-[11px] text-[var(--muted)]"
             >
               {formatPostDate(
@@ -403,15 +405,11 @@ export default function ProfilePosts({
     setMediaError,
   ] = useState("");
 
-  const [
-    repostsLoaded,
-    setRepostsLoaded,
-  ] = useState(false);
+  const repostsLoadedForUser =
+    useRef<string | null>(null);
 
-  const [
-    mediaLoaded,
-    setMediaLoaded,
-  ] = useState(false);
+  const mediaLoadedForUser =
+    useRef<string | null>(null);
 
   const currentUserIdRef =
     useRef(userId);
@@ -419,6 +417,12 @@ export default function ProfilePosts({
   useEffect(() => {
     currentUserIdRef.current =
       userId;
+
+    repostsLoadedForUser.current =
+      null;
+
+    mediaLoadedForUser.current =
+      null;
 
     setPosts([]);
     setReposts([]);
@@ -428,8 +432,6 @@ export default function ProfilePosts({
     setError("");
     setMediaError("");
 
-    setRepostsLoaded(false);
-    setMediaLoaded(false);
     setRepostsLoading(false);
     setMediaLoading(false);
   }, [userId]);
@@ -533,7 +535,8 @@ export default function ProfilePosts({
     useCallback(async () => {
       if (
         !userId ||
-        repostsLoaded
+        repostsLoadedForUser.current ===
+          userId
       ) {
         return;
       }
@@ -593,9 +596,8 @@ export default function ProfilePosts({
             : [],
         );
 
-        setRepostsLoaded(
-          true,
-        );
+        repostsLoadedForUser.current =
+          requestUserId;
       } catch (requestError) {
         if (
           currentUserIdRef.current !==
@@ -621,16 +623,14 @@ export default function ProfilePosts({
           );
         }
       }
-    }, [
-      repostsLoaded,
-      userId,
-    ]);
+    }, [userId]);
 
   const loadMedia =
     useCallback(async () => {
       if (
         !userId ||
-        mediaLoaded
+        mediaLoadedForUser.current ===
+          userId
       ) {
         return;
       }
@@ -694,9 +694,8 @@ export default function ProfilePosts({
               ),
         );
 
-        setMediaLoaded(
-          true,
-        );
+        mediaLoadedForUser.current =
+          requestUserId;
       } catch (requestError) {
         if (
           currentUserIdRef.current !==
@@ -723,10 +722,7 @@ export default function ProfilePosts({
           );
         }
       }
-    }, [
-      mediaLoaded,
-      userId,
-    ]);
+    }, [userId]);
 
   useEffect(() => {
     void loadViewer();
@@ -837,7 +833,9 @@ export default function ProfilePosts({
         ),
     );
 
-    setMediaLoaded(false);
+    mediaLoadedForUser.current =
+      null;
+
     setMediaError("");
   }
 
@@ -888,15 +886,13 @@ export default function ProfilePosts({
         <button
           type="button"
           onClick={() => {
+            mediaLoadedForUser.current =
+              null;
+
+            repostsLoadedForUser.current =
+              null;
+
             void loadPosts();
-
-            setRepostsLoaded(
-              false,
-            );
-
-            setMediaLoaded(
-              false,
-            );
 
             setError("");
             setMediaError("");
@@ -1080,9 +1076,14 @@ export default function ProfilePosts({
 
             <button
               type="button"
-              onClick={() =>
-                void loadMedia()
-              }
+              onClick={() => {
+                mediaLoadedForUser.current =
+                  null;
+
+                setMediaError("");
+
+                void loadMedia();
+              }}
               className="mt-5 rounded-full bg-[var(--foreground)] px-4 py-2 text-sm font-semibold text-[var(--background)] transition hover:bg-[var(--accent)] hover:text-white"
             >
               Retry
@@ -1091,9 +1092,8 @@ export default function ProfilePosts({
         ) : activeTab ===
           "media" ? (
           <ProfileMedia
-            posts={
-              mediaPosts
-            }
+            key={userId}
+            posts={mediaPosts}
           />
         ) : activeTab ===
           "posts" &&
