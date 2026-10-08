@@ -38,6 +38,9 @@ import MessageMediaContent from "./message-media-content";
 import MediaMessageComposer from "./media-message-composer";
 import VoiceMessagePlayer from "./voice-message-player";
 import VoiceNoteComposer from "./voice-note-composer";
+import MessageSearch, {
+  type MessageSearchResult,
+} from "./message-search";
 
 const supabase = createClient();
 
@@ -1678,6 +1681,49 @@ export default function ConversationPage() {
       }, 1200);
   }
 
+  function handleSearchMessageSelected(
+    message: MessageSearchResult,
+  ) {
+    setMessages(
+      (current) => {
+        if (
+          current.some(
+            (item) =>
+              item.id ===
+              message.id,
+          )
+        ) {
+          return current;
+        }
+
+        return [
+          ...current,
+          message,
+        ].sort(
+          (left, right) =>
+            new Date(
+              left.created_at,
+            ).getTime() -
+            new Date(
+              right.created_at,
+            ).getTime(),
+        );
+      },
+    );
+
+    window.requestAnimationFrame(
+      () => {
+        window.requestAnimationFrame(
+          () => {
+            jumpToMessage(
+              message.id,
+            );
+          },
+        );
+      },
+    );
+  }
+
   function openForwardDialog(
     message: Message,
   ) {
@@ -2710,6 +2756,18 @@ export default function ConversationPage() {
                   />
                 </button>
               ) : null}
+
+              <MessageSearch
+                conversationId={
+                  conversationId
+                }
+                disabled={
+                  !conversation
+                }
+                onSelectMessage={
+                  handleSearchMessageSelected
+                }
+              />
 
               <button
                 type="button"
