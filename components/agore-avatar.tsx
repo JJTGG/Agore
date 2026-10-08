@@ -10,11 +10,15 @@ type AgoreAvatarProps = {
   alt?: string;
   className?: string;
   textClassName?: string;
+  bucketName?: string;
+  refreshKey?: string | number;
 };
 
 const supabase = createClient();
 
-function getInitials(name: string | null | undefined) {
+function getInitials(
+  name: string | null | undefined,
+) {
   const initials =
     name
       ?.split(/\s+/)
@@ -35,8 +39,13 @@ export default function AgoreAvatar({
   alt,
   className = "h-10 w-10",
   textClassName = "text-xs",
+  bucketName = "avatars",
+  refreshKey,
 }: AgoreAvatarProps) {
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(
+  const [
+    avatarUrl,
+    setAvatarUrl,
+  ] = useState<string | null>(
     null,
   );
 
@@ -49,9 +58,15 @@ export default function AgoreAvatar({
         return;
       }
 
-      const { data, error } = await supabase.storage
-        .from("avatars")
-        .createSignedUrl(avatarPath, 60 * 60);
+      const {
+        data,
+        error,
+      } = await supabase.storage
+        .from(bucketName)
+        .createSignedUrl(
+          avatarPath,
+          60 * 60,
+        );
 
       if (!active) {
         return;
@@ -62,11 +77,14 @@ export default function AgoreAvatar({
           "Failed to create Agore avatar signed URL:",
           error,
         );
+
         setAvatarUrl(null);
         return;
       }
 
-      setAvatarUrl(data.signedUrl);
+      setAvatarUrl(
+        data.signedUrl,
+      );
     }
 
     void loadAvatar();
@@ -74,9 +92,14 @@ export default function AgoreAvatar({
     return () => {
       active = false;
     };
-  }, [avatarPath]);
+  }, [
+    avatarPath,
+    bucketName,
+    refreshKey,
+  ]);
 
-  const initials = getInitials(name);
+  const initials =
+    getInitials(name);
 
   return (
     <span
@@ -96,7 +119,9 @@ export default function AgoreAvatar({
       ) : (
         <span
           aria-hidden="true"
-          className={textClassName}
+          className={
+            textClassName
+          }
         >
           {initials}
         </span>
