@@ -18,6 +18,7 @@ type PresencePayload = {
 type ConversationPresenceProps = {
   conversationId: string;
   currentUserId: string | null;
+  conversationType: "direct" | "group";
   participantId: string | null;
   fallback: string;
 };
@@ -53,10 +54,16 @@ function getOnlineUserIds(
 export default function ConversationPresence({
   conversationId,
   currentUserId,
+  conversationType,
   participantId,
   fallback,
 }: ConversationPresenceProps) {
   const [onlineUserIds, setOnlineUserIds] =
+    useState<Set<string>>(
+      () => new Set(),
+    );
+
+  const [groupMemberIds, setGroupMemberIds] =
     useState<Set<string>>(
       () => new Set(),
     );
@@ -69,10 +76,82 @@ export default function ConversationPresence({
       setOnlineUserIds(
         new Set(),
       );
+      setGroupMemberIds(
+        new Set(),
+      );
       return;
     }
 
     let active = true;
+
+    async function loadGroupMemberIds() {
+      if (
+        conversationType !==
+        "group"
+      ) {
+        setGroupMemberIds(
+          new Set(),
+        );
+        return;
+      }
+
+      try {
+        const response =
+          await fetch(
+            `/api/conversations/${encodeURIComponent(
+              conversationId,
+            )}/members`,
+            {
+              cache: "no-store",
+            },
+          );
+
+        if (!response.ok) {
+          return;
+        }
+
+        const data =
+          await response.json();
+
+        if (!active) {
+          return;
+        }
+
+        const members =
+          Array.isArray(
+            data.members,
+          )
+            ? data.members
+            : [];
+
+        setGroupMemberIds(
+          new Set(
+            members
+              .map(
+                (member: {
+                  userId?: unknown;
+                }) =>
+                  typeof member.userId ===
+                  "string"
+                    ? member.userId
+                    : null,
+              )
+              .filter(
+                (
+                  userId,
+                ): userId is string =>
+                  Boolean(userId),
+              ),
+          ),
+        );
+      } catch {
+        if (active) {
+          setGroupMemberIds(
+            new Set(),
+          );
+        }
+      }
+    }
 
     const channel: RealtimeChannel =
       supabase.channel(
@@ -123,7 +202,10 @@ export default function ConversationPresence({
 
     async function connect() {
       try {
-        await supabase.realtime.setAuth();
+        await Promise.all([
+          supabase.realtime.setAuth(),
+          loadGroupMemberIds(),
+        ]);
 
         if (!active) {
           return;
@@ -160,36 +242,99 @@ export default function ConversationPresence({
 
     return () => {
       active = false;
+
       setOnlineUserIds(
         new Set(),
       );
 
+      setGroupMemberIds(
+        new Set(),
+      );
+
       void channel.untrack();
+
       void supabase.removeChannel(
         channel,
       );
     };
   }, [
     conversationId,
+    conversationType,
     currentUserId,
   ]);
 
   const participantOnline =
     Boolean(
-      participantId &&
+      conversationType ===
+        "direct" &&
+        participantId &&
         onlineUserIds.has(
           participantId,
         ),
     );
 
+  const onlineGroupCount =
+    useMemo(() => {
+      if (
+        conversationType !==
+        "group"
+      ) {
+        return 0;
+      }
+
+      let count = 0;
+
+      onlineUserIds.forEach(
+        (userId) => {
+          if (
+            userId !==
+              currentUserId &&
+            groupMemberIds.has(
+              userId,
+            )
+          ) {
+            count += 1;
+          }
+        },
+      );
+
+      return count;
+    }, [
+      conversationType,
+      currentUserId,
+      groupMemberIds,
+      onlineUserIds,
+    ]);
+
+  const isOnline =
+    conversationType ===
+    "direct"
+      ? participantOnline
+      : onlineGroupCount > 0;
+
   const text = useMemo(() => {
-    if (participantOnline) {
-      return "Online";
+    if (
+      conversationType ===
+      "direct"
+    ) {
+      return participantOnline
+        ? "Online"
+        : fallback;
+    }
+
+    if (onlineGroupCount === 1) {
+      return "1 online";
+    }
+
+    if (onlineGroupCount > 1) {
+      return `${onlineGroupCount} online`;
     }
 
     return fallback;
   }, [
+    conversationType,
     fallback,
+    onlineGroupCount,
     participantOnline,
   ]);
 
@@ -198,7 +343,7 @@ export default function ConversationPresence({
       <span
         aria-hidden="true"
         className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-          participantOnline
+          isOnline
             ? "bg-[var(--success)]"
             : "bg-[var(--muted)]/55"
         }`}
@@ -206,7 +351,7 @@ export default function ConversationPresence({
 
       <span
         className={
-          participantOnline
+          isOnline
             ? "text-[var(--success)]"
             : undefined
         }
