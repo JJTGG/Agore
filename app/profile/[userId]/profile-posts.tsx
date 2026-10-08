@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import Link from "next/link";
@@ -79,13 +80,16 @@ type ProfileTab =
 const supabase = createClient();
 
 function formatPostDate(value: string) {
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
+  return new Intl.DateTimeFormat(
+    "en-GB",
+    {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    },
+  ).format(new Date(value));
 }
 
 function normalizeMediaPosts(
@@ -117,7 +121,9 @@ function PostCard({
     postId: string,
     updatedContent: string,
   ) => void;
-  onPostDeleted: (postId: string) => void;
+  onPostDeleted: (
+    postId: string,
+  ) => void;
 }) {
   const isOwner =
     viewerId !== null &&
@@ -196,8 +202,12 @@ function PostCard({
             postId={post.id}
             initialContent={post.content}
             isOwner={isOwner}
-            onPostUpdated={onPostUpdated}
-            onPostDeleted={onPostDeleted}
+            onPostUpdated={
+              onPostUpdated
+            }
+            onPostDeleted={
+              onPostDeleted
+            }
           />
 
           {post.updated_at !==
@@ -226,7 +236,9 @@ function RepostCard({
     postId: string,
     updatedContent: string,
   ) => void;
-  onPostDeleted: (postId: string) => void;
+  onPostDeleted: (
+    postId: string,
+  ) => void;
 }) {
   const displayName =
     repost.profiles?.display_name ??
@@ -260,7 +272,9 @@ function RepostCard({
         </span>
 
         <time
-          dateTime={repost.reposted_at}
+          dateTime={
+            repost.reposted_at
+          }
         >
           {formatPostDate(
             repost.reposted_at,
@@ -342,13 +356,15 @@ function RepostCard({
 export default function ProfilePosts({
   userId,
 }: ProfilePostsProps) {
-  const [posts, setPosts] = useState<
-    ProfilePost[]
-  >([]);
+  const [posts, setPosts] =
+    useState<ProfilePost[]>(
+      [],
+    );
 
-  const [reposts, setReposts] = useState<
-    RepostPost[]
-  >([]);
+  const [reposts, setReposts] =
+    useState<RepostPost[]>(
+      [],
+    );
 
   const [mediaPosts, setMediaPosts] =
     useState<MediaPost[]>([]);
@@ -357,34 +373,69 @@ export default function ProfilePosts({
     useState(0);
 
   const [viewerId, setViewerId] =
-    useState<string | null>(null);
+    useState<string | null>(
+      null,
+    );
 
   const [activeTab, setActiveTab] =
-    useState<ProfileTab>("posts");
+    useState<ProfileTab>(
+      "posts",
+    );
 
   const [loading, setLoading] =
     useState(true);
 
-  const [repostsLoading, setRepostsLoading] =
-    useState(false);
+  const [
+    repostsLoading,
+    setRepostsLoading,
+  ] = useState(false);
 
-  const [mediaLoading, setMediaLoading] =
-    useState(false);
+  const [
+    mediaLoading,
+    setMediaLoading,
+  ] = useState(false);
 
   const [error, setError] =
     useState("");
 
-  const [mediaError, setMediaError] =
-    useState("");
+  const [
+    mediaError,
+    setMediaError,
+  ] = useState("");
 
-  const [repostsLoaded, setRepostsLoaded] =
-    useState(false);
+  const [
+    repostsLoaded,
+    setRepostsLoaded,
+  ] = useState(false);
 
-  const [mediaLoaded, setMediaLoaded] =
-    useState(false);
+  const [
+    mediaLoaded,
+    setMediaLoaded,
+  ] = useState(false);
 
-  const loadViewer = useCallback(
-    async () => {
+  const currentUserIdRef =
+    useRef(userId);
+
+  useEffect(() => {
+    currentUserIdRef.current =
+      userId;
+
+    setPosts([]);
+    setReposts([]);
+    setMediaPosts([]);
+    setMediaCount(0);
+
+    setError("");
+    setMediaError("");
+
+    setRepostsLoaded(false);
+    setMediaLoaded(false);
+    setRepostsLoading(false);
+    setMediaLoading(false);
+  }, [userId]);
+
+  const loadViewer =
+    useCallback(async () => {
       const {
         data: { user },
       } =
@@ -393,15 +444,16 @@ export default function ProfilePosts({
       setViewerId(
         user?.id ?? null,
       );
-    },
-    [],
-  );
+    }, []);
 
-  const loadPosts = useCallback(
-    async () => {
+  const loadPosts =
+    useCallback(async () => {
       if (!userId) {
         return;
       }
+
+      const requestUserId =
+        userId;
 
       setLoading(true);
       setError("");
@@ -410,7 +462,7 @@ export default function ProfilePosts({
         const response =
           await fetch(
             `/api/users/${encodeURIComponent(
-              userId,
+              requestUserId,
             )}/posts?limit=50`,
             {
               method: "GET",
@@ -421,6 +473,13 @@ export default function ProfilePosts({
         const data =
           (await response.json()) as PostsResponse;
 
+        if (
+          currentUserIdRef.current !==
+          requestUserId
+        ) {
+          return;
+        }
+
         if (!response.ok) {
           throw new Error(
             data.error ??
@@ -429,7 +488,9 @@ export default function ProfilePosts({
         }
 
         setPosts(
-          Array.isArray(data.posts)
+          Array.isArray(
+            data.posts,
+          )
             ? data.posts.map(
                 (post) => ({
                   ...post,
@@ -444,6 +505,13 @@ export default function ProfilePosts({
             : [],
         );
       } catch (requestError) {
+        if (
+          currentUserIdRef.current !==
+          requestUserId
+        ) {
+          return;
+        }
+
         setError(
           requestError instanceof Error
             ? requestError.message
@@ -452,14 +520,17 @@ export default function ProfilePosts({
 
         setPosts([]);
       } finally {
-        setLoading(false);
+        if (
+          currentUserIdRef.current ===
+          requestUserId
+        ) {
+          setLoading(false);
+        }
       }
-    },
-    [userId],
-  );
+    }, [userId]);
 
-  const loadReposts = useCallback(
-    async () => {
+  const loadReposts =
+    useCallback(async () => {
       if (
         !userId ||
         repostsLoaded
@@ -467,14 +538,19 @@ export default function ProfilePosts({
         return;
       }
 
-      setRepostsLoading(true);
+      const requestUserId =
+        userId;
+
+      setRepostsLoading(
+        true,
+      );
       setError("");
 
       try {
         const response =
           await fetch(
             `/api/users/${encodeURIComponent(
-              userId,
+              requestUserId,
             )}/reposts?limit=50`,
             {
               method: "GET",
@@ -484,6 +560,13 @@ export default function ProfilePosts({
 
         const data =
           (await response.json()) as RepostsResponse;
+
+        if (
+          currentUserIdRef.current !==
+          requestUserId
+        ) {
+          return;
+        }
 
         if (!response.ok) {
           throw new Error(
@@ -510,8 +593,17 @@ export default function ProfilePosts({
             : [],
         );
 
-        setRepostsLoaded(true);
+        setRepostsLoaded(
+          true,
+        );
       } catch (requestError) {
+        if (
+          currentUserIdRef.current !==
+          requestUserId
+        ) {
+          return;
+        }
+
         setError(
           requestError instanceof Error
             ? requestError.message
@@ -520,14 +612,22 @@ export default function ProfilePosts({
 
         setReposts([]);
       } finally {
-        setRepostsLoading(false);
+        if (
+          currentUserIdRef.current ===
+          requestUserId
+        ) {
+          setRepostsLoading(
+            false,
+          );
+        }
       }
-    },
-    [repostsLoaded, userId],
-  );
+    }, [
+      repostsLoaded,
+      userId,
+    ]);
 
-  const loadMedia = useCallback(
-    async () => {
+  const loadMedia =
+    useCallback(async () => {
       if (
         !userId ||
         mediaLoaded
@@ -535,14 +635,19 @@ export default function ProfilePosts({
         return;
       }
 
-      setMediaLoading(true);
+      const requestUserId =
+        userId;
+
+      setMediaLoading(
+        true,
+      );
       setMediaError("");
 
       try {
         const response =
           await fetch(
             `/api/users/${encodeURIComponent(
-              userId,
+              requestUserId,
             )}/media?limit=100`,
             {
               method: "GET",
@@ -553,6 +658,13 @@ export default function ProfilePosts({
         const data =
           (await response.json()) as MediaResponse;
 
+        if (
+          currentUserIdRef.current !==
+          requestUserId
+        ) {
+          return;
+        }
+
         if (!response.ok) {
           throw new Error(
             data.error ??
@@ -560,28 +672,39 @@ export default function ProfilePosts({
           );
         }
 
-        setMediaPosts(
+        const normalizedMedia =
           normalizeMediaPosts(
             data.media,
-          ),
+          );
+
+        setMediaPosts(
+          normalizedMedia,
         );
 
         setMediaCount(
           typeof data.total ===
             "number"
             ? data.total
-            : normalizeMediaPosts(
-                data.media,
-              ).reduce(
+            : normalizedMedia.reduce(
                 (total, post) =>
                   total +
-                  post.post_media.length,
+                  post.post_media
+                    .length,
                 0,
               ),
         );
 
-        setMediaLoaded(true);
+        setMediaLoaded(
+          true,
+        );
       } catch (requestError) {
+        if (
+          currentUserIdRef.current !==
+          requestUserId
+        ) {
+          return;
+        }
+
         setMediaError(
           requestError instanceof Error
             ? requestError.message
@@ -591,11 +714,19 @@ export default function ProfilePosts({
         setMediaPosts([]);
         setMediaCount(0);
       } finally {
-        setMediaLoading(false);
+        if (
+          currentUserIdRef.current ===
+          requestUserId
+        ) {
+          setMediaLoading(
+            false,
+          );
+        }
       }
-    },
-    [mediaLoaded, userId],
-  );
+    }, [
+      mediaLoaded,
+      userId,
+    ]);
 
   useEffect(() => {
     void loadViewer();
@@ -759,15 +890,16 @@ export default function ProfilePosts({
           onClick={() => {
             void loadPosts();
 
-            if (
-              repostsLoaded
-            ) {
-              setRepostsLoaded(
-                false,
-              );
-            }
+            setRepostsLoaded(
+              false,
+            );
 
-            setMediaLoaded(false);
+            setMediaLoaded(
+              false,
+            );
+
+            setError("");
+            setMediaError("");
           }}
           className="mt-4 rounded-full bg-[var(--foreground)] px-4 py-2 text-sm font-semibold text-[var(--background)] transition hover:bg-[var(--accent)] hover:text-white"
         >
@@ -807,7 +939,8 @@ export default function ProfilePosts({
             type="button"
             role="tab"
             aria-selected={
-              activeTab === "posts"
+              activeTab ===
+              "posts"
             }
             onClick={() =>
               selectTab("posts")
@@ -839,7 +972,8 @@ export default function ProfilePosts({
             type="button"
             role="tab"
             aria-selected={
-              activeTab === "media"
+              activeTab ===
+              "media"
             }
             onClick={() =>
               selectTab("media")
@@ -875,7 +1009,9 @@ export default function ProfilePosts({
               "reposts"
             }
             onClick={() =>
-              selectTab("reposts")
+              selectTab(
+                "reposts",
+              )
             }
             className={[
               "relative flex items-center justify-center gap-2 px-3 py-4 text-sm font-semibold transition",
@@ -955,7 +1091,9 @@ export default function ProfilePosts({
         ) : activeTab ===
           "media" ? (
           <ProfileMedia
-            posts={mediaPosts}
+            posts={
+              mediaPosts
+            }
           />
         ) : activeTab ===
           "posts" &&
@@ -1022,7 +1160,9 @@ export default function ProfilePosts({
                       key={
                         repost.repost_id
                       }
-                      repost={repost}
+                      repost={
+                        repost
+                      }
                       viewerId={
                         viewerId
                       }
