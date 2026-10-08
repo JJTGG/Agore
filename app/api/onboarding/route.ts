@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 const onboardingSchema = z.object({
   displayName: z.string().trim().min(1).max(80),
@@ -34,22 +35,51 @@ export async function POST(request: Request) {
     const supabase = await createClient();
 
     const {
-      data: { user },
+      data: { user: sessionUser },
       error: userError,
     } = await supabase.auth.getUser();
 
-    if (userError || !user) {
+    if (userError || !sessionUser) {
       return NextResponse.json(
         { error: "You must be signed in to continue." },
         { status: 401 },
       );
     }
 
+    const admin = createAdminClient();
+
+    const {
+      data: { user: authoritativeUser },
+      error: authoritativeUserError,
+    } = await admin.auth.admin.getUserById(sessionUser.id);
+
+    if (
+      authoritativeUserError ||
+      !authoritativeUser
+    ) {
+      return NextResponse.json(
+        { error: "Unable to verify your Agoré account." },
+        { status: 500 },
+      );
+    }
+
+    if (
+      authoritativeUser.app_metadata?.agore_invite_consumed !== true
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "This account has not been admitted to Agoré. A valid development entry code is required.",
+        },
+        { status: 403 },
+      );
+    }
+
     const { data: existingProfile, error: profileLookupError } =
-      await supabase
+      await admin
         .from("profiles")
         .select("id")
-        .eq("id", user.id)
+        .eq("id", authoritativeUser.id)
         .maybeSingle();
 
     if (profileLookupError) {
@@ -65,10 +95,10 @@ export async function POST(request: Request) {
       });
     }
 
-    const { error: profileError } = await supabase
+    const { error: profileError } = await admin
       .from("profiles")
       .insert({
-        id: user.id,
+        id: authoritativeUser.id,
         display_name: parsed.data.displayName,
         username: parsed.data.username,
         bio: parsed.data.bio || null,
@@ -82,6 +112,11 @@ export async function POST(request: Request) {
         );
       }
 
+      console.error(
+        "Agore profile creation failed:",
+        profileError,
+      );
+
       return NextResponse.json(
         { error: "Unable to create your profile." },
         { status: 500 },
@@ -90,21 +125,21 @@ export async function POST(request: Request) {
 
     const [{ error: preferencesError }, { error: settingsError }] =
       await Promise.all([
-        supabase
+        admin
           .from("notification_preferences")
           .upsert(
             {
-              user_id: user.id,
+              user_id: authoritativeUser.id,
             },
             {
               onConflict: "user_id",
             },
           ),
-        supabase
+        admin
           .from("user_settings")
           .upsert(
             {
-              user_id: user.id,
+              user_id: authoritativeUser.id,
             },
             {
               onConflict: "user_id",
@@ -113,8 +148,19 @@ export async function POST(request: Request) {
       ]);
 
     if (preferencesError || settingsError) {
+      console.error(
+        "Agore onboarding preference initialization failed:",
+        {
+          preferencesError,
+          settingsError,
+        },
+      );
+
       return NextResponse.json(
-        { error: "Profile created, but account preferences could not be initialized." },
+        {
+          error:
+            "Profile created, but account preferences could not be initialized.",
+        },
         { status: 500 },
       );
     }
