@@ -118,20 +118,24 @@ export async function POST(request: Request) {
 
   if (!hasValidSignature(buffer, fileValue.type)) {
     return NextResponse.json(
-      { error: "The selected file is not a valid image." },
+      {
+        error:
+          "The selected file is not a valid image.",
+      },
       { status: 400 },
     );
   }
 
   const avatarPath = `${user.id}/avatar`;
 
-  const { error: uploadError } = await supabase.storage
-    .from("avatars")
-    .upload(avatarPath, fileValue, {
-      cacheControl: "3600",
-      contentType: fileValue.type,
-      upsert: true,
-    });
+  const { error: uploadError } =
+    await supabase.storage
+      .from("avatars")
+      .upload(avatarPath, fileValue, {
+        cacheControl: "3600",
+        contentType: fileValue.type,
+        upsert: true,
+      });
 
   if (uploadError) {
     console.error(
@@ -145,7 +149,10 @@ export async function POST(request: Request) {
     );
   }
 
-  const { data: profile, error: updateError } = await supabase
+  const {
+    data: profile,
+    error: updateError,
+  } = await supabase
     .from("profiles")
     .update({
       avatar_path: avatarPath,
@@ -168,7 +175,10 @@ export async function POST(request: Request) {
       .remove([avatarPath]);
 
     return NextResponse.json(
-      { error: "Avatar uploaded, but your profile could not be updated." },
+      {
+        error:
+          "Avatar uploaded, but your profile could not be updated.",
+      },
       { status: 500 },
     );
   }
@@ -176,5 +186,112 @@ export async function POST(request: Request) {
   return NextResponse.json({
     profile,
     avatar_path: avatarPath,
+  });
+}
+
+export async function DELETE() {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return NextResponse.json(
+      { error: "Authentication required." },
+      { status: 401 },
+    );
+  }
+
+  const {
+    data: currentProfile,
+    error: profileError,
+  } = await supabase
+    .from("profiles")
+    .select(
+      "id, display_name, username, bio, avatar_path, updated_at",
+    )
+    .eq("id", user.id)
+    .single();
+
+  if (profileError) {
+    console.error(
+      "Failed to load Agore profile before avatar removal:",
+      profileError,
+    );
+
+    return NextResponse.json(
+      { error: "Unable to load your profile." },
+      { status: 500 },
+    );
+  }
+
+  if (!currentProfile.avatar_path) {
+    return NextResponse.json({
+      profile: currentProfile,
+      avatar_path: null,
+    });
+  }
+
+  const avatarPath =
+    currentProfile.avatar_path;
+
+  const {
+    data: updatedProfile,
+    error: updateError,
+  } = await supabase
+    .from("profiles")
+    .update({
+      avatar_path: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", user.id)
+    .eq(
+      "avatar_path",
+      avatarPath,
+    )
+    .select(
+      "id, display_name, username, bio, avatar_path, updated_at",
+    )
+    .single();
+
+  if (updateError) {
+    console.error(
+      "Failed to remove Agore avatar reference:",
+      updateError,
+    );
+
+    return NextResponse.json(
+      {
+        error:
+          "Unable to remove your profile photo.",
+      },
+      { status: 500 },
+    );
+  }
+
+  const {
+    error: storageError,
+  } = await supabase.storage
+    .from("avatars")
+    .remove([avatarPath]);
+
+  if (storageError) {
+    console.error(
+      "Agore avatar reference removed, but storage cleanup failed:",
+      storageError,
+    );
+
+    return NextResponse.json({
+      profile: updatedProfile,
+      avatar_path: null,
+      storage_cleanup_pending: true,
+    });
+  }
+
+  return NextResponse.json({
+    profile: updatedProfile,
+    avatar_path: null,
   });
 }
