@@ -58,15 +58,19 @@ export default function ConversationPresence({
   participantId,
   fallback,
 }: ConversationPresenceProps) {
-  const [onlineUserIds, setOnlineUserIds] =
-    useState<Set<string>>(
-      () => new Set(),
-    );
+  const [
+    onlineUserIds,
+    setOnlineUserIds,
+  ] = useState<Set<string>>(
+    () => new Set(),
+  );
 
-  const [groupMemberIds, setGroupMemberIds] =
-    useState<Set<string>>(
-      () => new Set(),
-    );
+  const [
+    groupMemberIds,
+    setGroupMemberIds,
+  ] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   useEffect(() => {
     if (
@@ -138,7 +142,7 @@ export default function ConversationPresence({
               )
               .filter(
                 (
-                  userId,
+                  userId: unknown,
                 ): userId is string =>
                   Boolean(userId),
               ),
