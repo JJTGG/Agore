@@ -8,6 +8,7 @@ import {
 import {
   useCallback,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import {
@@ -18,6 +19,7 @@ import {
   Flag,
   Loader2,
   MessageCircle,
+  MoreHorizontal,
   Settings,
   ShieldOff,
   UserPlus,
@@ -104,6 +106,16 @@ export default function ProfilePage() {
     setReportOpen,
   ] = useState(false);
 
+  const [
+    moreOpen,
+    setMoreOpen,
+  ] = useState(false);
+
+  const moreMenuRef =
+    useRef<HTMLDivElement | null>(
+      null,
+    );
+
   const loadProfile =
     useCallback(async () => {
       if (!userId) {
@@ -167,6 +179,58 @@ export default function ProfilePage() {
   useEffect(() => {
     void loadProfile();
   }, [loadProfile]);
+
+  useEffect(() => {
+    if (!moreOpen) {
+      return;
+    }
+
+    function handlePointerDown(
+      event: MouseEvent,
+    ) {
+      const target =
+        event.target;
+
+      if (
+        target instanceof Node &&
+        !moreMenuRef.current?.contains(
+          target,
+        )
+      ) {
+        setMoreOpen(false);
+      }
+    }
+
+    function handleKeyDown(
+      event: KeyboardEvent,
+    ) {
+      if (event.key === "Escape") {
+        setMoreOpen(false);
+      }
+    }
+
+    document.addEventListener(
+      "mousedown",
+      handlePointerDown,
+    );
+
+    document.addEventListener(
+      "keydown",
+      handleKeyDown,
+    );
+
+    return () => {
+      document.removeEventListener(
+        "mousedown",
+        handlePointerDown,
+      );
+
+      document.removeEventListener(
+        "keydown",
+        handleKeyDown,
+      );
+    };
+  }, [moreOpen]);
 
   async function toggleFollow() {
     if (
@@ -256,6 +320,7 @@ export default function ProfilePage() {
     const wasBlocked =
       profile.is_blocked;
 
+    setMoreOpen(false);
     setActionLoading(
       "block",
     );
@@ -410,6 +475,7 @@ export default function ProfilePage() {
       return;
     }
 
+    setMoreOpen(false);
     setError("");
     setReportOpen(
       true,
@@ -547,7 +613,7 @@ export default function ProfilePage() {
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     {isOwner ? (
                       <Link
                         href={`/profile/edit?userId=${encodeURIComponent(
@@ -626,66 +692,123 @@ export default function ProfilePage() {
                                 ? "Opening…"
                                 : "Message"}
                             </button>
+
+                            <div
+                              ref={
+                                moreMenuRef
+                              }
+                              className="relative"
+                            >
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setMoreOpen(
+                                    (current) =>
+                                      !current,
+                                  )
+                                }
+                                aria-label="More profile actions"
+                                aria-haspopup="menu"
+                                aria-expanded={
+                                  moreOpen
+                                }
+                                aria-controls="profile-actions-menu"
+                                disabled={
+                                  actionLoading !==
+                                    null ||
+                                  messageLoading
+                                }
+                                className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--muted-strong)] transition hover:border-[var(--accent)] hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-55"
+                              >
+                                <MoreHorizontal
+                                  size={18}
+                                />
+                              </button>
+
+                              {moreOpen ? (
+                                <div
+                                  id="profile-actions-menu"
+                                  role="menu"
+                                  aria-label="Profile actions"
+                                  className="absolute right-0 top-[calc(100%+0.5rem)] z-30 w-44 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-1.5 shadow-xl"
+                                >
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    onClick={() =>
+                                      void toggleBlock()
+                                    }
+                                    disabled={
+                                      actionLoading !==
+                                        null ||
+                                      messageLoading
+                                    }
+                                    className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-[var(--foreground)] transition hover:bg-[var(--danger-soft)] hover:text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {actionLoading ===
+                                    "block" ? (
+                                      <Loader2
+                                        size={16}
+                                        className="animate-spin"
+                                      />
+                                    ) : (
+                                      <Ban
+                                        size={16}
+                                      />
+                                    )}
+
+                                    Block
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    onClick={
+                                      openReport
+                                    }
+                                    disabled={
+                                      actionLoading !==
+                                        null ||
+                                      messageLoading
+                                    }
+                                    className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-[var(--muted-strong)] transition hover:bg-[var(--danger-soft)] hover:text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    <Flag
+                                      size={16}
+                                    />
+                                    Report
+                                  </button>
+                                </div>
+                              ) : null}
+                            </div>
                           </>
-                        ) : null}
-
-                        <button
-                          type="button"
-                          onClick={() =>
-                            void toggleBlock()
-                          }
-                          disabled={
-                            actionLoading !==
-                              null ||
-                            messageLoading
-                          }
-                          className={[
-                            "inline-flex items-center justify-center gap-2 rounded-full border px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60",
-                            profile.is_blocked
-                              ? "border-[var(--accent)] bg-[var(--accent)] text-white hover:bg-[var(--accent-strong)]"
-                              : "border-[var(--border)] bg-[var(--surface)] text-[var(--foreground)] hover:border-[var(--danger)] hover:bg-[var(--danger-soft)] hover:text-[var(--danger)]",
-                          ].join(" ")}
-                        >
-                          {actionLoading ===
-                          "block" ? (
-                            <Loader2
-                              className="animate-spin"
-                              size={16}
-                            />
-                          ) : profile.is_blocked ? (
-                            <ShieldOff
-                              size={16}
-                            />
-                          ) : (
-                            <Ban
-                              size={16}
-                            />
-                          )}
-
-                          {profile.is_blocked
-                            ? "Unblock"
-                            : "Block"}
-                        </button>
-
-                        {!profile.is_blocked ? (
+                        ) : (
                           <button
                             type="button"
-                            onClick={
-                              openReport
+                            onClick={() =>
+                              void toggleBlock()
                             }
                             disabled={
                               actionLoading !==
-                                null ||
-                              messageLoading
+                              null
                             }
-                            className="inline-flex items-center justify-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm font-semibold text-[var(--muted-strong)] transition hover:border-[var(--danger)] hover:bg-[var(--danger-soft)] hover:text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-60"
+                            className="inline-flex items-center justify-center gap-2 rounded-full bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-60"
                           >
-                            <Flag
-                              size={16}
-                            />
-                            Report
+                            {actionLoading ===
+                            "block" ? (
+                              <Loader2
+                                className="animate-spin"
+                                size={16}
+                              />
+                            ) : (
+                              <ShieldOff
+                                size={16}
+                              />
+                            )}
+
+                            Unblock
                           </button>
-                        ) : null}
+                        )}
                       </>
                     )}
                   </div>
