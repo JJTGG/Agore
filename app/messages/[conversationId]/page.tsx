@@ -15,6 +15,7 @@ import {
   ArrowLeft,
   CornerUpLeft,
   Edit3,
+  Forward,
   Loader2,
   MessageCircle,
   Plus,
@@ -297,6 +298,7 @@ type MessageBubbleProps = {
   editDraft: string;
   editSaving: boolean;
   onReply: (message: ReplyTarget) => void;
+  onForward: (message: Message) => void;
   onJumpToMessage: (
     messageId: string,
   ) => void;
@@ -318,6 +320,7 @@ function MessageBubble({
   editDraft,
   editSaving,
   onReply,
+  onForward,
   onJumpToMessage,
   onEdit,
   onEditDraftChange,
@@ -673,6 +676,9 @@ function MessageBubble({
               onReply={() =>
                 onReply(message)
               }
+              onForward={() =>
+                onForward(message)
+              }
               onEdit={() =>
                 onEdit(message)
               }
@@ -763,6 +769,38 @@ export default function ConversationPage() {
   ] = useState<string | null>(
     null,
   );
+
+  const [
+    forwardingMessage,
+    setForwardingMessage,
+  ] = useState<Message | null>(
+    null,
+  );
+
+  const [
+    forwardConversations,
+    setForwardConversations,
+  ] = useState<Conversation[]>([]);
+
+  const [
+    forwardingLoading,
+    setForwardingLoading,
+  ] = useState(false);
+
+  const [
+    forwardSearch,
+    setForwardSearch,
+  ] = useState("");
+
+  const [
+    forwardSending,
+    setForwardSending,
+  ] = useState(false);
+
+  const [
+    forwardError,
+    setForwardError,
+  ] = useState("");
 
   const [
     groupOpen,
@@ -947,6 +985,66 @@ export default function ConversationPage() {
         );
       }
     }, [conversationId, router]);
+
+  const loadForwardConversations =
+    useCallback(async () => {
+      setForwardingLoading(true);
+      setForwardError("");
+
+      try {
+        const response =
+          await fetch(
+            "/api/conversations?limit=30",
+            {
+              cache: "no-store",
+            },
+          );
+
+        const data =
+          await response.json();
+
+        if (
+          response.status === 401
+        ) {
+          router.push("/auth");
+          return;
+        }
+
+        if (!response.ok) {
+          setForwardError(
+            data.error ??
+              "Unable to load conversations.",
+          );
+          return;
+        }
+
+        const available =
+          Array.isArray(
+            data.conversations,
+          )
+            ? data.conversations.filter(
+                (
+                  item: Conversation,
+                ) =>
+                  item.id !==
+                  conversationId,
+              )
+            : [];
+
+        setForwardConversations(
+          available,
+        );
+      } catch {
+        setForwardError(
+          "Unable to load conversations.",
+        );
+      } finally {
+        setForwardingLoading(false);
+      }
+    }, [
+      conversationId,
+      router,
+    ]);
 
   const markConversationRead =
     useCallback(async () => {
@@ -1377,6 +1475,87 @@ export default function ConversationPage() {
         highlightTimeoutRef.current =
           null;
       }, 1200);
+  }
+
+  function openForwardDialog(
+    message: Message,
+  ) {
+    setForwardingMessage(message);
+    setForwardSearch("");
+    setForwardError("");
+    void loadForwardConversations();
+  }
+
+  function closeForwardDialog() {
+    if (forwardSending) {
+      return;
+    }
+
+    setForwardingMessage(null);
+    setForwardSearch("");
+    setForwardError("");
+  }
+
+  async function forwardMessage(
+    targetConversationId: string,
+  ) {
+    if (
+      !forwardingMessage ||
+      forwardSending ||
+      !conversationId
+    ) {
+      return;
+    }
+
+    setForwardSending(true);
+    setForwardError("");
+
+    try {
+      const response =
+        await fetch(
+          `/api/conversations/${encodeURIComponent(
+            conversationId,
+          )}/messages/${encodeURIComponent(
+            forwardingMessage.id,
+          )}/forward`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              targetConversationId,
+            }),
+          },
+        );
+
+      const data =
+        await response.json();
+
+      if (
+        response.status === 401
+      ) {
+        router.push("/auth");
+        return;
+      }
+
+      if (!response.ok) {
+        setForwardError(
+          data.error ??
+            "Unable to forward the message.",
+        );
+        return;
+      }
+
+      closeForwardDialog();
+    } catch {
+      setForwardError(
+        "Unable to forward the message.",
+      );
+    } finally {
+      setForwardSending(false);
+    }
   }
 
   function startReply(
@@ -2421,6 +2600,9 @@ export default function ConversationPage() {
                           onReply={
                             startReply
                           }
+                          onForward={
+                            openForwardDialog
+                          }
                           onJumpToMessage={
                             jumpToMessage
                           }
@@ -2609,6 +2791,257 @@ export default function ConversationPage() {
           </form>
         </section>
       </div>
+
+      {forwardingMessage ? (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 px-3 py-3 sm:items-center sm:px-5"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="forward-message-title"
+        >
+          <div className="flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-[1.75rem] border border-[var(--border)] bg-[var(--surface)] shadow-2xl">
+            <header className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-5 py-4">
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--accent)]">
+                  Message
+                </p>
+
+                <h2
+                  id="forward-message-title"
+                  className="mt-1 text-xl font-bold tracking-[-0.03em]"
+                >
+                  Forward to…
+                </h2>
+              </div>
+
+              <button
+                type="button"
+                onClick={closeForwardDialog}
+                disabled={forwardSending}
+                aria-label="Close forward dialog"
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[var(--border)] text-[var(--muted)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <X size={17} />
+              </button>
+            </header>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+              <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <Forward
+                    size={14}
+                    className="shrink-0 text-[var(--accent)]"
+                  />
+
+                  <p className="text-xs font-semibold text-[var(--accent)]">
+                    Forwarded message
+                  </p>
+                </div>
+
+                <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-[var(--foreground)]">
+                  {truncateMessage(
+                    forwardingMessage,
+                    240,
+                  )}
+                </p>
+              </div>
+
+              <div className="relative mt-4">
+                <Search
+                  size={16}
+                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"
+                />
+
+                <input
+                  value={forwardSearch}
+                  onChange={(event) =>
+                    setForwardSearch(
+                      event.target.value,
+                    )
+                  }
+                  autoFocus
+                  disabled={
+                    forwardingLoading ||
+                    forwardSending
+                  }
+                  placeholder="Search conversations…"
+                  className="h-11 w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)] pl-10 pr-4 text-sm outline-none transition placeholder:text-[var(--muted)] focus:border-[var(--accent)]/50 focus:ring-2 focus:ring-[var(--accent)]/10 disabled:cursor-not-allowed disabled:opacity-50"
+                />
+              </div>
+
+              {forwardError ? (
+                <div className="mt-4 rounded-2xl border border-[var(--danger)]/20 bg-[var(--danger-soft)] px-4 py-3">
+                  <p className="text-xs font-semibold text-[var(--danger)]">
+                    {forwardError}
+                  </p>
+                </div>
+              ) : null}
+
+              {forwardingLoading ? (
+                <div className="flex items-center justify-center py-10 text-[var(--muted)]">
+                  <Loader2
+                    size={20}
+                    className="animate-spin"
+                  />
+                </div>
+              ) : (
+                (() => {
+                  const query =
+                    forwardSearch
+                      .trim()
+                      .toLowerCase();
+
+                  const filtered =
+                    forwardConversations.filter(
+                      (item) => {
+                        if (!query) {
+                          return true;
+                        }
+
+                        const name =
+                          item.type ===
+                          "group"
+                            ? item.name ??
+                              "Unnamed group"
+                            : item
+                                .participant
+                                ?.display_name ??
+                              "Agoré user";
+
+                        const username =
+                          item.participant
+                            ?.username ??
+                          "";
+
+                        return (
+                          name
+                            .toLowerCase()
+                            .includes(
+                              query,
+                            ) ||
+                          username
+                            .toLowerCase()
+                            .includes(
+                              query,
+                            )
+                        );
+                      },
+                    );
+
+                  if (
+                    filtered.length ===
+                    0
+                  ) {
+                    return (
+                      <div className="py-10 text-center">
+                        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]">
+                          <MessageCircle
+                            size={19}
+                          />
+                        </div>
+
+                        <p className="mt-4 text-sm font-semibold">
+                          No conversation found
+                        </p>
+
+                        <p className="mt-1 text-xs leading-5 text-[var(--muted)]">
+                          Choose another conversation or search again.
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="mt-4 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)]">
+                      {filtered.map(
+                        (item) => {
+                          const name =
+                            item.type ===
+                            "group"
+                              ? item.name?.trim() ||
+                                "Unnamed group"
+                              : item
+                                  .participant
+                                  ?.display_name ||
+                                "Agoré user";
+
+                          const avatarPath =
+                            item.type ===
+                            "group"
+                              ? item.image_path
+                              : item
+                                  .participant
+                                  ?.avatar_path;
+
+                          const subtitle =
+                            item.type ===
+                            "group"
+                              ? "Group conversation"
+                              : item
+                                  .participant
+                                  ? `@${item.participant.username}`
+                                  : "Direct conversation";
+
+                          return (
+                            <button
+                              key={
+                                item.id
+                              }
+                              type="button"
+                              onClick={() =>
+                                void forwardMessage(
+                                  item.id,
+                                )
+                              }
+                              disabled={
+                                forwardSending
+                              }
+                              className="flex w-full items-center gap-3 border-b border-[var(--border)] px-3 py-3 text-left transition last:border-b-0 hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <AgoreAvatar
+                                avatarPath={
+                                  avatarPath
+                                }
+                                name={
+                                  name
+                                }
+                                className="h-11 w-11 shrink-0"
+                                textClassName="text-xs"
+                              />
+
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-semibold">
+                                  {name}
+                                </p>
+
+                                <p className="mt-0.5 truncate text-xs text-[var(--muted)]">
+                                  {subtitle}
+                                </p>
+                              </div>
+
+                              {forwardSending ? (
+                                <Loader2
+                                  size={16}
+                                  className="shrink-0 animate-spin text-[var(--accent)]"
+                                />
+                              ) : (
+                                <Forward
+                                  size={16}
+                                  className="shrink-0 text-[var(--muted)]"
+                                />
+                              )}
+                            </button>
+                          );
+                        },
+                      )}
+                    </div>
+                  );
+                })()
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {groupOpen &&
       conversation?.type ===
