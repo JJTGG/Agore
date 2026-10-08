@@ -21,6 +21,7 @@ import {
   X,
 } from "lucide-react";
 
+import AgoreAvatar from "@/components/agore-avatar";
 import { createClient } from "@/lib/supabase/browser";
 
 type ReactionType =
@@ -41,10 +42,12 @@ type CommentProfile =
   | {
       display_name: string;
       username: string;
+      avatar_path: string | null;
     }
   | Array<{
       display_name: string;
       username: string;
+      avatar_path: string | null;
     }>
   | null;
 
@@ -112,6 +115,10 @@ function formatCommentDate(value: string) {
   }).format(new Date(value));
 }
 
+function isEdited(comment: Comment) {
+  return comment.updated_at !== comment.created_at;
+}
+
 export default function PostInteractions({
   postId,
   initialContent,
@@ -120,6 +127,9 @@ export default function PostInteractions({
   onPostUpdated,
   onPostDeleted,
 }: PostInteractionsProps) {
+  const [viewerId, setViewerId] =
+    useState<string | null>(null);
+
   const [reactionCounts, setReactionCounts] = useState<
     Record<ReactionType, number>
   >({
@@ -136,8 +146,10 @@ export default function PostInteractions({
     useState<ReactionType | null>(null);
 
   const [repostCount, setRepostCount] = useState(0);
-  const [hasReposted, setHasReposted] = useState(false);
-  const [commentCount, setCommentCount] = useState(0);
+  const [hasReposted, setHasReposted] =
+    useState(false);
+  const [commentCount, setCommentCount] =
+    useState(0);
 
   const [reactionPickerOpen, setReactionPickerOpen] =
     useState(false);
@@ -145,7 +157,8 @@ export default function PostInteractions({
     commentsOpenByDefault,
   );
 
-  const [comments, setComments] = useState<Comment[]>([]);
+  const [comments, setComments] =
+    useState<Comment[]>([]);
   const [commentsLoading, setCommentsLoading] =
     useState(false);
   const [commentPublishing, setCommentPublishing] =
@@ -155,6 +168,17 @@ export default function PostInteractions({
   const [replyingTo, setReplyingTo] =
     useState<Comment | null>(null);
 
+  const [commentEditingId, setCommentEditingId] =
+    useState<string | null>(null);
+  const [commentEditContent, setCommentEditContent] =
+    useState("");
+  const [commentEditLoading, setCommentEditLoading] =
+    useState(false);
+  const [commentDeleteLoadingId, setCommentDeleteLoadingId] =
+    useState<string | null>(null);
+  const [commentMenuOpenId, setCommentMenuOpenId] =
+    useState<string | null>(null);
+
   const [reactionLoading, setReactionLoading] =
     useState(false);
   const [repostLoading, setRepostLoading] =
@@ -163,7 +187,8 @@ export default function PostInteractions({
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] =
     useState(initialContent);
-  const [editLoading, setEditLoading] = useState(false);
+  const [editLoading, setEditLoading] =
+    useState(false);
   const [deleteLoading, setDeleteLoading] =
     useState(false);
 
@@ -183,8 +208,39 @@ export default function PostInteractions({
     : null;
 
   const visibleReactionSummary = REACTIONS.filter(
-    (reaction) => reactionCounts[reaction.type] > 0,
+    (reaction) =>
+      reactionCounts[reaction.type] > 0,
   );
+
+  const rootComments = useMemo(
+    () =>
+      comments.filter(
+        (comment) =>
+          comment.parent_comment_id === null,
+      ),
+    [comments],
+  );
+
+  const repliesByParent = useMemo(() => {
+    const grouped = new Map<string, Comment[]>();
+
+    for (const comment of comments) {
+      if (!comment.parent_comment_id) {
+        continue;
+      }
+
+      const existing =
+        grouped.get(comment.parent_comment_id) ?? [];
+
+      existing.push(comment);
+      grouped.set(
+        comment.parent_comment_id,
+        existing,
+      );
+    }
+
+    return grouped;
+  }, [comments]);
 
   const loadInteractionState = useCallback(
     async () => {
@@ -199,10 +255,12 @@ export default function PostInteractions({
           return;
         }
 
+        setViewerId(user.id);
+
         const [
           reactionsResult,
           repostsResult,
-          commentCountResult,
+          commentCountResponse,
         ] = await Promise.all([
           supabase
             .from("post_reactions")
@@ -214,13 +272,14 @@ export default function PostInteractions({
             .select("id, user_id")
             .eq("post_id", postId),
 
-          supabase
-            .from("comments")
-            .select("id", {
-              count: "exact",
-              head: true,
-            })
-            .eq("post_id", postId),
+          fetch(
+            `/api/posts/${encodeURIComponent(
+              postId,
+            )}/comments?limit=1`,
+            {
+              cache: "no-store",
+            },
+          ),
         ]);
 
         if (reactionsResult.error) {
@@ -231,8 +290,16 @@ export default function PostInteractions({
           throw repostsResult.error;
         }
 
-        if (commentCountResult.error) {
-          throw commentCountResult.error;
+        const commentCountData =
+          await commentCountResponse
+            .json()
+            .catch(() => null);
+
+        if (!commentCountResponse.ok) {
+          throw new Error(
+            commentCountData?.error ??
+              "Unable to load comment count.",
+          );
         }
 
         const nextCounts: Record<
@@ -251,8 +318,9 @@ export default function PostInteractions({
         let nextMyReaction: ReactionType | null =
           null;
 
-        for (const reaction of (reactionsResult.data ??
-          []) as ReactionRow[]) {
+        for (const reaction of (
+          reactionsResult.data ?? []
+        ) as ReactionRow[]) {
           nextCounts[reaction.reaction_type] += 1;
 
           if (reaction.user_id === user.id) {
@@ -269,11 +337,16 @@ export default function PostInteractions({
         setRepostCount(repostRows.length);
         setHasReposted(
           repostRows.some(
-            (repost) => repost.user_id === user.id,
+            (repost) =>
+              repost.user_id === user.id,
           ),
         );
         setCommentCount(
-          commentCountResult.count ?? 0,
+          Number.isFinite(
+            commentCountData?.commentCount,
+          )
+            ? commentCountData.commentCount
+            : 0,
         );
       } catch (requestError) {
         console.error(
@@ -297,44 +370,55 @@ export default function PostInteractions({
     setEditContent(initialContent);
   }, [initialContent]);
 
-  const loadComments = useCallback(async () => {
-    setCommentsLoading(true);
-    setError("");
+  const loadComments = useCallback(
+    async () => {
+      setCommentsLoading(true);
+      setError("");
 
-    try {
-      const response = await fetch(
-        `/api/posts/${encodeURIComponent(
-          postId,
-        )}/comments?limit=100`,
-        {
-          cache: "no-store",
-        },
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data.error ??
-            "Unable to load comments.",
+      try {
+        const response = await fetch(
+          `/api/posts/${encodeURIComponent(
+            postId,
+          )}/comments?limit=100`,
+          {
+            cache: "no-store",
+          },
         );
-      }
 
-      setComments(
-        Array.isArray(data.comments)
-          ? data.comments
-          : [],
-      );
-    } catch (requestError) {
-      setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Unable to load comments.",
-      );
-    } finally {
-      setCommentsLoading(false);
-    }
-  }, [postId]);
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            data.error ??
+              "Unable to load comments.",
+          );
+        }
+
+        const nextComments = Array.isArray(
+          data.comments,
+        )
+          ? (data.comments as Comment[])
+          : [];
+
+        setComments(nextComments);
+
+        setCommentCount(
+          Number.isFinite(data.commentCount)
+            ? data.commentCount
+            : nextComments.length,
+        );
+      } catch (requestError) {
+        setError(
+          requestError instanceof Error
+            ? requestError.message
+            : "Unable to load comments.",
+        );
+      } finally {
+        setCommentsLoading(false);
+      }
+    },
+    [postId],
+  );
 
   useEffect(() => {
     if (
@@ -360,12 +444,16 @@ export default function PostInteractions({
     setError("");
 
     const previousReaction = myReaction;
-    const previousCounts = { ...reactionCounts };
+    const previousCounts = {
+      ...reactionCounts,
+    };
 
     setReactionPickerOpen(false);
 
     try {
-      if (previousReaction === reactionType) {
+      if (
+        previousReaction === reactionType
+      ) {
         const response = await fetch(
           `/api/posts/${encodeURIComponent(
             postId,
@@ -429,10 +517,11 @@ export default function PostInteractions({
         const next = { ...current };
 
         if (previousReaction) {
-          next[previousReaction] = Math.max(
-            0,
-            next[previousReaction] - 1,
-          );
+          next[previousReaction] =
+            Math.max(
+              0,
+              next[previousReaction] - 1,
+            );
         }
 
         next[reactionType] += 1;
@@ -589,6 +678,190 @@ export default function PostInteractions({
       );
     } finally {
       setCommentPublishing(false);
+    }
+  }
+
+  function startCommentEdit(
+    comment: Comment,
+  ) {
+    setCommentMenuOpenId(null);
+    setCommentEditingId(comment.id);
+    setCommentEditContent(comment.content);
+    setError("");
+  }
+
+  function cancelCommentEdit() {
+    setCommentEditingId(null);
+    setCommentEditContent("");
+  }
+
+  async function saveCommentEdit() {
+    const trimmedContent =
+      commentEditContent.trim();
+
+    if (
+      !trimmedContent ||
+      commentEditLoading ||
+      !commentEditingId
+    ) {
+      return;
+    }
+
+    setCommentEditLoading(true);
+    setError("");
+
+    try {
+      const response = await fetch(
+        `/api/comments/${encodeURIComponent(
+          commentEditingId,
+        )}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            content: trimmedContent,
+          }),
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ??
+            "Unable to update the comment.",
+        );
+      }
+
+      if (!data.comment) {
+        throw new Error(
+          "The comment response was invalid.",
+        );
+      }
+
+      setComments((current) =>
+        current.map((comment) =>
+          comment.id === commentEditingId
+            ? (data.comment as Comment)
+            : comment,
+        ),
+      );
+
+      setCommentEditingId(null);
+      setCommentEditContent("");
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Unable to update the comment.",
+      );
+    } finally {
+      setCommentEditLoading(false);
+    }
+  }
+
+  async function deleteComment(
+    comment: Comment,
+  ) {
+    if (
+      commentDeleteLoadingId ||
+      comment.author_id !== viewerId
+    ) {
+      return;
+    }
+
+    const replies =
+      comment.parent_comment_id === null
+        ? comments.filter(
+            (item) =>
+              item.parent_comment_id ===
+              comment.id,
+          )
+        : [];
+
+    const confirmationMessage =
+      replies.length > 0
+        ? "Delete this comment? Its replies will also be removed from the conversation."
+        : "Delete this comment? This cannot be undone.";
+
+    const confirmed =
+      window.confirm(confirmationMessage);
+
+    if (!confirmed) {
+      return;
+    }
+
+    setCommentDeleteLoadingId(comment.id);
+    setCommentMenuOpenId(null);
+    setError("");
+
+    try {
+      const response = await fetch(
+        `/api/comments/${encodeURIComponent(
+          comment.id,
+        )}`,
+        {
+          method: "DELETE",
+        },
+      );
+
+      if (!response.ok) {
+        const data = await response
+          .json()
+          .catch(() => null);
+
+        throw new Error(
+          data?.error ??
+            "Unable to delete the comment.",
+        );
+      }
+
+      const removedIds = new Set<string>([
+        comment.id,
+      ]);
+
+      if (
+        comment.parent_comment_id === null
+      ) {
+        for (const reply of replies) {
+          removedIds.add(reply.id);
+        }
+      }
+
+      setComments((current) =>
+        current.filter(
+          (item) => !removedIds.has(item.id),
+        ),
+      );
+
+      setCommentCount((current) =>
+        Math.max(
+          0,
+          current - removedIds.size,
+        ),
+      );
+
+      if (
+        replyingTo?.id === comment.id
+      ) {
+        setReplyingTo(null);
+      }
+
+      if (
+        commentEditingId === comment.id
+      ) {
+        cancelCommentEdit();
+      }
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Unable to delete the comment.",
+      );
+    } finally {
+      setCommentDeleteLoadingId(null);
     }
   }
 
@@ -881,9 +1154,9 @@ export default function PostInteractions({
             <div className="absolute right-0 top-full z-30 mt-2 w-44 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-1.5 shadow-[0_12px_35px_rgba(0,0,0,0.12)]">
               <button
                 type="button"
-                onClick={() => {
-                  setEditing(true);
-                }}
+                onClick={() =>
+                  setEditing(true)
+                }
                 className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm transition hover:bg-[var(--background)]"
               >
                 <Edit3 size={15} />
@@ -892,7 +1165,9 @@ export default function PostInteractions({
 
               <button
                 type="button"
-                onClick={() => void deletePost()}
+                onClick={() =>
+                  void deletePost()
+                }
                 disabled={deleteLoading}
                 className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-[var(--danger)] transition hover:bg-[var(--danger-soft)] disabled:opacity-50"
               >
@@ -933,7 +1208,9 @@ export default function PostInteractions({
           <textarea
             value={editContent}
             onChange={(event) =>
-              setEditContent(event.target.value)
+              setEditContent(
+                event.target.value,
+              )
             }
             maxLength={2000}
             rows={5}
@@ -975,6 +1252,7 @@ export default function PostInteractions({
               ) : (
                 <Check size={15} />
               )}
+
               Save
             </button>
           </div>
@@ -990,14 +1268,15 @@ export default function PostInteractions({
               </p>
 
               <p className="mt-1 text-xs text-[var(--muted)]">
-                Reply to the post or join an existing
-                thread.
+                Reply to the post or continue an existing thread.
               </p>
             </div>
 
             <button
               type="button"
-              onClick={() => void loadComments()}
+              onClick={() =>
+                void loadComments()
+              }
               disabled={commentsLoading}
               className="rounded-full px-2.5 py-1.5 text-xs font-semibold text-[var(--accent)] transition hover:bg-[var(--surface)] disabled:opacity-50"
             >
@@ -1011,6 +1290,7 @@ export default function PostInteractions({
                 size={15}
                 className="animate-spin"
               />
+
               Loading conversation…
             </div>
           ) : comments.length === 0 ? (
@@ -1020,79 +1300,531 @@ export default function PostInteractions({
               </p>
 
               <p className="mt-1 text-xs leading-5 text-[var(--muted)]">
-                Start the conversation with your
-                own response.
+                Start the conversation with your own response.
               </p>
             </div>
           ) : (
-            <div className="mt-4 space-y-2.5">
-              {comments.map((comment) => {
-                const profile =
-                  getCommentProfile(
-                    comment,
-                  );
+            <div className="mt-4 space-y-3">
+              {rootComments.map(
+                (comment) => {
+                  const profile =
+                    getCommentProfile(
+                      comment,
+                    );
 
-                const isReply =
-                  comment.parent_comment_id !==
-                  null;
+                  const isOwnerComment =
+                    comment.author_id ===
+                    viewerId;
 
-                return (
-                  <article
-                    key={comment.id}
-                    className={`rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-3.5 ${
-                      isReply ? "ml-5 sm:ml-8" : ""
-                    }`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--accent-soft)] text-[10px] font-bold text-[var(--accent)]">
-                        {(
-                          profile?.display_name ??
-                          "Agore user"
-                        )
-                          .slice(0, 1)
-                          .toUpperCase()}
-                      </span>
+                  const replies =
+                    repliesByParent.get(
+                      comment.id,
+                    ) ?? [];
 
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold">
-                              {profile?.display_name ??
-                                "Agoré user"}
-                            </p>
+                  const isCommentEditing =
+                    commentEditingId ===
+                    comment.id;
 
-                            <p className="mt-0.5 truncate text-[11px] text-[var(--muted)]">
-                              @
-                              {profile?.username ??
-                                "unknown"}{" "}
-                              ·{" "}
-                              {formatCommentDate(
-                                comment.created_at,
-                              )}
-                            </p>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setReplyingTo(
-                                comment,
-                              )
+                  return (
+                    <div
+                      key={comment.id}
+                      className="space-y-2"
+                    >
+                      <article className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-3.5">
+                        <div className="flex items-start gap-3">
+                          <AgoreAvatar
+                            avatarPath={
+                              profile?.avatar_path ??
+                              null
                             }
-                            className="shrink-0 rounded-full px-2.5 py-1.5 text-xs font-semibold text-[var(--accent)] transition hover:bg-[var(--background)]"
-                          >
-                            Reply
-                          </button>
-                        </div>
+                            name={
+                              profile?.display_name ??
+                              "Agoré user"
+                            }
+                            className="h-9 w-9 shrink-0"
+                            textClassName="text-xs"
+                          />
 
-                        <p className="mt-3 whitespace-pre-wrap text-sm leading-6">
-                          {comment.content}
-                        </p>
-                      </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold">
+                                  {profile?.display_name ??
+                                    "Agoré user"}
+                                </p>
+
+                                <p className="mt-0.5 truncate text-[11px] text-[var(--muted)]">
+                                  @
+                                  {profile?.username ??
+                                    "unknown"}{" "}
+                                  ·{" "}
+                                  {formatCommentDate(
+                                    comment.created_at,
+                                  )}
+                                  {isEdited(
+                                    comment,
+                                  )
+                                    ? " · Edited"
+                                    : ""}
+                                </p>
+                              </div>
+
+                              <div className="relative shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setCommentMenuOpenId(
+                                      (
+                                        current,
+                                      ) =>
+                                        current ===
+                                        comment.id
+                                          ? null
+                                          : comment.id,
+                                    )
+                                  }
+                                  aria-label="Comment actions"
+                                  className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--muted)] transition hover:bg-[var(--background)] hover:text-[var(--foreground)]"
+                                >
+                                  <MoreHorizontal
+                                    size={16}
+                                  />
+                                </button>
+
+                                {commentMenuOpenId ===
+                                comment.id ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      aria-label="Close comment actions"
+                                      className="fixed inset-0 z-10 cursor-default"
+                                      onClick={() =>
+                                        setCommentMenuOpenId(
+                                          null,
+                                        )
+                                      }
+                                    />
+
+                                    <div className="absolute right-0 top-full z-20 mt-1 w-40 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-1.5 shadow-[0_12px_35px_rgba(0,0,0,0.12)]">
+                                      {isOwnerComment ? (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              startCommentEdit(
+                                                comment,
+                                              )
+                                            }
+                                            className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm transition hover:bg-[var(--background)]"
+                                          >
+                                            <Edit3
+                                              size={15}
+                                            />
+                                            Edit comment
+                                          </button>
+
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              void deleteComment(
+                                                comment,
+                                              )
+                                            }
+                                            disabled={
+                                              commentDeleteLoadingId ===
+                                              comment.id
+                                            }
+                                            className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-[var(--danger)] transition hover:bg-[var(--danger-soft)] disabled:opacity-50"
+                                          >
+                                            {commentDeleteLoadingId ===
+                                            comment.id ? (
+                                              <Loader2
+                                                size={15}
+                                                className="animate-spin"
+                                              />
+                                            ) : (
+                                              <Trash2
+                                                size={15}
+                                              />
+                                            )}
+
+                                            Delete comment
+                                          </button>
+                                        </>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setCommentMenuOpenId(
+                                              null,
+                                            )
+                                          }
+                                          className="flex w-full items-center rounded-xl px-3 py-2.5 text-left text-sm text-[var(--muted)]"
+                                        >
+                                          Comment actions
+                                        </button>
+                                      )}
+                                    </div>
+                                  </>
+                                ) : null}
+                              </div>
+                            </div>
+
+                            {isCommentEditing ? (
+                              <div className="mt-3">
+                                <textarea
+                                  value={
+                                    commentEditContent
+                                  }
+                                  onChange={(
+                                    event,
+                                  ) =>
+                                    setCommentEditContent(
+                                      event.target
+                                        .value,
+                                    )
+                                  }
+                                  maxLength={1000}
+                                  rows={4}
+                                  className="w-full resize-none rounded-2xl border border-[var(--border)] bg-[var(--background)] px-4 py-3 text-sm leading-6 outline-none transition focus:border-[var(--accent)]"
+                                />
+
+                                <div className="mt-2 flex items-center justify-between gap-3">
+                                  <span className="text-[11px] tabular-nums text-[var(--muted)]">
+                                    {
+                                      commentEditContent.length
+                                    }
+                                    /1000
+                                  </span>
+
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={
+                                        cancelCommentEdit
+                                      }
+                                      disabled={
+                                        commentEditLoading
+                                      }
+                                      className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold text-[var(--muted)] transition hover:bg-[var(--background)] disabled:opacity-50"
+                                    >
+                                      <X
+                                        size={14}
+                                      />
+                                      Cancel
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        void saveCommentEdit()
+                                      }
+                                      disabled={
+                                        commentEditLoading ||
+                                        !commentEditContent.trim()
+                                      }
+                                      className="inline-flex items-center gap-1.5 rounded-full bg-[var(--accent)] px-3 py-2 text-xs font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                      {commentEditLoading ? (
+                                        <Loader2
+                                          size={14}
+                                          className="animate-spin"
+                                        />
+                                      ) : (
+                                        <Check
+                                          size={14}
+                                        />
+                                      )}
+                                      Save
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <p className="mt-3 whitespace-pre-wrap text-sm leading-6">
+                                  {comment.content}
+                                </p>
+
+                                <div className="mt-3 flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setReplyingTo(
+                                        comment,
+                                      );
+                                      setCommentsOpen(
+                                        true,
+                                      );
+                                      setError("");
+                                    }}
+                                    className="rounded-full px-2.5 py-1.5 text-xs font-semibold text-[var(--accent)] transition hover:bg-[var(--background)]"
+                                  >
+                                    Reply
+                                  </button>
+
+                                  {replies.length >
+                                  0 ? (
+                                    <span className="text-[11px] text-[var(--muted)]">
+                                      {replies.length}{" "}
+                                      {replies.length ===
+                                      1
+                                        ? "reply"
+                                        : "replies"}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </article>
+
+                      {replies.map(
+                        (reply) => {
+                          const replyProfile =
+                            getCommentProfile(
+                              reply,
+                            );
+
+                          const isReplyOwner =
+                            reply.author_id ===
+                            viewerId;
+
+                          const isReplyEditing =
+                            commentEditingId ===
+                            reply.id;
+
+                          return (
+                            <article
+                              key={reply.id}
+                              className="ml-5 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-3.5 sm:ml-8"
+                            >
+                              <div className="flex items-start gap-3">
+                                <AgoreAvatar
+                                  avatarPath={
+                                    replyProfile?.avatar_path ??
+                                    null
+                                  }
+                                  name={
+                                    replyProfile?.display_name ??
+                                    "Agoré user"
+                                  }
+                                  className="h-8 w-8 shrink-0"
+                                  textClassName="text-[11px]"
+                                />
+
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <p className="truncate text-sm font-semibold">
+                                        {replyProfile?.display_name ??
+                                          "Agoré user"}
+                                      </p>
+
+                                      <p className="mt-0.5 truncate text-[11px] text-[var(--muted)]">
+                                        @
+                                        {replyProfile?.username ??
+                                          "unknown"}{" "}
+                                        ·{" "}
+                                        {formatCommentDate(
+                                          reply.created_at,
+                                        )}
+                                        {isEdited(
+                                          reply,
+                                        )
+                                          ? " · Edited"
+                                          : ""}
+                                      </p>
+                                    </div>
+
+                                    <div className="relative shrink-0">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setCommentMenuOpenId(
+                                            (
+                                              current,
+                                            ) =>
+                                              current ===
+                                              reply.id
+                                                ? null
+                                                : reply.id,
+                                          )
+                                        }
+                                        aria-label="Reply actions"
+                                        className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--muted)] transition hover:bg-[var(--background)] hover:text-[var(--foreground)]"
+                                      >
+                                        <MoreHorizontal
+                                          size={16}
+                                        />
+                                      </button>
+
+                                      {commentMenuOpenId ===
+                                      reply.id ? (
+                                        <>
+                                          <button
+                                            type="button"
+                                            aria-label="Close reply actions"
+                                            className="fixed inset-0 z-10 cursor-default"
+                                            onClick={() =>
+                                              setCommentMenuOpenId(
+                                                null,
+                                              )
+                                            }
+                                          />
+
+                                          <div className="absolute right-0 top-full z-20 mt-1 w-40 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-1.5 shadow-[0_12px_35px_rgba(0,0,0,0.12)]">
+                                            {isReplyOwner ? (
+                                              <>
+                                                <button
+                                                  type="button"
+                                                  onClick={() =>
+                                                    startCommentEdit(
+                                                      reply,
+                                                    )
+                                                  }
+                                                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm transition hover:bg-[var(--background)]"
+                                                >
+                                                  <Edit3
+                                                    size={15}
+                                                  />
+                                                  Edit comment
+                                                </button>
+
+                                                <button
+                                                  type="button"
+                                                  onClick={() =>
+                                                    void deleteComment(
+                                                      reply,
+                                                    )
+                                                  }
+                                                  disabled={
+                                                    commentDeleteLoadingId ===
+                                                    reply.id
+                                                  }
+                                                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-[var(--danger)] transition hover:bg-[var(--danger-soft)] disabled:opacity-50"
+                                                >
+                                                  {commentDeleteLoadingId ===
+                                                  reply.id ? (
+                                                    <Loader2
+                                                      size={15}
+                                                      className="animate-spin"
+                                                    />
+                                                  ) : (
+                                                    <Trash2
+                                                      size={15}
+                                                    />
+                                                  )}
+
+                                                  Delete comment
+                                                </button>
+                                              </>
+                                            ) : (
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  setCommentMenuOpenId(
+                                                    null,
+                                                  )
+                                                }
+                                                className="flex w-full items-center rounded-xl px-3 py-2.5 text-left text-sm text-[var(--muted)]"
+                                              >
+                                                Comment actions
+                                              </button>
+                                            )}
+                                          </div>
+                                        </>
+                                      ) : null}
+                                    </div>
+                                  </div>
+
+                                  {isReplyEditing ? (
+                                    <div className="mt-3">
+                                      <textarea
+                                        value={
+                                          commentEditContent
+                                        }
+                                        onChange={(
+                                          event,
+                                        ) =>
+                                          setCommentEditContent(
+                                            event
+                                              .target
+                                              .value,
+                                          )
+                                        }
+                                        maxLength={1000}
+                                        rows={4}
+                                        className="w-full resize-none rounded-2xl border border-[var(--border)] bg-[var(--background)] px-4 py-3 text-sm leading-6 outline-none transition focus:border-[var(--accent)]"
+                                      />
+
+                                      <div className="mt-2 flex items-center justify-between gap-3">
+                                        <span className="text-[11px] tabular-nums text-[var(--muted)]">
+                                          {
+                                            commentEditContent.length
+                                          }
+                                          /1000
+                                        </span>
+
+                                        <div className="flex items-center gap-2">
+                                          <button
+                                            type="button"
+                                            onClick={
+                                              cancelCommentEdit
+                                            }
+                                            disabled={
+                                              commentEditLoading
+                                            }
+                                            className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold text-[var(--muted)] transition hover:bg-[var(--background)] disabled:opacity-50"
+                                          >
+                                            <X
+                                              size={14}
+                                            />
+                                            Cancel
+                                          </button>
+
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              void saveCommentEdit()
+                                            }
+                                            disabled={
+                                              commentEditLoading ||
+                                              !commentEditContent.trim()
+                                            }
+                                            className="inline-flex items-center gap-1.5 rounded-full bg-[var(--accent)] px-3 py-2 text-xs font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                                          >
+                                            {commentEditLoading ? (
+                                              <Loader2
+                                                size={14}
+                                                className="animate-spin"
+                                              />
+                                            ) : (
+                                              <Check
+                                                size={14}
+                                              />
+                                            )}
+                                            Save
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <p className="mt-3 whitespace-pre-wrap text-sm leading-6">
+                                      {reply.content}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            </article>
+                          );
+                        },
+                      )}
                     </div>
-                  </article>
-                );
-              })}
+                  );
+                },
+              )}
             </div>
           )}
 
@@ -1184,9 +1916,13 @@ export default function PostInteractions({
 
           <button
             type="button"
-            onClick={() =>
-              void loadInteractionState()
-            }
+            onClick={() => {
+              void loadInteractionState();
+
+              if (commentsOpen) {
+                void loadComments();
+              }
+            }}
             className="shrink-0 text-xs font-semibold text-[var(--danger)]"
           >
             Retry
