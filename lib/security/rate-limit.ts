@@ -1,16 +1,5 @@
 import type { NextRequest } from "next/server";
-
-type RateLimitClient = {
-  rpc: (
-    functionName: string,
-    args: Record<string, unknown>,
-  ) => Promise<{
-    data: unknown;
-    error: {
-      message?: string;
-    } | null;
-  }>;
-};
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 type RateLimitResult = {
   allowed: boolean;
@@ -236,7 +225,7 @@ export function getAgoreRateLimitBucket(
 }
 
 export async function checkAgoreRateLimit(
-  supabase: RateLimitClient,
+  supabase: Pick<SupabaseClient, "rpc">,
   bucket: string,
 ): Promise<
   | {
@@ -304,11 +293,15 @@ export async function checkAgoreRateLimit(
       allowed: record.allowed,
       limit_count: Math.max(
         0,
-        Math.trunc(record.limit_count),
+        Math.trunc(
+          record.limit_count,
+        ),
       ),
       remaining: Math.max(
         0,
-        Math.trunc(record.remaining),
+        Math.trunc(
+          record.remaining,
+        ),
       ),
       retry_after_seconds: Math.max(
         1,
