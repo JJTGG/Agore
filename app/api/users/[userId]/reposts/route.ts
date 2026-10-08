@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 const querySchema = z.object({
@@ -35,20 +36,25 @@ export async function GET(
   {
     params,
   }: {
-    params: Promise<{ userId: string }>;
+    params: Promise<{
+      userId: string;
+    }>;
   },
 ) {
-  const supabase = await createClient();
+  const supabase =
+    await createClient();
 
   const {
     data: { user },
     error: userError,
-  } = await supabase.auth.getUser();
+  } =
+    await supabase.auth.getUser();
 
   if (userError || !user) {
     return NextResponse.json(
       {
-        error: "Authentication required.",
+        error:
+          "Authentication required.",
       },
       {
         status: 401,
@@ -56,14 +62,17 @@ export async function GET(
     );
   }
 
-  const { userId } = await params;
+  const { userId } =
+    await params;
 
-  const userIdResult = z.uuid().safeParse(userId);
+  const userIdResult =
+    z.uuid().safeParse(userId);
 
   if (!userIdResult.success) {
     return NextResponse.json(
       {
-        error: "Invalid user ID.",
+        error:
+          "Invalid user ID.",
       },
       {
         status: 400,
@@ -71,18 +80,24 @@ export async function GET(
     );
   }
 
-  const { searchParams } = new URL(request.url);
+  const targetUserId =
+    userIdResult.data;
 
-  const parsedQuery = querySchema.safeParse({
-    limit:
-      searchParams.get("limit") ??
-      undefined,
-  });
+  const { searchParams } =
+    new URL(request.url);
+
+  const parsedQuery =
+    querySchema.safeParse({
+      limit:
+        searchParams.get("limit") ??
+        undefined,
+    });
 
   if (!parsedQuery.success) {
     return NextResponse.json(
       {
-        error: "Invalid profile repost parameters.",
+        error:
+          "Invalid profile repost parameters.",
       },
       {
         status: 400,
@@ -90,12 +105,23 @@ export async function GET(
     );
   }
 
-  const { data: profile, error: profileError } =
+  const {
+    data: profile,
+    error: profileError,
+  } =
     await supabase
       .from("profiles")
-      .select("id, account_status")
-      .eq("id", userId)
-      .eq("account_status", "active")
+      .select(
+        "id, account_status",
+      )
+      .eq(
+        "id",
+        targetUserId,
+      )
+      .eq(
+        "account_status",
+        "active",
+      )
       .maybeSingle();
 
   if (profileError) {
@@ -106,7 +132,8 @@ export async function GET(
 
     return NextResponse.json(
       {
-        error: "Unable to load this profile.",
+        error:
+          "Unable to load this profile.",
       },
       {
         status: 500,
@@ -117,7 +144,8 @@ export async function GET(
   if (!profile) {
     return NextResponse.json(
       {
-        error: "Profile not found.",
+        error:
+          "Profile not found.",
       },
       {
         status: 404,
@@ -125,16 +153,22 @@ export async function GET(
     );
   }
 
+  const admin =
+    createAdminClient();
+
   const {
     data: blockingRelationship,
     error: blockError,
-  } = await supabase
-    .from("blocks")
-    .select("blocker_id, blocked_id")
-    .or(
-      `and(blocker_id.eq.${user.id},blocked_id.eq.${userId}),and(blocker_id.eq.${userId},blocked_id.eq.${user.id})`,
-    )
-    .limit(1);
+  } =
+    await admin
+      .from("blocks")
+      .select(
+        "blocker_id, blocked_id",
+      )
+      .or(
+        `and(blocker_id.eq.${user.id},blocked_id.eq.${targetUserId}),and(blocker_id.eq.${targetUserId},blocked_id.eq.${user.id})`,
+      )
+      .limit(1);
 
   if (blockError) {
     console.error(
@@ -144,7 +178,8 @@ export async function GET(
 
     return NextResponse.json(
       {
-        error: "Unable to load this profile.",
+        error:
+          "Unable to load this profile.",
       },
       {
         status: 500,
@@ -158,7 +193,8 @@ export async function GET(
   ) {
     return NextResponse.json(
       {
-        error: "Profile not found.",
+        error:
+          "Profile not found.",
       },
       {
         status: 404,
@@ -166,17 +202,28 @@ export async function GET(
     );
   }
 
-  const { data: repostRows, error: repostError } =
+  const {
+    data: repostRows,
+    error: repostError,
+  } =
     await supabase
       .from("reposts")
       .select(
         "id, post_id, user_id, created_at",
       )
-      .eq("user_id", userId)
-      .order("created_at", {
-        ascending: false,
-      })
-      .limit(parsedQuery.data.limit);
+      .eq(
+        "user_id",
+        targetUserId,
+      )
+      .order(
+        "created_at",
+        {
+          ascending: false,
+        },
+      )
+      .limit(
+        parsedQuery.data.limit,
+      );
 
   if (repostError) {
     console.error(
@@ -186,7 +233,8 @@ export async function GET(
 
     return NextResponse.json(
       {
-        error: "Unable to load profile reposts.",
+        error:
+          "Unable to load profile reposts.",
       },
       {
         status: 500,
@@ -194,7 +242,10 @@ export async function GET(
     );
   }
 
-  if (!repostRows || repostRows.length === 0) {
+  if (
+    !repostRows ||
+    repostRows.length === 0
+  ) {
     return NextResponse.json({
       reposts: [],
     });
@@ -203,17 +254,27 @@ export async function GET(
   const postIds = [
     ...new Set(
       repostRows.map(
-        (repost) => repost.post_id,
+        (repost) =>
+          repost.post_id,
       ),
     ),
   ];
 
-  const { data: posts, error: postsError } =
+  const {
+    data: posts,
+    error: postsError,
+  } =
     await supabase
       .from("posts")
       .select(postSelect)
-      .in("id", postIds)
-      .is("deleted_at", null);
+      .in(
+        "id",
+        postIds,
+      )
+      .is(
+        "deleted_at",
+        null,
+      );
 
   if (postsError) {
     console.error(
@@ -223,7 +284,8 @@ export async function GET(
 
     return NextResponse.json(
       {
-        error: "Unable to load profile reposts.",
+        error:
+          "Unable to load profile reposts.",
       },
       {
         status: 500,
@@ -231,65 +293,77 @@ export async function GET(
     );
   }
 
-  const postMap = new Map(
-    (posts ?? []).map((post) => [
-      post.id,
-      {
-        ...post,
-        post_media: Array.isArray(
-          post.post_media,
-        )
-          ? [...post.post_media].sort(
-              (a, b) => {
-                if (
-                  a.sort_order !==
-                  b.sort_order
-                ) {
-                  return (
-                    a.sort_order -
-                    b.sort_order
-                  );
-                }
+  const postMap =
+    new Map(
+      (posts ?? []).map(
+        (post) => [
+          post.id,
+          {
+            ...post,
+            post_media:
+              Array.isArray(
+                post.post_media,
+              )
+                ? [
+                    ...post.post_media,
+                  ].sort(
+                    (a, b) => {
+                      if (
+                        a.sort_order !==
+                        b.sort_order
+                      ) {
+                        return (
+                          a.sort_order -
+                          b.sort_order
+                        );
+                      }
 
-                return (
-                  new Date(
-                    a.created_at,
-                  ).getTime() -
-                  new Date(
-                    b.created_at,
-                  ).getTime()
-                );
-              },
-            )
-          : [],
-      },
-    ]),
-  );
-
-  const reposts = repostRows
-    .map((repost) => {
-      const post = postMap.get(
-        repost.post_id,
-      );
-
-      if (!post) {
-        return null;
-      }
-
-      return {
-        ...post,
-        repost_id: repost.id,
-        reposted_at: repost.created_at,
-        reposted_by: userId,
-      };
-    })
-    .filter(
-      (
-        repost,
-      ): repost is NonNullable<
-        typeof repost
-      > => repost !== null,
+                      return (
+                        new Date(
+                          a.created_at,
+                        ).getTime() -
+                        new Date(
+                          b.created_at,
+                        ).getTime()
+                      );
+                    },
+                  )
+                : [],
+          },
+        ],
+      ),
     );
+
+  const reposts =
+    repostRows
+      .map((repost) => {
+        const post =
+          postMap.get(
+            repost.post_id,
+          );
+
+        if (!post) {
+          return null;
+        }
+
+        return {
+          ...post,
+          repost_id:
+            repost.id,
+          reposted_at:
+            repost.created_at,
+          reposted_by:
+            targetUserId,
+        };
+      })
+      .filter(
+        (
+          repost,
+        ): repost is NonNullable<
+          typeof repost
+        > =>
+          repost !== null,
+      );
 
   return NextResponse.json({
     reposts,
