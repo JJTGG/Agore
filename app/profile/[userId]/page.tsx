@@ -2,12 +2,17 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
 import {
   ArrowLeft,
   Ban,
   Check,
   Edit3,
+  Flag,
   Loader2,
   MessageCircle,
   Settings,
@@ -19,6 +24,7 @@ import { createClient } from "@/lib/supabase/browser";
 import AgoreAvatar from "@/components/agore-avatar";
 import ProfilePosts from "./profile-posts";
 import ProfileConnections from "./profile-connections";
+import ProfileReportDialog from "./profile-report-dialog";
 
 type Profile = {
   id: string;
@@ -89,6 +95,11 @@ export default function ProfilePage() {
   ] = useState<ConnectionTab>(
     "followers",
   );
+
+  const [
+    reportOpen,
+    setReportOpen,
+  ] = useState(false);
 
   const loadProfile =
     useCallback(async () => {
@@ -187,11 +198,13 @@ export default function ProfilePage() {
         );
 
       const data =
-        await response.json();
+        response.status === 204
+          ? null
+          : await response.json();
 
       if (!response.ok) {
         setError(
-          data.error ??
+          data?.error ??
             "Unable to update follow status.",
         );
         return;
@@ -288,6 +301,9 @@ export default function ProfilePage() {
         );
 
         setConnectionsOpen(
+          false,
+        );
+        setReportOpen(
           false,
         );
       } else {
@@ -399,6 +415,27 @@ export default function ProfilePage() {
 
   function closeConnections() {
     setConnectionsOpen(
+      false,
+    );
+  }
+
+  function openReport() {
+    if (
+      !profile ||
+      isOwner ||
+      profile.is_blocked
+    ) {
+      return;
+    }
+
+    setError("");
+    setReportOpen(
+      true,
+    );
+  }
+
+  function closeReport() {
+    setReportOpen(
       false,
     );
   }
@@ -659,6 +696,26 @@ export default function ProfilePage() {
                             ? "Unblock"
                             : "Block"}
                         </button>
+
+                        {!profile.is_blocked ? (
+                          <button
+                            type="button"
+                            onClick={
+                              openReport
+                            }
+                            disabled={
+                              actionLoading !==
+                                null ||
+                              messageLoading
+                            }
+                            className="inline-flex items-center justify-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm font-semibold text-[var(--muted-strong)] transition hover:border-[var(--danger)] hover:bg-[var(--danger-soft)] hover:text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            <Flag
+                              size={16}
+                            />
+                            Report
+                          </button>
+                        ) : null}
                       </>
                     )}
                   </div>
@@ -681,12 +738,7 @@ export default function ProfilePage() {
                         </h2>
 
                         <p className="mt-1 max-w-xl text-sm leading-6 text-[var(--muted-strong)]">
-                          Their activity,
-                          connections,
-                          and messaging
-                          actions are hidden
-                          until you unblock
-                          them.
+                          Their activity, connections, and messaging actions are hidden until you unblock them.
                         </p>
 
                         <button
@@ -802,6 +854,24 @@ export default function ProfilePage() {
                   }
                 />
               </>
+            ) : null}
+
+            {!isOwner &&
+            profile ? (
+              <ProfileReportDialog
+                userId={
+                  profile.id
+                }
+                displayName={
+                  profile.display_name
+                }
+                open={
+                  reportOpen
+                }
+                onClose={
+                  closeReport
+                }
+              />
             ) : null}
           </>
         ) : null}
