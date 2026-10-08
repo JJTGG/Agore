@@ -5,9 +5,33 @@ import {
 } from "next/server";
 
 import {
+  getConversationMessagingAccess,
+} from "@/lib/messaging/conversation-access";
+import {
   checkAgoreRateLimit,
   getAgoreRateLimitBucket,
 } from "@/lib/security/rate-limit";
+
+function getConversationIdFromPath(
+  pathname: string,
+) {
+  const match = pathname.match(
+    /^\/api\/conversations\/([^/]+)(?:\/|$)/,
+  );
+
+  const conversationId = match?.[1];
+
+  if (
+    !conversationId ||
+    !/^[0-9a-fA-F-]{36}$/.test(
+      conversationId,
+    )
+  ) {
+    return null;
+  }
+
+  return conversationId;
+}
 
 export async function updateSession(
   request: NextRequest,
@@ -61,16 +85,16 @@ export async function updateSession(
     data: claimsData,
   } = await supabase.auth.getClaims();
 
-  const bucket =
-    getAgoreRateLimitBucket(
-      request,
-    );
-
   const userId =
     typeof claimsData?.claims?.sub ===
     "string"
       ? claimsData.claims.sub
       : null;
+
+  const bucket =
+    getAgoreRateLimitBucket(
+      request,
+    );
 
   if (bucket && userId) {
     const {
@@ -152,6 +176,52 @@ export async function updateSession(
           headers,
         },
       );
+    }
+  }
+
+  /*
+   * Every conversation-scoped API request must pass
+   * the same messaging access boundary.
+   *
+   * /api/conversations/direct
+   * /api/conversations/group
+   * and /api/conversations (list)
+   * intentionally do not have a conversation UUID
+   * in their pathname and are handled by their own routes.
+   */
+  if (userId) {
+    const conversationId =
+      getConversationIdFromPath(
+        request.nextUrl.pathname,
+      );
+
+    if (conversationId) {
+      const access =
+        await getConversationMessagingAccess(
+          conversationId,
+          userId,
+        );
+
+      if (!access.ok) {
+        const headers = new Headers(
+          response.headers,
+        );
+
+        headers.set(
+          "content-type",
+          "application/json",
+        );
+
+        return new NextResponse(
+          JSON.stringify({
+            error: access.error,
+          }),
+          {
+            status: access.status,
+            headers,
+          },
+        );
+      }
     }
   }
 
