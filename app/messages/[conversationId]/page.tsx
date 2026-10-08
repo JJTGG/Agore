@@ -69,7 +69,10 @@ type Conversation = {
 type MessageMedia = {
   id: string;
   message_id: string;
-  media_type: "image" | "file" | "audio";
+  media_type:
+    | "image"
+    | "file"
+    | "audio";
   storage_path: string;
   file_name: string;
   mime_type: string | null;
@@ -86,6 +89,7 @@ type Message = {
   sender_id: string | null;
   content: string | null;
   reply_to_message_id: string | null;
+  forwarded_from_message_id: string | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -128,34 +132,46 @@ type MemberSearchResult = {
   created_at: string;
 };
 
-function formatMessageTime(value: string) {
+function formatMessageTime(
+  value: string,
+) {
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
     return "";
   }
 
-  return new Intl.DateTimeFormat("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
+  return new Intl.DateTimeFormat(
+    "en-GB",
+    {
+      hour: "2-digit",
+      minute: "2-digit",
+    },
+  ).format(date);
 }
 
-function formatMessageDay(value: string) {
+function formatMessageDay(
+  value: string,
+) {
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
     return "";
   }
 
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  }).format(date);
+  return new Intl.DateTimeFormat(
+    "en-GB",
+    {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    },
+  ).format(date);
 }
 
-function getInitials(value: string) {
+function getInitials(
+  value: string,
+) {
   return (
     value
       .split(/\s+/)
@@ -163,7 +179,8 @@ function getInitials(value: string) {
       .slice(0, 2)
       .map(
         (part) =>
-          part[0]?.toUpperCase() ?? "",
+          part[0]?.toUpperCase() ??
+          "",
       )
       .join("") || "A"
   );
@@ -171,7 +188,10 @@ function getInitials(value: string) {
 
 function getMessagePreview(
   message:
-    | Pick<Message, "content" | "media">
+    | Pick<
+        Message,
+        "content" | "media"
+      >
     | {
         content: string | null;
         media?: MessageMedia[];
@@ -179,17 +199,21 @@ function getMessagePreview(
     | null
     | undefined,
 ) {
-  const content = message?.content?.trim();
+  const content =
+    message?.content?.trim();
 
   if (content) {
     return content;
   }
 
-  const media = message?.media ?? [];
+  const media =
+    message?.media ?? [];
 
   if (
     media.some(
-      (item) => item.media_type === "audio",
+      (item) =>
+        item.media_type ===
+        "audio",
     )
   ) {
     return "Voice message";
@@ -197,7 +221,9 @@ function getMessagePreview(
 
   if (
     media.some(
-      (item) => item.media_type === "image",
+      (item) =>
+        item.media_type ===
+        "image",
     )
   ) {
     return "Image";
@@ -205,7 +231,9 @@ function getMessagePreview(
 
   if (
     media.some(
-      (item) => item.media_type === "file",
+      (item) =>
+        item.media_type ===
+        "file",
     )
   ) {
     return "Attachment";
@@ -216,7 +244,10 @@ function getMessagePreview(
 
 function truncateMessage(
   message:
-    | Pick<Message, "content" | "media">
+    | Pick<
+        Message,
+        "content" | "media"
+      >
     | {
         content: string | null;
         media?: MessageMedia[];
@@ -225,17 +256,22 @@ function truncateMessage(
     | undefined,
   length = 120,
 ) {
-  const text = getMessagePreview(message);
+  const text =
+    getMessagePreview(message);
 
   if (text.length <= length) {
     return text;
   }
 
-  return `${text.slice(0, length - 1).trim()}…`;
+  return `${text
+    .slice(0, length - 1)
+    .trim()}…`;
 }
 
 function isSameMessageGroup(
-  previous: Message | undefined,
+  previous:
+    | Message
+    | undefined,
   current: Message,
 ) {
   if (!previous) {
@@ -243,42 +279,54 @@ function isSameMessageGroup(
   }
 
   if (
-    previous.sender_id !== current.sender_id ||
+    previous.sender_id !==
+      current.sender_id ||
     !previous.sender_id ||
     !current.sender_id
   ) {
     return false;
   }
 
-  const previousDate = new Date(
-    previous.created_at,
-  ).getTime();
+  const previousDate =
+    new Date(
+      previous.created_at,
+    ).getTime();
 
-  const currentDate = new Date(
-    current.created_at,
-  ).getTime();
+  const currentDate =
+    new Date(
+      current.created_at,
+    ).getTime();
 
   if (
-    Number.isNaN(previousDate) ||
-    Number.isNaN(currentDate)
+    Number.isNaN(
+      previousDate,
+    ) ||
+    Number.isNaN(
+      currentDate,
+    )
   ) {
     return false;
   }
 
   return (
-    currentDate - previousDate <=
+    currentDate -
+      previousDate <=
     5 * 60 * 1000
   );
 }
 
-function wasEdited(message: Message) {
-  const created = new Date(
-    message.created_at,
-  ).getTime();
+function wasEdited(
+  message: Message,
+) {
+  const created =
+    new Date(
+      message.created_at,
+    ).getTime();
 
-  const updated = new Date(
-    message.updated_at,
-  ).getTime();
+  const updated =
+    new Date(
+      message.updated_at,
+    ).getTime();
 
   return (
     Number.isFinite(created) &&
@@ -297,16 +345,28 @@ type MessageBubbleProps = {
   editing: boolean;
   editDraft: string;
   editSaving: boolean;
-  onReply: (message: ReplyTarget) => void;
-  onForward: (message: Message) => void;
+  onReply: (
+    message: ReplyTarget,
+  ) => void;
+  onForward: (
+    message: Message,
+  ) => void;
   onJumpToMessage: (
     messageId: string,
   ) => void;
-  onEdit: (message: Message) => void;
-  onEditDraftChange: (value: string) => void;
-  onSaveEdit: (messageId: string) => Promise<void>;
+  onEdit: (
+    message: Message,
+  ) => void;
+  onEditDraftChange: (
+    value: string,
+  ) => void;
+  onSaveEdit: (
+    messageId: string,
+  ) => Promise<void>;
   onCancelEdit: () => void;
-  onDelete: (messageId: string) => Promise<void>;
+  onDelete: (
+    messageId: string,
+  ) => Promise<void>;
 };
 
 function MessageBubble({
@@ -332,19 +392,25 @@ function MessageBubble({
     message.content?.trim(),
   );
 
-  const audioMedia = message.media.filter(
-    (media) =>
-      media.media_type === "audio",
-  );
+  const audioMedia =
+    message.media.filter(
+      (media) =>
+        media.media_type ===
+        "audio",
+    );
 
-  const visualMedia = message.media.filter(
-    (media) =>
-      media.media_type === "image" ||
-      media.media_type === "file",
-  );
+  const visualMedia =
+    message.media.filter(
+      (media) =>
+        media.media_type ===
+          "image" ||
+        media.media_type ===
+          "file",
+    );
 
   const senderName =
-    message.sender?.display_name ??
+    message.sender
+      ?.display_name ??
     "Agoré user";
 
   if (editing) {
@@ -359,7 +425,9 @@ function MessageBubble({
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            void onSaveEdit(message.id);
+            void onSaveEdit(
+              message.id,
+            );
           }}
           className="w-full max-w-[92%] sm:max-w-[78%]"
         >
@@ -368,7 +436,8 @@ function MessageBubble({
               value={editDraft}
               onChange={(event) =>
                 onEditDraftChange(
-                  event.target.value,
+                  event.target
+                    .value,
                 )
               }
               maxLength={5000}
@@ -381,7 +450,9 @@ function MessageBubble({
             <div className="mt-2 flex items-center justify-end gap-2">
               <button
                 type="button"
-                onClick={onCancelEdit}
+                onClick={
+                  onCancelEdit
+                }
                 disabled={editSaving}
                 className="rounded-full px-3 py-2 text-xs font-semibold text-[var(--muted-strong)] transition hover:bg-[var(--surface-muted)] disabled:opacity-40"
               >
@@ -402,7 +473,9 @@ function MessageBubble({
                     className="animate-spin"
                   />
                 ) : (
-                  <Edit3 size={14} />
+                  <Edit3
+                    size={14}
+                  />
                 )}
                 Save
               </button>
@@ -429,18 +502,21 @@ function MessageBubble({
         } items-end gap-2 sm:max-w-[78%]`}
       >
         {!isOwn &&
-        conversationType === "group" &&
+        conversationType ===
+          "group" &&
         !grouped ? (
           <AgoreAvatar
             avatarPath={
-              message.sender?.avatar_path
+              message.sender
+                ?.avatar_path
             }
             name={senderName}
             className="h-8 w-8"
             textClassName="text-[10px]"
           />
         ) : !isOwn &&
-          conversationType === "group" ? (
+          conversationType ===
+            "group" ? (
           <span className="h-8 w-8 shrink-0" />
         ) : null}
 
@@ -452,7 +528,8 @@ function MessageBubble({
           } flex flex-col`}
         >
           {!isOwn &&
-          conversationType === "group" &&
+          conversationType ===
+            "group" &&
           !grouped ? (
             <p className="mb-1 px-1 text-xs font-semibold text-[var(--accent)]">
               {senderName}
@@ -474,6 +551,24 @@ function MessageBubble({
                   }`
             }`}
           >
+            {message.forwarded_from_message_id ? (
+              <div
+                className={`mb-3 flex items-center gap-1.5 text-[11px] font-semibold ${
+                  isOwn
+                    ? "text-white/70"
+                    : "text-[var(--accent)]"
+                }`}
+              >
+                <Forward
+                  size={13}
+                  className="shrink-0"
+                />
+                <span>
+                  Forwarded
+                </span>
+              </div>
+            ) : null}
+
             {replyTarget ? (
               <button
                 type="button"
@@ -495,9 +590,11 @@ function MessageBubble({
                       : "text-[var(--accent)]"
                   }`}
                 >
-                  {replyTarget.sender
+                  {replyTarget
+                    .sender
                     ?.display_name ||
-                    (replyTarget.sender_id ===
+                    (replyTarget
+                      .sender_id ===
                     currentUserId
                       ? "You"
                       : "Message")}
@@ -530,49 +627,64 @@ function MessageBubble({
                       : "text-[var(--muted)]"
                   }`}
                 >
-                  Original message unavailable
+                  Original message
+                  unavailable
                 </p>
               </div>
             ) : null}
 
-            {visualMedia.length > 0 ? (
+            {visualMedia.length >
+            0 ? (
               <div
                 className={
-                  audioMedia.length > 0 ||
+                  audioMedia.length >
+                    0 ||
                   hasText
                     ? "space-y-3"
                     : undefined
                 }
               >
                 <MessageMediaContent
-                  media={visualMedia}
+                  media={
+                    visualMedia
+                  }
                   isOwn={isOwn}
                 />
 
-                {audioMedia.length > 0 ? (
+                {audioMedia.length >
+                0 ? (
                   <div className="space-y-3">
-                    {audioMedia.map((media) => (
-                      <VoiceMessagePlayer
-                        key={media.id}
-                        storagePath={
-                          media.storage_path
-                        }
-                        durationMs={
-                          media.duration_ms
-                        }
-                        isOwn={isOwn}
-                      />
-                    ))}
+                    {audioMedia.map(
+                      (media) => (
+                        <VoiceMessagePlayer
+                          key={
+                            media.id
+                          }
+                          storagePath={
+                            media.storage_path
+                          }
+                          durationMs={
+                            media.duration_ms
+                          }
+                          isOwn={
+                            isOwn
+                          }
+                        />
+                      ),
+                    )}
                   </div>
                 ) : null}
 
                 {hasText ? (
                   <p className="whitespace-pre-wrap break-words text-[15px] leading-6">
-                    {message.content}
+                    {
+                      message.content
+                    }
                   </p>
                 ) : null}
               </div>
-            ) : audioMedia.length > 0 ? (
+            ) : audioMedia.length >
+              0 ? (
               <div
                 className={
                   hasText
@@ -580,22 +692,30 @@ function MessageBubble({
                     : undefined
                 }
               >
-                {audioMedia.map((media) => (
-                  <VoiceMessagePlayer
-                    key={media.id}
-                    storagePath={
-                      media.storage_path
-                    }
-                    durationMs={
-                      media.duration_ms
-                    }
-                    isOwn={isOwn}
-                  />
-                ))}
+                {audioMedia.map(
+                  (media) => (
+                    <VoiceMessagePlayer
+                      key={
+                        media.id
+                      }
+                      storagePath={
+                        media.storage_path
+                      }
+                      durationMs={
+                        media.duration_ms
+                      }
+                      isOwn={
+                        isOwn
+                      }
+                    />
+                  ),
+                )}
 
                 {hasText ? (
                   <p className="whitespace-pre-wrap break-words text-[15px] leading-6">
-                    {message.content}
+                    {
+                      message.content
+                    }
                   </p>
                 ) : null}
               </div>
@@ -622,8 +742,12 @@ function MessageBubble({
                   : "text-[var(--muted)]"
               }`}
             >
-              {wasEdited(message) ? (
-                <span>edited</span>
+              {wasEdited(
+                message,
+              ) ? (
+                <span>
+                  edited
+                </span>
               ) : null}
 
               <span>
@@ -659,7 +783,9 @@ function MessageBubble({
               conversationId={
                 message.conversation_id
               }
-              messageId={message.id}
+              messageId={
+                message.id
+              }
             />
           </div>
 
@@ -672,7 +798,9 @@ function MessageBubble({
           >
             <MessageActionMenu
               isOwn={isOwn}
-              content={message.content}
+              content={
+                message.content
+              }
               onReply={() =>
                 onReply(message)
               }
@@ -683,7 +811,9 @@ function MessageBubble({
                 onEdit(message)
               }
               onDelete={() =>
-                onDelete(message.id)
+                onDelete(
+                  message.id,
+                )
               }
             />
           </div>
@@ -707,7 +837,9 @@ export default function ConversationPage() {
   const [
     currentUserId,
     setCurrentUserId,
-  ] = useState<string | null>(null);
+  ] = useState<string | null>(
+    null,
+  );
 
   const [
     conversation,
@@ -727,12 +859,16 @@ export default function ConversationPage() {
   const [
     replyingTo,
     setReplyingTo,
-  ] = useState<ReplyTarget | null>(null);
+  ] = useState<ReplyTarget | null>(
+    null,
+  );
 
   const [
     editingMessageId,
     setEditingMessageId,
-  ] = useState<string | null>(null);
+  ] = useState<string | null>(
+    null,
+  );
 
   const [
     editDraft,
@@ -780,7 +916,9 @@ export default function ConversationPage() {
   const [
     forwardConversations,
     setForwardConversations,
-  ] = useState<Conversation[]>([]);
+  ] = useState<Conversation[]>(
+    [],
+  );
 
   const [
     forwardingLoading,
@@ -815,7 +953,9 @@ export default function ConversationPage() {
   const [
     groupMembers,
     setGroupMembers,
-  ] = useState<GroupMember[]>([]);
+  ] = useState<GroupMember[]>(
+    [],
+  );
 
   const [
     currentUserRole,
@@ -840,15 +980,17 @@ export default function ConversationPage() {
     setGroupActionError,
   ] = useState("");
 
-  const [memberQuery, setMemberQuery] =
-    useState("");
+  const [
+    memberQuery,
+    setMemberQuery,
+  ] = useState("");
 
   const [
     memberResults,
     setMemberResults,
-  ] = useState<MemberSearchResult[]>(
-    [],
-  );
+  ] = useState<
+    MemberSearchResult[]
+  >([]);
 
   const [
     searchingMembers,
@@ -858,13 +1000,19 @@ export default function ConversationPage() {
   const [
     memberActionLoading,
     setMemberActionLoading,
-  ] = useState<string | null>(null);
+  ] = useState<string | null>(
+    null,
+  );
 
   const messagesViewportRef =
-    useRef<HTMLDivElement | null>(null);
+    useRef<HTMLDivElement | null>(
+      null,
+    );
 
   const messagesBottomRef =
-    useRef<HTMLDivElement | null>(null);
+    useRef<HTMLDivElement | null>(
+      null,
+    );
 
   const nearBottomRef =
     useRef(true);
@@ -880,7 +1028,10 @@ export default function ConversationPage() {
       return "Messages";
     }
 
-    if (conversation.type === "group") {
+    if (
+      conversation.type ===
+      "group"
+    ) {
       return (
         conversation.name?.trim() ||
         "Unnamed group"
@@ -899,8 +1050,12 @@ export default function ConversationPage() {
       return "";
     }
 
-    if (conversation.type === "group") {
-      return groupMembers.length > 0
+    if (
+      conversation.type ===
+      "group"
+    ) {
+      return groupMembers.length >
+        0
         ? `${groupMembers.length} members`
         : "Group conversation";
     }
@@ -914,8 +1069,10 @@ export default function ConversationPage() {
   ]);
 
   const participantAvatar =
-    conversation?.type === "direct"
-      ? conversation.participant
+    conversation?.type ===
+    "direct"
+      ? conversation
+          .participant
           ?.avatar_path
       : null;
 
@@ -926,17 +1083,21 @@ export default function ConversationPage() {
       }
 
       try {
-        const response = await fetch(
-          "/api/conversations?limit=50",
-          {
-            cache: "no-store",
-          },
-        );
+        const response =
+          await fetch(
+            "/api/conversations?limit=50",
+            {
+              cache: "no-store",
+            },
+          );
 
         const data =
           await response.json();
 
-        if (response.status === 401) {
+        if (
+          response.status ===
+          401
+        ) {
           router.push("/auth");
           return;
         }
@@ -972,23 +1133,33 @@ export default function ConversationPage() {
           return;
         }
 
-        setConversation(found);
+        setConversation(
+          found,
+        );
+
         setGroupName(
           found.name ?? "",
         );
+
         setGroupDescription(
-          found.description ?? "",
+          found.description ??
+            "",
         );
       } catch {
         setError(
           "Unable to load this conversation.",
         );
       }
-    }, [conversationId, router]);
+    }, [
+      conversationId,
+      router,
+    ]);
 
   const loadForwardConversations =
     useCallback(async () => {
-      setForwardingLoading(true);
+      setForwardingLoading(
+        true,
+      );
       setForwardError("");
 
       try {
@@ -1004,7 +1175,8 @@ export default function ConversationPage() {
           await response.json();
 
         if (
-          response.status === 401
+          response.status ===
+          401
         ) {
           router.push("/auth");
           return;
@@ -1039,7 +1211,9 @@ export default function ConversationPage() {
           "Unable to load conversations.",
         );
       } finally {
-        setForwardingLoading(false);
+        setForwardingLoading(
+          false,
+        );
       }
     }, [
       conversationId,
@@ -1064,7 +1238,8 @@ export default function ConversationPage() {
           );
 
         if (
-          response.status === 401
+          response.status ===
+          401
         ) {
           router.push("/auth");
           return;
@@ -1087,7 +1262,9 @@ export default function ConversationPage() {
 
   const loadMessages =
     useCallback(
-      async (manual = false) => {
+      async (
+        manual = false,
+      ) => {
         if (!conversationId) {
           return;
         }
@@ -1111,7 +1288,8 @@ export default function ConversationPage() {
             await response.json();
 
           if (
-            response.status === 401
+            response.status ===
+            401
           ) {
             router.push("/auth");
             return;
@@ -1126,7 +1304,9 @@ export default function ConversationPage() {
           }
 
           setMessages(
-            Array.isArray(data.messages)
+            Array.isArray(
+              data.messages,
+            )
               ? data.messages
               : [],
           );
@@ -1152,7 +1332,8 @@ export default function ConversationPage() {
       if (
         !conversationId ||
         !conversation ||
-        conversation.type !== "group"
+        conversation.type !==
+          "group"
       ) {
         return;
       }
@@ -1175,7 +1356,8 @@ export default function ConversationPage() {
           await response.json();
 
         if (
-          response.status === 401
+          response.status ===
+          401
         ) {
           router.push("/auth");
           return;
@@ -1190,7 +1372,9 @@ export default function ConversationPage() {
         }
 
         setGroupMembers(
-          Array.isArray(data.members)
+          Array.isArray(
+            data.members,
+          )
             ? data.members
             : [],
         );
@@ -1241,6 +1425,7 @@ export default function ConversationPage() {
     async function initialize() {
       setLoading(true);
       setError("");
+
       initialScrollDoneRef.current =
         false;
 
@@ -1265,44 +1450,49 @@ export default function ConversationPage() {
       return;
     }
 
-    const channel = supabase
-      .channel(
-        `messages:${conversationId}`,
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-          filter: `conversation_id=eq.${conversationId}`,
-        },
-        () => {
-          void loadMessages();
-        },
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "messages",
-          filter: `conversation_id=eq.${conversationId}`,
-        },
-        () => {
-          void loadMessages();
-        },
-      )
-      .subscribe((status) => {
-        if (
-          status === "CHANNEL_ERROR" ||
-          status === "TIMED_OUT"
-        ) {
-          setError(
-            "Realtime messaging is unavailable. Refresh to reconnect.",
-          );
-        }
-      });
+    const channel =
+      supabase
+        .channel(
+          `messages:${conversationId}`,
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "messages",
+            filter: `conversation_id=eq.${conversationId}`,
+          },
+          () => {
+            void loadMessages();
+          },
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "messages",
+            filter: `conversation_id=eq.${conversationId}`,
+          },
+          () => {
+            void loadMessages();
+          },
+        )
+        .subscribe(
+          (status) => {
+            if (
+              status ===
+                "CHANNEL_ERROR" ||
+              status ===
+                "TIMED_OUT"
+            ) {
+              setError(
+                "Realtime messaging is unavailable. Refresh to reconnect.",
+              );
+            }
+          },
+        );
 
     return () => {
       void supabase.removeChannel(
@@ -1317,7 +1507,8 @@ export default function ConversationPage() {
   useEffect(() => {
     if (
       groupOpen &&
-      conversation?.type === "group"
+      conversation?.type ===
+        "group"
     ) {
       void loadGroupMembers();
     }
@@ -1342,7 +1533,8 @@ export default function ConversationPage() {
         viewport.clientHeight;
 
       const nearBottom =
-        distanceFromBottom <= 96;
+        distanceFromBottom <=
+        96;
 
       nearBottomRef.current =
         nearBottom;
@@ -1369,7 +1561,9 @@ export default function ConversationPage() {
   }, []);
 
   useEffect(() => {
-    if (messages.length === 0) {
+    if (
+      messages.length === 0
+    ) {
       return;
     }
 
@@ -1402,7 +1596,9 @@ export default function ConversationPage() {
           nearBottomRef.current =
             true;
 
-          setShowJumpToLatest(false);
+          setShowJumpToLatest(
+            false,
+          );
         },
       );
 
@@ -1436,7 +1632,9 @@ export default function ConversationPage() {
     nearBottomRef.current =
       true;
 
-    setShowJumpToLatest(false);
+    setShowJumpToLatest(
+      false,
+    );
   }
 
   function jumpToMessage(
@@ -1471,7 +1669,10 @@ export default function ConversationPage() {
 
     highlightTimeoutRef.current =
       window.setTimeout(() => {
-        setHighlightedMessageId(null);
+        setHighlightedMessageId(
+          null,
+        );
+
         highlightTimeoutRef.current =
           null;
       }, 1200);
@@ -1480,9 +1681,13 @@ export default function ConversationPage() {
   function openForwardDialog(
     message: Message,
   ) {
-    setForwardingMessage(message);
+    setForwardingMessage(
+      message,
+    );
+
     setForwardSearch("");
     setForwardError("");
+
     void loadForwardConversations();
   }
 
@@ -1534,7 +1739,8 @@ export default function ConversationPage() {
         await response.json();
 
       if (
-        response.status === 401
+        response.status ===
+        401
       ) {
         router.push("/auth");
         return;
@@ -1644,7 +1850,8 @@ export default function ConversationPage() {
         await response.json();
 
       if (
-        response.status === 401
+        response.status ===
+        401
       ) {
         router.push("/auth");
         return;
@@ -1673,13 +1880,16 @@ export default function ConversationPage() {
                 return {
                   ...message,
                   content:
-                    data.message
+                    data
+                      .message
                       .content,
                   updated_at:
-                    data.message
+                    data
+                      .message
                       .updated_at,
                   deleted_at:
-                    data.message
+                    data
+                      .message
                       .deleted_at ??
                     null,
                 };
@@ -1725,9 +1935,11 @@ export default function ConversationPage() {
         await response.json();
 
       if (
-        response.status === 401
+        response.status ===
+        401
       ) {
         router.push("/auth");
+
         throw new Error(
           "Authentication required.",
         );
@@ -1739,7 +1951,10 @@ export default function ConversationPage() {
           "Unable to delete the message.";
 
         setError(message);
-        throw new Error(message);
+
+        throw new Error(
+          message,
+        );
       }
 
       setMessages(
@@ -1766,10 +1981,13 @@ export default function ConversationPage() {
       }
     } catch (error) {
       if (
-        error instanceof Error &&
+        error instanceof
+          Error &&
         error.message
       ) {
-        setError(error.message);
+        setError(
+          error.message,
+        );
       } else {
         setError(
           "Unable to delete the message.",
@@ -1789,7 +2007,8 @@ export default function ConversationPage() {
   ) {
     event.preventDefault();
 
-    const content = draft.trim();
+    const content =
+      draft.trim();
 
     if (
       !content ||
@@ -1817,7 +2036,8 @@ export default function ConversationPage() {
             body: JSON.stringify({
               content,
               reply_to_message_id:
-                replyingTo?.id ?? null,
+                replyingTo?.id ??
+                null,
             }),
           },
         );
@@ -1826,7 +2046,8 @@ export default function ConversationPage() {
         await response.json();
 
       if (
-        response.status === 401
+        response.status ===
+        401
       ) {
         router.push("/auth");
         return;
@@ -1858,7 +2079,8 @@ export default function ConversationPage() {
                 replyingTo.sender ??
                 null,
               media:
-                replyingTo.media ?? [],
+                replyingTo.media ??
+                [],
             };
         }
 
@@ -1888,7 +2110,9 @@ export default function ConversationPage() {
       nearBottomRef.current =
         true;
 
-      setShowJumpToLatest(false);
+      setShowJumpToLatest(
+        false,
+      );
 
       void loadConversation();
     } catch {
@@ -1902,9 +2126,14 @@ export default function ConversationPage() {
 
   function handleVoiceSent() {
     setError("");
+
     nearBottomRef.current =
       true;
-    setShowJumpToLatest(false);
+
+    setShowJumpToLatest(
+      false,
+    );
+
     void loadMessages();
     void loadConversation();
   }
@@ -1917,9 +2146,14 @@ export default function ConversationPage() {
 
   function handleMediaSent() {
     setError("");
+
     nearBottomRef.current =
       true;
-    setShowJumpToLatest(false);
+
+    setShowJumpToLatest(
+      false,
+    );
+
     void loadMessages();
     void loadConversation();
   }
@@ -1933,7 +2167,8 @@ export default function ConversationPage() {
   async function searchMembers(
     value = memberQuery,
   ) {
-    const query = value.trim();
+    const query =
+      value.trim();
 
     if (query.length < 2) {
       setMemberResults([]);
@@ -1958,7 +2193,8 @@ export default function ConversationPage() {
         await response.json();
 
       if (
-        response.status === 401
+        response.status ===
+        401
       ) {
         router.push("/auth");
         return;
@@ -1969,6 +2205,7 @@ export default function ConversationPage() {
           data.error ??
             "Unable to search people.",
         );
+
         setMemberResults([]);
         return;
       }
@@ -2001,6 +2238,7 @@ export default function ConversationPage() {
       setGroupActionError(
         "Unable to search people.",
       );
+
       setMemberResults([]);
     } finally {
       setSearchingMembers(false);
@@ -2011,7 +2249,8 @@ export default function ConversationPage() {
     userId: string,
   ) {
     if (
-      currentUserRole !== "admin" ||
+      currentUserRole !==
+        "admin" ||
       memberActionLoading
     ) {
       return;
@@ -2020,6 +2259,7 @@ export default function ConversationPage() {
     setMemberActionLoading(
       `add:${userId}`,
     );
+
     setGroupActionError("");
 
     try {
@@ -2044,7 +2284,8 @@ export default function ConversationPage() {
         await response.json();
 
       if (
-        response.status === 401
+        response.status ===
+        401
       ) {
         router.push("/auth");
         return;
@@ -2062,7 +2303,8 @@ export default function ConversationPage() {
         (current) =>
           current.filter(
             (person) =>
-              person.id !== userId,
+              person.id !==
+              userId,
           ),
       );
 
@@ -2072,7 +2314,9 @@ export default function ConversationPage() {
         "Unable to add the member.",
       );
     } finally {
-      setMemberActionLoading(null);
+      setMemberActionLoading(
+        null,
+      );
     }
   }
 
@@ -2083,7 +2327,8 @@ export default function ConversationPage() {
       | "member",
   ) {
     if (
-      currentUserRole !== "admin" ||
+      currentUserRole !==
+        "admin" ||
       userId === currentUserId ||
       memberActionLoading
     ) {
@@ -2093,7 +2338,8 @@ export default function ConversationPage() {
     const member =
       groupMembers.find(
         (item) =>
-          item.userId === userId,
+          item.userId ===
+          userId,
       );
 
     const memberName =
@@ -2117,6 +2363,7 @@ export default function ConversationPage() {
     setMemberActionLoading(
       `role:${userId}`,
     );
+
     setGroupActionError("");
 
     try {
@@ -2142,7 +2389,8 @@ export default function ConversationPage() {
         await response.json();
 
       if (
-        response.status === 401
+        response.status ===
+        401
       ) {
         router.push("/auth");
         return;
@@ -2162,7 +2410,9 @@ export default function ConversationPage() {
         "Unable to update the member role.",
       );
     } finally {
-      setMemberActionLoading(null);
+      setMemberActionLoading(
+        null,
+      );
     }
   }
 
@@ -2171,14 +2421,17 @@ export default function ConversationPage() {
   ) {
     if (
       memberActionLoading ||
-      (userId !== currentUserId &&
-        currentUserRole !== "admin")
+      (userId !==
+        currentUserId &&
+        currentUserRole !==
+          "admin")
     ) {
       return;
     }
 
     const isSelf =
-      userId === currentUserId;
+      userId ===
+      currentUserId;
 
     if (
       !window.confirm(
@@ -2193,11 +2446,13 @@ export default function ConversationPage() {
     setMemberActionLoading(
       `remove:${userId}`,
     );
+
     setGroupActionError("");
 
     try {
       const url =
-        userId === currentUserId
+        userId ===
+        currentUserId
           ? `/api/conversations/${encodeURIComponent(
               conversationId,
             )}/members`
@@ -2216,7 +2471,8 @@ export default function ConversationPage() {
         await response.json();
 
       if (
-        response.status === 401
+        response.status ===
+        401
       ) {
         router.push("/auth");
         return;
@@ -2231,7 +2487,9 @@ export default function ConversationPage() {
       }
 
       if (isSelf) {
-        router.push("/messages");
+        router.push(
+          "/messages",
+        );
         return;
       }
 
@@ -2241,7 +2499,9 @@ export default function ConversationPage() {
         "Unable to update group membership.",
       );
     } finally {
-      setMemberActionLoading(null);
+      setMemberActionLoading(
+        null,
+      );
     }
   }
 
@@ -2251,7 +2511,8 @@ export default function ConversationPage() {
     event.preventDefault();
 
     if (
-      currentUserRole !== "admin" ||
+      currentUserRole !==
+        "admin" ||
       savingGroup
     ) {
       return;
@@ -2296,7 +2557,8 @@ export default function ConversationPage() {
         await response.json();
 
       if (
-        response.status === 401
+        response.status ===
+        401
       ) {
         router.push("/auth");
         return;
@@ -2347,7 +2609,8 @@ export default function ConversationPage() {
   ) {
     if (
       event.key === "Enter" &&
-      (event.ctrlKey || event.metaKey)
+      (event.ctrlKey ||
+        event.metaKey)
     ) {
       event.preventDefault();
       event.currentTarget.form?.requestSubmit();
@@ -2361,11 +2624,16 @@ export default function ConversationPage() {
           <button
             type="button"
             onClick={() =>
-              router.push("/messages")
+              router.push(
+                "/messages",
+              )
             }
             className="inline-flex h-10 items-center gap-2 rounded-full px-3 text-sm font-semibold text-[var(--muted-strong)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)]"
           >
-            <ArrowLeft size={17} />
+            <ArrowLeft
+              size={17}
+            />
+
             <span className="hidden sm:inline">
               Messages
             </span>
@@ -2412,9 +2680,12 @@ export default function ConversationPage() {
                     participantId={
                       conversation
                         .participant
-                        ?.id ?? null
+                        ?.id ??
+                      null
                     }
-                    fallback={subtitle}
+                    fallback={
+                      subtitle
+                    }
                   />
                 ) : null}
               </p>
@@ -2426,23 +2697,30 @@ export default function ConversationPage() {
                 <button
                   type="button"
                   onClick={() =>
-                    setGroupOpen(true)
+                    setGroupOpen(
+                      true,
+                    )
                   }
                   aria-label="Open group details"
                   title="Group details"
                   className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[var(--muted-strong)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)]"
                 >
-                  <Settings size={17} />
+                  <Settings
+                    size={17}
+                  />
                 </button>
               ) : null}
 
               <button
                 type="button"
                 onClick={() =>
-                  void loadMessages(true)
+                  void loadMessages(
+                    true,
+                  )
                 }
                 disabled={
-                  refreshing || loading
+                  refreshing ||
+                  loading
                 }
                 aria-label="Refresh conversation"
                 title="Refresh"
@@ -2461,7 +2739,9 @@ export default function ConversationPage() {
           </header>
 
           <div
-            ref={messagesViewportRef}
+            ref={
+              messagesViewportRef
+            }
             className="relative min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-3 py-5 sm:px-5 sm:py-6"
           >
             {loading ? (
@@ -2475,7 +2755,9 @@ export default function ConversationPage() {
               !conversation ? (
               <div className="flex min-h-[50vh] flex-col items-center justify-center px-5 text-center">
                 <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--danger-soft)] text-[var(--danger)]">
-                  <MessageCircle size={20} />
+                  <MessageCircle
+                    size={20}
+                  />
                 </div>
 
                 <p className="mt-4 max-w-sm text-sm font-medium text-[var(--danger)]">
@@ -2493,7 +2775,9 @@ export default function ConversationPage() {
               0 ? (
               <div className="flex min-h-[50vh] flex-col items-center justify-center px-5 text-center">
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]">
-                  <MessageCircle size={22} />
+                  <MessageCircle
+                    size={22}
+                  />
                 </div>
 
                 <h2 className="mt-5 text-lg font-bold tracking-[-0.02em]">
@@ -2507,9 +2791,14 @@ export default function ConversationPage() {
             ) : (
               <div className="mx-auto flex w-full max-w-4xl flex-col gap-1">
                 {messages.map(
-                  (message, index) => {
+                  (
+                    message,
+                    index,
+                  ) => {
                     const previousMessage =
-                      messages[index - 1];
+                      messages[
+                        index - 1
+                      ];
 
                     const isOwn =
                       message.sender_id ===
@@ -2536,7 +2825,9 @@ export default function ConversationPage() {
                     const replyTarget =
                       message.reply_to_message ??
                       messages.find(
-                        (candidate) =>
+                        (
+                          candidate,
+                        ) =>
                           candidate.id ===
                           message.reply_to_message_id,
                       ) ??
@@ -2545,7 +2836,9 @@ export default function ConversationPage() {
                     return (
                       <div
                         id={`agore-message-${message.id}`}
-                        key={message.id}
+                        key={
+                          message.id
+                        }
                         className={`rounded-2xl transition-all duration-300 ${
                           highlightedMessageId ===
                           message.id
@@ -2563,7 +2856,9 @@ export default function ConversationPage() {
                             <div className="h-px flex-1 bg-[var(--border)]" />
 
                             <span className="rounded-full border border-[var(--border)] bg-[var(--surface-raised)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--muted)]">
-                              {currentDay}
+                              {
+                                currentDay
+                              }
                             </span>
 
                             <div className="h-px flex-1 bg-[var(--border)]" />
@@ -2571,12 +2866,16 @@ export default function ConversationPage() {
                         ) : null}
 
                         <MessageBubble
-                          message={message}
+                          message={
+                            message
+                          }
                           replyTarget={
                             replyTarget
                           }
                           isOwn={isOwn}
-                          grouped={grouped}
+                          grouped={
+                            grouped
+                          }
                           currentUserId={
                             currentUserId
                           }
@@ -2628,7 +2927,9 @@ export default function ConversationPage() {
                 )}
 
                 <div
-                  ref={messagesBottomRef}
+                  ref={
+                    messagesBottomRef
+                  }
                   className="h-1"
                   aria-hidden="true"
                 />
@@ -2648,25 +2949,33 @@ export default function ConversationPage() {
             messages.length > 0 ? (
               <button
                 type="button"
-                onClick={scrollToLatest}
+                onClick={
+                  scrollToLatest
+                }
                 aria-label="Jump to latest messages"
                 title="Jump to latest"
                 className="sticky bottom-3 left-full mt-2 inline-flex h-10 w-10 translate-x-[-3.25rem] items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface-raised)] text-[var(--foreground)] shadow-lg transition hover:border-[var(--accent)]/40 hover:bg-[var(--accent-soft)] hover:text-[var(--accent)]"
               >
-                <ArrowDown size={17} />
+                <ArrowDown
+                  size={17}
+                />
               </button>
             ) : null}
           </div>
 
           <form
-            onSubmit={handleSend}
+            onSubmit={
+              handleSend
+            }
             className="shrink-0 border-t border-[var(--border)] bg-[var(--surface-raised)] p-3 sm:p-4"
           >
             <div className="mx-auto max-w-4xl">
               {replyingTo ? (
                 <div className="mb-3 flex items-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-3 py-3">
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent)]">
-                    <CornerUpLeft size={16} />
+                    <CornerUpLeft
+                      size={16}
+                    />
                   </div>
 
                   <div className="min-w-0 flex-1">
@@ -2675,7 +2984,8 @@ export default function ConversationPage() {
                       {replyingTo.sender_id ===
                       currentUserId
                         ? "yourself"
-                        : replyingTo.sender
+                        : replyingTo
+                            .sender
                             ?.display_name ??
                           "message"}
                     </p>
@@ -2689,12 +2999,18 @@ export default function ConversationPage() {
 
                   <button
                     type="button"
-                    onClick={cancelReply}
-                    disabled={sending}
+                    onClick={
+                      cancelReply
+                    }
+                    disabled={
+                      sending
+                    }
                     aria-label="Cancel reply"
                     className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[var(--muted)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <X size={15} />
+                    <X
+                      size={15}
+                    />
                   </button>
                 </div>
               ) : null}
@@ -2719,7 +3035,9 @@ export default function ConversationPage() {
                 <div className="min-w-0 flex-1 rounded-[1.35rem] border border-[var(--border)] bg-[var(--surface)] transition focus-within:border-[var(--accent)]/50 focus-within:ring-2 focus-within:ring-[var(--accent)]/10">
                   <textarea
                     value={draft}
-                    onChange={(event) =>
+                    onChange={(
+                      event,
+                    ) =>
                       setDraft(
                         event.target
                           .value,
@@ -2816,8 +3134,12 @@ export default function ConversationPage() {
 
               <button
                 type="button"
-                onClick={closeForwardDialog}
-                disabled={forwardSending}
+                onClick={
+                  closeForwardDialog
+                }
+                disabled={
+                  forwardSending
+                }
                 aria-label="Close forward dialog"
                 className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[var(--border)] text-[var(--muted)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-40"
               >
@@ -2853,10 +3175,15 @@ export default function ConversationPage() {
                 />
 
                 <input
-                  value={forwardSearch}
-                  onChange={(event) =>
+                  value={
+                    forwardSearch
+                  }
+                  onChange={(
+                    event,
+                  ) =>
                     setForwardSearch(
-                      event.target.value,
+                      event.target
+                        .value,
                     )
                   }
                   autoFocus
@@ -2872,7 +3199,9 @@ export default function ConversationPage() {
               {forwardError ? (
                 <div className="mt-4 rounded-2xl border border-[var(--danger)]/20 bg-[var(--danger-soft)] px-4 py-3">
                   <p className="text-xs font-semibold text-[var(--danger)]">
-                    {forwardError}
+                    {
+                      forwardError
+                    }
                   </p>
                 </div>
               ) : null}
@@ -2894,7 +3223,9 @@ export default function ConversationPage() {
                   const filtered =
                     forwardConversations.filter(
                       (item) => {
-                        if (!query) {
+                        if (
+                          !query
+                        ) {
                           return true;
                         }
 
@@ -2909,7 +3240,8 @@ export default function ConversationPage() {
                               "Agoré user";
 
                         const username =
-                          item.participant
+                          item
+                            .participant
                             ?.username ??
                           "";
 
@@ -2954,7 +3286,9 @@ export default function ConversationPage() {
                   return (
                     <div className="mt-4 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)]">
                       {filtered.map(
-                        (item) => {
+                        (
+                          item,
+                        ) => {
                           const name =
                             item.type ===
                             "group"
@@ -3011,11 +3345,15 @@ export default function ConversationPage() {
 
                               <div className="min-w-0 flex-1">
                                 <p className="truncate text-sm font-semibold">
-                                  {name}
+                                  {
+                                    name
+                                  }
                                 </p>
 
                                 <p className="mt-0.5 truncate text-xs text-[var(--muted)]">
-                                  {subtitle}
+                                  {
+                                    subtitle
+                                  }
                                 </p>
                               </div>
 
@@ -3070,10 +3408,18 @@ export default function ConversationPage() {
               <button
                 type="button"
                 onClick={() => {
-                  setGroupOpen(false);
-                  setGroupActionError("");
-                  setMemberQuery("");
-                  setMemberResults([]);
+                  setGroupOpen(
+                    false,
+                  );
+                  setGroupActionError(
+                    "",
+                  );
+                  setMemberQuery(
+                    "",
+                  );
+                  setMemberResults(
+                    [],
+                  );
                 }}
                 aria-label="Close group details"
                 className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] text-[var(--muted-strong)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)]"
@@ -3095,7 +3441,9 @@ export default function ConversationPage() {
                   />
 
                   <div className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-[var(--surface)] bg-[var(--accent-soft)] text-[var(--accent)]">
-                    <Users size={12} />
+                    <Users
+                      size={12}
+                    />
                   </div>
                 </div>
 
@@ -3119,7 +3467,9 @@ export default function ConversationPage() {
                   className="mt-6 rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)] p-4"
                 >
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">
-                    <Settings size={13} />
+                    <Settings
+                      size={13}
+                    />
                     Group settings
                   </div>
 
@@ -3129,15 +3479,21 @@ export default function ConversationPage() {
                     </span>
 
                     <input
-                      value={groupName}
-                      onChange={(event) =>
+                      value={
+                        groupName
+                      }
+                      onChange={(
+                        event,
+                      ) =>
                         setGroupName(
                           event.target
                             .value,
                         )
                       }
                       maxLength={80}
-                      disabled={savingGroup}
+                      disabled={
+                        savingGroup
+                      }
                       className="mt-1.5 h-11 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 text-sm outline-none transition focus:border-[var(--accent)]/50 focus:ring-2 focus:ring-[var(--accent)]/10 disabled:opacity-50"
                     />
                   </label>
@@ -3151,7 +3507,9 @@ export default function ConversationPage() {
                       value={
                         groupDescription
                       }
-                      onChange={(event) =>
+                      onChange={(
+                        event,
+                      ) =>
                         setGroupDescription(
                           event.target
                             .value,
@@ -3159,7 +3517,9 @@ export default function ConversationPage() {
                       }
                       maxLength={500}
                       rows={3}
-                      disabled={savingGroup}
+                      disabled={
+                        savingGroup
+                      }
                       className="mt-1.5 min-h-20 w-full resize-none rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-3 text-sm leading-6 outline-none transition focus:border-[var(--accent)]/50 focus:ring-2 focus:ring-[var(--accent)]/10 disabled:opacity-50"
                     />
                   </label>
@@ -3197,7 +3557,9 @@ export default function ConversationPage() {
                     </p>
 
                     <p className="mt-1 text-sm text-[var(--muted)]">
-                      {groupMembers.length}{" "}
+                      {
+                        groupMembers.length
+                      }{" "}
                       active member
                       {groupMembers.length ===
                       1
@@ -3232,7 +3594,9 @@ export default function ConversationPage() {
                 {groupActionError ? (
                   <div className="mt-3 rounded-xl border border-[var(--danger)]/20 bg-[var(--danger-soft)] px-3 py-2.5">
                     <p className="text-xs font-semibold leading-5 text-[var(--danger)]">
-                      {groupActionError}
+                      {
+                        groupActionError
+                      }
                     </p>
                   </div>
                 ) : null}
@@ -3261,12 +3625,15 @@ export default function ConversationPage() {
                   ) : (
                     <div>
                       {groupMembers.map(
-                        (member) => {
+                        (
+                          member,
+                        ) => {
                           const profile =
                             member.profile;
 
                           const memberName =
-                            profile?.display_name ??
+                            profile
+                              ?.display_name ??
                             "Agoré user";
 
                           const isSelf =
@@ -3276,7 +3643,8 @@ export default function ConversationPage() {
                           const actionLoading =
                             memberActionLoading?.endsWith(
                               `:${member.userId}`,
-                            ) ?? false;
+                            ) ??
+                            false;
 
                           const canManage =
                             currentUserRole ===
@@ -3453,10 +3821,15 @@ export default function ConversationPage() {
                     />
 
                     <input
-                      value={memberQuery}
-                      onChange={(event) => {
+                      value={
+                        memberQuery
+                      }
+                      onChange={(
+                        event,
+                      ) => {
                         const value =
-                          event.target
+                          event
+                            .target
                             .value;
 
                         setMemberQuery(
@@ -3473,7 +3846,9 @@ export default function ConversationPage() {
                           );
                         }
                       }}
-                      onKeyDown={(event) => {
+                      onKeyDown={(
+                        event,
+                      ) => {
                         if (
                           event.key ===
                           "Enter"
@@ -3517,7 +3892,9 @@ export default function ConversationPage() {
                   0 ? (
                     <div className="mt-3 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)]">
                       {memberResults.map(
-                        (person) => {
+                        (
+                          person,
+                        ) => {
                           const actionKey =
                             `add:${person.id}`;
 
@@ -3591,7 +3968,8 @@ export default function ConversationPage() {
                       )}
                     </div>
                   ) : memberQuery.trim()
-                      .length >= 2 &&
+                      .length >=
+                      2 &&
                     !searchingMembers ? (
                     <div className="mt-3 rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)] px-4 py-5 text-center">
                       <p className="text-sm font-semibold">
