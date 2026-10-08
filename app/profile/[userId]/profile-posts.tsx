@@ -3,7 +3,6 @@
 import {
   useCallback,
   useEffect,
-  useMemo,
   useState,
 } from "react";
 import Link from "next/link";
@@ -45,6 +44,13 @@ type RepostPost = ProfilePost & {
   reposted_by: string;
 };
 
+type MediaPost = {
+  id: string;
+  content: string;
+  created_at: string;
+  post_media: PostMediaItem[];
+};
+
 type ProfilePostsProps = {
   userId: string;
 };
@@ -56,6 +62,12 @@ type PostsResponse = {
 
 type RepostsResponse = {
   reposts?: RepostPost[];
+  error?: string;
+};
+
+type MediaResponse = {
+  media?: MediaPost[];
+  total?: number;
   error?: string;
 };
 
@@ -74,6 +86,23 @@ function formatPostDate(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function normalizeMediaPosts(
+  media: MediaPost[] | undefined,
+): MediaPost[] {
+  if (!Array.isArray(media)) {
+    return [];
+  }
+
+  return media.map((post) => ({
+    ...post,
+    post_media: Array.isArray(
+      post.post_media,
+    )
+      ? post.post_media
+      : [],
+  }));
 }
 
 function PostCard({
@@ -321,6 +350,12 @@ export default function ProfilePosts({
     RepostPost[]
   >([]);
 
+  const [mediaPosts, setMediaPosts] =
+    useState<MediaPost[]>([]);
+
+  const [mediaCount, setMediaCount] =
+    useState(0);
+
   const [viewerId, setViewerId] =
     useState<string | null>(null);
 
@@ -333,10 +368,19 @@ export default function ProfilePosts({
   const [repostsLoading, setRepostsLoading] =
     useState(false);
 
+  const [mediaLoading, setMediaLoading] =
+    useState(false);
+
   const [error, setError] =
     useState("");
 
+  const [mediaError, setMediaError] =
+    useState("");
+
   const [repostsLoaded, setRepostsLoaded] =
+    useState(false);
+
+  const [mediaLoaded, setMediaLoaded] =
     useState(false);
 
   const loadViewer = useCallback(
@@ -416,7 +460,10 @@ export default function ProfilePosts({
 
   const loadReposts = useCallback(
     async () => {
-      if (!userId || repostsLoaded) {
+      if (
+        !userId ||
+        repostsLoaded
+      ) {
         return;
       }
 
@@ -479,6 +526,77 @@ export default function ProfilePosts({
     [repostsLoaded, userId],
   );
 
+  const loadMedia = useCallback(
+    async () => {
+      if (
+        !userId ||
+        mediaLoaded
+      ) {
+        return;
+      }
+
+      setMediaLoading(true);
+      setMediaError("");
+
+      try {
+        const response =
+          await fetch(
+            `/api/users/${encodeURIComponent(
+              userId,
+            )}/media?limit=100`,
+            {
+              method: "GET",
+              cache: "no-store",
+            },
+          );
+
+        const data =
+          (await response.json()) as MediaResponse;
+
+        if (!response.ok) {
+          throw new Error(
+            data.error ??
+              "Unable to load profile media.",
+          );
+        }
+
+        setMediaPosts(
+          normalizeMediaPosts(
+            data.media,
+          ),
+        );
+
+        setMediaCount(
+          typeof data.total ===
+            "number"
+            ? data.total
+            : normalizeMediaPosts(
+                data.media,
+              ).reduce(
+                (total, post) =>
+                  total +
+                  post.post_media.length,
+                0,
+              ),
+        );
+
+        setMediaLoaded(true);
+      } catch (requestError) {
+        setMediaError(
+          requestError instanceof Error
+            ? requestError.message
+            : "Unable to load profile media.",
+        );
+
+        setMediaPosts([]);
+        setMediaCount(0);
+      } finally {
+        setMediaLoading(false);
+      }
+    },
+    [mediaLoaded, userId],
+  );
+
   useEffect(() => {
     void loadViewer();
     void loadPosts();
@@ -489,42 +607,31 @@ export default function ProfilePosts({
 
   useEffect(() => {
     if (
-      activeTab === "reposts"
+      activeTab ===
+      "reposts"
     ) {
       void loadReposts();
     }
+
+    if (
+      activeTab ===
+      "media"
+    ) {
+      void loadMedia();
+    }
   }, [
     activeTab,
+    loadMedia,
     loadReposts,
   ]);
-
-  const mediaPosts = useMemo(
-    () =>
-      posts.filter(
-        (post) =>
-          Array.isArray(
-            post.post_media,
-          ) &&
-          post.post_media.length > 0,
-      ),
-    [posts],
-  );
-
-  const mediaCount = useMemo(
-    () =>
-      mediaPosts.reduce(
-        (total, post) =>
-          total +
-          post.post_media.length,
-        0,
-      ),
-    [mediaPosts],
-  );
 
   function handlePostUpdated(
     postId: string,
     updatedContent: string,
   ) {
+    const updatedAt =
+      new Date().toISOString();
+
     setPosts(
       (currentPosts) =>
         currentPosts.map(
@@ -535,7 +642,7 @@ export default function ProfilePosts({
                   content:
                     updatedContent,
                   updated_at:
-                    new Date().toISOString(),
+                    updatedAt,
                 }
               : post,
         ),
@@ -551,7 +658,21 @@ export default function ProfilePosts({
                   content:
                     updatedContent,
                   updated_at:
-                    new Date().toISOString(),
+                    updatedAt,
+                }
+              : post,
+        ),
+    );
+
+    setMediaPosts(
+      (currentMediaPosts) =>
+        currentMediaPosts.map(
+          (post) =>
+            post.id === postId
+              ? {
+                  ...post,
+                  content:
+                    updatedContent,
                 }
               : post,
         ),
@@ -576,12 +697,24 @@ export default function ProfilePosts({
             post.id !== postId,
         ),
     );
+
+    setMediaPosts(
+      (currentMediaPosts) =>
+        currentMediaPosts.filter(
+          (post) =>
+            post.id !== postId,
+        ),
+    );
+
+    setMediaLoaded(false);
+    setMediaError("");
   }
 
   function selectTab(
     tab: ProfileTab,
   ) {
     setError("");
+    setMediaError("");
     setActiveTab(tab);
   }
 
@@ -633,6 +766,8 @@ export default function ProfilePosts({
                 false,
               );
             }
+
+            setMediaLoaded(false);
           }}
           className="mt-4 rounded-full bg-[var(--foreground)] px-4 py-2 text-sm font-semibold text-[var(--background)] transition hover:bg-[var(--accent)] hover:text-white"
         >
@@ -641,11 +776,6 @@ export default function ProfilePosts({
       </section>
     );
   }
-
-  const activePosts =
-    activeTab === "posts"
-      ? posts
-      : mediaPosts;
 
   return (
     <section className="mt-7">
@@ -785,13 +915,51 @@ export default function ProfilePosts({
             </div>
           </div>
         ) : activeTab ===
-            "media" ? (
+          "media" &&
+          mediaLoading ? (
+          <div className="flex min-h-60 items-center justify-center px-6">
+            <div className="flex items-center gap-2 text-sm text-[var(--muted)]">
+              <Loader2
+                size={17}
+                className="animate-spin"
+              />
+              Loading media…
+            </div>
+          </div>
+        ) : activeTab ===
+          "media" &&
+          mediaError ? (
+          <div className="px-6 py-12 text-center">
+            <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--danger-soft)] text-[var(--danger)]">
+              <ImageIcon size={20} />
+            </span>
+
+            <p className="mt-4 text-sm font-medium text-[var(--foreground)]">
+              Unable to load media.
+            </p>
+
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              {mediaError}
+            </p>
+
+            <button
+              type="button"
+              onClick={() =>
+                void loadMedia()
+              }
+              className="mt-5 rounded-full bg-[var(--foreground)] px-4 py-2 text-sm font-semibold text-[var(--background)] transition hover:bg-[var(--accent)] hover:text-white"
+            >
+              Retry
+            </button>
+          </div>
+        ) : activeTab ===
+          "media" ? (
           <ProfileMedia
             posts={mediaPosts}
           />
-        ) : activeTab !==
-            "reposts" &&
-          activePosts.length ===
+        ) : activeTab ===
+          "posts" &&
+          posts.length ===
             0 ? (
           <div className="px-6 py-12 text-center">
             <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]">
@@ -829,31 +997,32 @@ export default function ProfilePosts({
           </div>
         ) : (
           <div className="space-y-4 p-4 sm:p-5">
-            {activeTab === "posts"
-              ? posts.map((post) => (
-                  <PostCard
-                    key={post.id}
-                    post={post}
-                    viewerId={
-                      viewerId
-                    }
-                    onPostUpdated={
-                      handlePostUpdated
-                    }
-                    onPostDeleted={
-                      handlePostDeleted
-                    }
-                  />
-                ))
+            {activeTab ===
+            "posts"
+              ? posts.map(
+                  (post) => (
+                    <PostCard
+                      key={post.id}
+                      post={post}
+                      viewerId={
+                        viewerId
+                      }
+                      onPostUpdated={
+                        handlePostUpdated
+                      }
+                      onPostDeleted={
+                        handlePostDeleted
+                      }
+                    />
+                  ),
+                )
               : reposts.map(
                   (repost) => (
                     <RepostCard
                       key={
                         repost.repost_id
                       }
-                      repost={
-                        repost
-                      }
+                      repost={repost}
                       viewerId={
                         viewerId
                       }
