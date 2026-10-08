@@ -71,7 +71,9 @@ type SearchPerson = {
   created_at: string;
 };
 
-function formatConversationDate(value: string | null) {
+function formatConversationDate(
+  value: string | null,
+) {
   if (!value) {
     return "";
   }
@@ -85,33 +87,59 @@ function formatConversationDate(value: string | null) {
   const now = new Date();
 
   const sameDay =
-    now.getFullYear() === date.getFullYear() &&
-    now.getMonth() === date.getMonth() &&
-    now.getDate() === date.getDate();
+    now.getFullYear() ===
+      date.getFullYear() &&
+    now.getMonth() ===
+      date.getMonth() &&
+    now.getDate() ===
+      date.getDate();
 
   if (sameDay) {
-    return new Intl.DateTimeFormat("en-GB", {
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(date);
+    return new Intl.DateTimeFormat(
+      "en-GB",
+      {
+        hour: "2-digit",
+        minute: "2-digit",
+      },
+    ).format(date);
   }
 
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "numeric",
-    month: "short",
-  }).format(date);
+  return new Intl.DateTimeFormat(
+    "en-GB",
+    {
+      day: "numeric",
+      month: "short",
+    },
+  ).format(date);
 }
 
-function getConversationTitle(conversation: Conversation) {
-  if (conversation.type === "group") {
-    return conversation.name?.trim() || "Unnamed group";
+function getConversationTitle(
+  conversation: Conversation,
+) {
+  if (
+    conversation.type ===
+    "group"
+  ) {
+    return (
+      conversation.name?.trim() ||
+      "Unnamed group"
+    );
   }
 
-  return conversation.participant?.display_name || "Agoré user";
+  return (
+    conversation.participant
+      ?.display_name ||
+    "Agoré user"
+  );
 }
 
-function getConversationSubtitle(conversation: Conversation) {
-  if (conversation.type === "group") {
+function getConversationSubtitle(
+  conversation: Conversation,
+) {
+  if (
+    conversation.type ===
+    "group"
+  ) {
     return "Group conversation";
   }
 
@@ -123,138 +151,250 @@ function getConversationSubtitle(conversation: Conversation) {
 export default function MessagesPage() {
   const router = useRouter();
 
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState("");
-  const [realtimeNotice, setRealtimeNotice] = useState("");
+  const [
+    conversations,
+    setConversations,
+  ] = useState<
+    Conversation[]
+  >([]);
 
-  const [groupOpen, setGroupOpen] = useState(false);
-  const [groupName, setGroupName] = useState("");
-  const [groupDescription, setGroupDescription] = useState("");
-  const [memberQuery, setMemberQuery] = useState("");
-  const [memberResults, setMemberResults] = useState<SearchPerson[]>([]);
-  const [selectedMembers, setSelectedMembers] = useState<SearchPerson[]>([]);
-  const [searchingMembers, setSearchingMembers] = useState(false);
-  const [creatingGroup, setCreatingGroup] = useState(false);
-  const [groupError, setGroupError] = useState("");
+  const [loading, setLoading] =
+    useState(true);
 
-  const [directOpen, setDirectOpen] = useState(false);
-  const [directQuery, setDirectQuery] = useState("");
-  const [directResults, setDirectResults] = useState<SearchPerson[]>([]);
-  const [searchingDirect, setSearchingDirect] = useState(false);
-  const [openingDirect, setOpeningDirect] = useState(false);
-  const [directError, setDirectError] = useState("");
+  const [
+    refreshing,
+    setRefreshing,
+  ] = useState(false);
 
-  const loadConversations = useCallback(
-    async (manual = false, background = false) => {
-      if (manual) {
-        setRefreshing(true);
-      } else if (!background) {
-        setLoading(true);
-      }
+  const [error, setError] =
+    useState("");
 
-      if (!background) {
-        setError("");
-      }
+  const [
+    realtimeNotice,
+    setRealtimeNotice,
+  ] = useState("");
 
-      try {
-        const response = await fetch("/api/conversations?limit=30", {
-          cache: "no-store",
-        });
+  const [groupOpen, setGroupOpen] =
+    useState(false);
 
-        const data = await response.json();
+  const [groupName, setGroupName] =
+    useState("");
 
-        if (response.status === 401) {
-          router.push("/auth");
-          return;
+  const [
+    groupDescription,
+    setGroupDescription,
+  ] = useState("");
+
+  const [
+    memberQuery,
+    setMemberQuery,
+  ] = useState("");
+
+  const [
+    memberResults,
+    setMemberResults,
+  ] = useState<
+    SearchPerson[]
+  >([]);
+
+  const [
+    selectedMembers,
+    setSelectedMembers,
+  ] = useState<
+    SearchPerson[]
+  >([]);
+
+  const [
+    searchingMembers,
+    setSearchingMembers,
+  ] = useState(false);
+
+  const [
+    creatingGroup,
+    setCreatingGroup,
+  ] = useState(false);
+
+  const [
+    groupError,
+    setGroupError,
+  ] = useState("");
+
+  const [directOpen, setDirectOpen] =
+    useState(false);
+
+  const [
+    directQuery,
+    setDirectQuery,
+  ] = useState("");
+
+  const [
+    directResults,
+    setDirectResults,
+  ] = useState<
+    SearchPerson[]
+  >([]);
+
+  const [
+    searchingDirect,
+    setSearchingDirect,
+  ] = useState(false);
+
+  const [
+    openingDirect,
+    setOpeningDirect,
+  ] = useState(false);
+
+  const [
+    directError,
+    setDirectError,
+  ] = useState("");
+
+  const loadConversations =
+    useCallback(
+      async (
+        manual = false,
+        background = false,
+      ) => {
+        if (manual) {
+          setRefreshing(true);
+        } else if (!background) {
+          setLoading(true);
         }
 
-        if (!response.ok) {
+        if (!background) {
+          setError("");
+        }
+
+        try {
+          const response =
+            await fetch(
+              "/api/conversations?limit=30",
+              {
+                cache: "no-store",
+              },
+            );
+
+          const data =
+            await response.json();
+
+          if (
+            response.status ===
+            401
+          ) {
+            router.push("/auth");
+            return;
+          }
+
+          if (!response.ok) {
+            if (!background) {
+              setError(
+                data.error ??
+                  "Unable to load your conversations.",
+              );
+            }
+
+            return;
+          }
+
+          setConversations(
+            Array.isArray(
+              data.conversations,
+            )
+              ? data.conversations
+              : [],
+          );
+
+          if (background) {
+            setRealtimeNotice("");
+          }
+        } catch {
           if (!background) {
             setError(
-              data.error ?? "Unable to load your conversations.",
+              "Unable to load your conversations.",
             );
           }
-          return;
+        } finally {
+          if (manual) {
+            setRefreshing(false);
+          } else if (!background) {
+            setLoading(false);
+          }
         }
-
-        setConversations(
-          Array.isArray(data.conversations)
-            ? data.conversations
-            : [],
-        );
-
-        if (background) {
-          setRealtimeNotice("");
-        }
-      } catch {
-        if (!background) {
-          setError("Unable to load your conversations.");
-        }
-      } finally {
-        if (manual) {
-          setRefreshing(false);
-        } else if (!background) {
-          setLoading(false);
-        }
-      }
-    },
-    [router],
-  );
+      },
+      [router],
+    );
 
   useEffect(() => {
     void loadConversations();
   }, [loadConversations]);
 
   useEffect(() => {
-    const channel = supabase
-      .channel("messages-hub")
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-        },
-        () => {
-          void loadConversations(false, true);
-        },
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "messages",
-        },
-        () => {
-          void loadConversations(false, true);
-        },
-      )
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") {
-          setRealtimeNotice("");
-          return;
-        }
+    const channel =
+      supabase
+        .channel("messages-hub")
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "messages",
+          },
+          () => {
+            void loadConversations(
+              false,
+              true,
+            );
+          },
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "messages",
+          },
+          () => {
+            void loadConversations(
+              false,
+              true,
+            );
+          },
+        )
+        .subscribe(
+          (status) => {
+            if (
+              status ===
+              "SUBSCRIBED"
+            ) {
+              setRealtimeNotice("");
+              return;
+            }
 
-        if (
-          status === "CHANNEL_ERROR" ||
-          status === "TIMED_OUT"
-        ) {
-          setRealtimeNotice(
-            "Live updates are paused. Refresh to reconnect.",
-          );
-        }
-      });
+            if (
+              status ===
+                "CHANNEL_ERROR" ||
+              status ===
+                "TIMED_OUT"
+            ) {
+              setRealtimeNotice(
+                "Live updates are paused. Refresh to reconnect.",
+              );
+            }
+          },
+        );
 
     return () => {
-      void supabase.removeChannel(channel);
+      void supabase.removeChannel(
+        channel,
+      );
     };
   }, [loadConversations]);
 
-  async function searchMembers(value = memberQuery) {
-    const query = value.trim();
+  async function searchMembers(
+    value = memberQuery,
+  ) {
+    const query =
+      value.trim();
 
     if (query.length < 2) {
       setMemberResults([]);
@@ -265,41 +405,58 @@ export default function MessagesPage() {
     setGroupError("");
 
     try {
-      const response = await fetch(
-        `/api/users/search?q=${encodeURIComponent(query)}&limit=20`,
-        {
-          cache: "no-store",
-        },
-      );
+      const response =
+        await fetch(
+          `/api/users/search?q=${encodeURIComponent(
+            query,
+          )}&limit=20`,
+          {
+            cache: "no-store",
+          },
+        );
 
-      const data = await response.json();
+      const data =
+        await response.json();
 
-      if (response.status === 401) {
+      if (
+        response.status ===
+        401
+      ) {
         router.push("/auth");
         return;
       }
 
       if (!response.ok) {
         setGroupError(
-          data.error ?? "Unable to search people.",
+          data.error ??
+            "Unable to search people.",
         );
         setMemberResults([]);
         return;
       }
 
       setMemberResults(
-        Array.isArray(data.people) ? data.people : [],
+        Array.isArray(
+          data.people,
+        )
+          ? data.people
+          : [],
       );
     } catch {
-      setGroupError("Unable to search people.");
+      setGroupError(
+        "Unable to search people.",
+      );
       setMemberResults([]);
     } finally {
       setSearchingMembers(false);
     }
   }
 
-  async function searchDirect(value = directQuery) {
-    const query = value.trim();
+  async function searchDirect(
+    value = directQuery,
+  ) {
+    const query =
+      value.trim();
 
     if (query.length < 2) {
       setDirectResults([]);
@@ -310,40 +467,56 @@ export default function MessagesPage() {
     setDirectError("");
 
     try {
-      const response = await fetch(
-        `/api/users/search?q=${encodeURIComponent(query)}&limit=20`,
-        {
-          cache: "no-store",
-        },
-      );
+      const response =
+        await fetch(
+          `/api/users/search?q=${encodeURIComponent(
+            query,
+          )}&limit=20`,
+          {
+            cache: "no-store",
+          },
+        );
 
-      const data = await response.json();
+      const data =
+        await response.json();
 
-      if (response.status === 401) {
+      if (
+        response.status ===
+        401
+      ) {
         router.push("/auth");
         return;
       }
 
       if (!response.ok) {
         setDirectError(
-          data.error ?? "Unable to search people.",
+          data.error ??
+            "Unable to search people.",
         );
         setDirectResults([]);
         return;
       }
 
       setDirectResults(
-        Array.isArray(data.people) ? data.people : [],
+        Array.isArray(
+          data.people,
+        )
+          ? data.people
+          : [],
       );
     } catch {
-      setDirectError("Unable to search people.");
+      setDirectError(
+        "Unable to search people.",
+      );
       setDirectResults([]);
     } finally {
       setSearchingDirect(false);
     }
   }
 
-  async function startDirectConversation(person: SearchPerson) {
+  async function startDirectConversation(
+    person: SearchPerson,
+  ) {
     if (openingDirect) {
       return;
     }
@@ -352,31 +525,45 @@ export default function MessagesPage() {
     setDirectError("");
 
     try {
-      const response = await fetch("/api/conversations/direct", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          userId: person.id,
-        }),
-      });
+      const response =
+        await fetch(
+          "/api/conversations/direct",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              userId:
+                person.id,
+            }),
+          },
+        );
 
-      const data = await response.json();
+      const data =
+        await response.json();
 
-      if (response.status === 401) {
+      if (
+        response.status ===
+        401
+      ) {
         router.push("/auth");
         return;
       }
 
       if (!response.ok) {
         setDirectError(
-          data.error ?? "Unable to start the conversation.",
+          data.error ??
+            "Unable to start the conversation.",
         );
         return;
       }
 
-      if (!data.conversation?.id) {
+      if (
+        !data.conversation
+          ?.id
+      ) {
         setDirectError(
           "The conversation could not be opened.",
         );
@@ -384,45 +571,69 @@ export default function MessagesPage() {
       }
 
       router.push(
-        `/messages/${encodeURIComponent(data.conversation.id)}`,
+        `/messages/${encodeURIComponent(
+          data.conversation.id,
+        )}`,
       );
     } catch {
-      setDirectError("Unable to start the conversation.");
+      setDirectError(
+        "Unable to start the conversation.",
+      );
     } finally {
       setOpeningDirect(false);
     }
   }
 
-  function toggleMember(person: SearchPerson) {
+  function toggleMember(
+    person: SearchPerson,
+  ) {
     setGroupError("");
 
-    setSelectedMembers((current) => {
-      const exists = current.some(
-        (member) => member.id === person.id,
-      );
+    setSelectedMembers(
+      (current) => {
+        const exists =
+          current.some(
+            (member) =>
+              member.id ===
+              person.id,
+          );
 
-      if (exists) {
-        return current.filter(
-          (member) => member.id !== person.id,
-        );
-      }
+        if (exists) {
+          return current.filter(
+            (member) =>
+              member.id !==
+              person.id,
+          );
+        }
 
-      if (current.length >= 49) {
-        setGroupError(
-          "A group can have at most 50 members.",
-        );
-        return current;
-      }
+        if (
+          current.length >=
+          49
+        ) {
+          setGroupError(
+            "A group can have at most 50 members.",
+          );
+          return current;
+        }
 
-      return [...current, person];
-    });
+        return [
+          ...current,
+          person,
+        ];
+      },
+    );
   }
 
-  function removeSelectedMember(personId: string) {
-    setSelectedMembers((current) =>
-      current.filter(
-        (member) => member.id !== personId,
-      ),
+  function removeSelectedMember(
+    personId: string,
+  ) {
+    setSelectedMembers(
+      (current) =>
+        current.filter(
+          (member) =>
+            member.id !==
+            personId,
+        ),
     );
   }
 
@@ -462,15 +673,23 @@ export default function MessagesPage() {
   ) {
     event.preventDefault();
 
-    const name = groupName.trim();
-    const description = groupDescription.trim();
+    const name =
+      groupName.trim();
+
+    const description =
+      groupDescription.trim();
 
     if (!name) {
-      setGroupError("Enter a group name.");
+      setGroupError(
+        "Enter a group name.",
+      );
       return;
     }
 
-    if (selectedMembers.length < 1) {
+    if (
+      selectedMembers.length <
+      1
+    ) {
       setGroupError(
         "Select at least one other member.",
       );
@@ -481,26 +700,34 @@ export default function MessagesPage() {
     setGroupError("");
 
     try {
-      const response = await fetch(
-        "/api/conversations/group",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
+      const response =
+        await fetch(
+          "/api/conversations/group",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              name,
+              description,
+              memberIds:
+                selectedMembers.map(
+                  (member) =>
+                    member.id,
+                ),
+            }),
           },
-          body: JSON.stringify({
-            name,
-            description,
-            memberIds: selectedMembers.map(
-              (member) => member.id,
-            ),
-          }),
-        },
-      );
+        );
 
-      const data = await response.json();
+      const data =
+        await response.json();
 
-      if (response.status === 401) {
+      if (
+        response.status ===
+        401
+      ) {
         router.push("/auth");
         return;
       }
@@ -513,7 +740,10 @@ export default function MessagesPage() {
         return;
       }
 
-      if (!data.conversation?.id) {
+      if (
+        !data.conversation
+          ?.id
+      ) {
         setGroupError(
           "The group was created without a conversation ID.",
         );
@@ -529,7 +759,9 @@ export default function MessagesPage() {
         )}`,
       );
     } catch {
-      setGroupError("Unable to create the group.");
+      setGroupError(
+        "Unable to create the group.",
+      );
     } finally {
       setCreatingGroup(false);
     }
@@ -566,7 +798,9 @@ export default function MessagesPage() {
             <div className="hidden items-center gap-2 sm:flex">
               <Link
                 href="/home"
-                className={navigationClass}
+                className={
+                  navigationClass
+                }
               >
                 <Home size={15} />
                 Home
@@ -574,7 +808,9 @@ export default function MessagesPage() {
 
               <Link
                 href="/app/explore"
-                className={navigationClass}
+                className={
+                  navigationClass
+                }
               >
                 <Compass size={15} />
                 Explore
@@ -582,7 +818,9 @@ export default function MessagesPage() {
 
               <Link
                 href="/notifications"
-                className={navigationClass}
+                className={
+                  navigationClass
+                }
               >
                 <Bell size={15} />
                 Alerts
@@ -590,7 +828,9 @@ export default function MessagesPage() {
 
               <Link
                 href="/settings"
-                className={navigationClass}
+                className={
+                  navigationClass
+                }
               >
                 <Settings size={15} />
                 Settings
@@ -611,7 +851,9 @@ export default function MessagesPage() {
           <div className="mt-3 flex gap-2 overflow-x-auto pb-1 sm:hidden">
             <Link
               href="/home"
-              className={navigationClass}
+              className={
+                navigationClass
+              }
             >
               <Home size={14} />
               Home
@@ -619,7 +861,9 @@ export default function MessagesPage() {
 
             <Link
               href="/app/explore"
-              className={navigationClass}
+              className={
+                navigationClass
+              }
             >
               <Compass size={14} />
               Explore
@@ -627,7 +871,9 @@ export default function MessagesPage() {
 
             <Link
               href="/notifications"
-              className={navigationClass}
+              className={
+                navigationClass
+              }
             >
               <Bell size={14} />
               Alerts
@@ -635,7 +881,9 @@ export default function MessagesPage() {
 
             <Link
               href="/settings"
-              className={navigationClass}
+              className={
+                navigationClass
+              }
             >
               <Settings size={14} />
               Settings
@@ -655,8 +903,7 @@ export default function MessagesPage() {
               </h2>
 
               <p className="mt-1 max-w-xl text-sm leading-6 text-[var(--muted)]">
-                Continue a direct conversation or move a group
-                conversation forward.
+                Continue a direct conversation or move a group conversation forward.
               </p>
 
               {realtimeNotice ? (
@@ -669,16 +916,22 @@ export default function MessagesPage() {
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={() => setDirectOpen(true)}
+                onClick={() =>
+                  setDirectOpen(true)
+                }
                 className="inline-flex h-10 items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 text-sm font-semibold text-[var(--foreground)] transition hover:border-[var(--accent)] hover:bg-[var(--surface-muted)]"
               >
-                <MessageSquarePlus size={16} />
+                <MessageSquarePlus
+                  size={16}
+                />
                 New message
               </button>
 
               <button
                 type="button"
-                onClick={() => setGroupOpen(true)}
+                onClick={() =>
+                  setGroupOpen(true)
+                }
                 className="inline-flex h-10 items-center gap-2 rounded-full bg-[var(--accent)] px-4 text-sm font-semibold text-white transition hover:opacity-90"
               >
                 <Plus size={16} />
@@ -687,14 +940,25 @@ export default function MessagesPage() {
 
               <button
                 type="button"
-                onClick={() => void loadConversations(true)}
-                disabled={refreshing || loading}
+                onClick={() =>
+                  void loadConversations(
+                    true,
+                  )
+                }
+                disabled={
+                  refreshing ||
+                  loading
+                }
                 aria-label="Refresh conversations"
                 className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--muted)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <RefreshCw
                   size={16}
-                  className={refreshing ? "animate-spin" : ""}
+                  className={
+                    refreshing
+                      ? "animate-spin"
+                      : ""
+                  }
                 />
               </button>
             </div>
@@ -702,26 +966,32 @@ export default function MessagesPage() {
 
           {loading ? (
             <div className="space-y-1 p-2">
-              {Array.from({ length: 4 }).map((_, index) => (
-                <div
-                  key={index}
-                  className="animate-pulse rounded-2xl px-4 py-4"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="h-12 w-12 rounded-full bg-[var(--surface-muted)]" />
+              {Array.from({
+                length: 4,
+              }).map(
+                (_, index) => (
+                  <div
+                    key={index}
+                    className="animate-pulse rounded-2xl px-4 py-4"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="h-12 w-12 rounded-full bg-[var(--surface-muted)]" />
 
-                    <div className="min-w-0 flex-1 space-y-2">
-                      <div className="h-4 w-36 rounded bg-[var(--surface-muted)]" />
-                      <div className="h-3 w-24 rounded bg-[var(--surface-muted)]" />
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <div className="h-4 w-36 rounded bg-[var(--surface-muted)]" />
+                        <div className="h-3 w-24 rounded bg-[var(--surface-muted)]" />
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ),
+              )}
             </div>
           ) : error ? (
             <div className="px-6 py-10 text-center">
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]">
-                <MessageCircle size={20} />
+                <MessageCircle
+                  size={20}
+                />
               </div>
 
               <p className="mt-4 text-sm font-medium text-[var(--danger)]">
@@ -730,16 +1000,23 @@ export default function MessagesPage() {
 
               <button
                 type="button"
-                onClick={() => void loadConversations(true)}
+                onClick={() =>
+                  void loadConversations(
+                    true,
+                  )
+                }
                 className="mt-4 rounded-full bg-[var(--foreground)] px-4 py-2 text-sm font-semibold text-[var(--background)] transition hover:bg-[var(--accent)] hover:text-white"
               >
                 Retry
               </button>
             </div>
-          ) : conversations.length === 0 ? (
+          ) : conversations.length ===
+            0 ? (
             <div className="px-6 py-14 text-center">
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]">
-                <MessageCircle size={22} />
+                <MessageCircle
+                  size={22}
+                />
               </div>
 
               <h2 className="mt-5 text-lg font-semibold">
@@ -747,23 +1024,32 @@ export default function MessagesPage() {
               </h2>
 
               <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[var(--muted)]">
-                Start a direct conversation or create a group to begin
-                messaging.
+                Start a direct conversation or create a group to begin messaging.
               </p>
 
               <div className="mt-5 flex flex-wrap justify-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setDirectOpen(true)}
+                  onClick={() =>
+                    setDirectOpen(
+                      true,
+                    )
+                  }
                   className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-5 py-2.5 text-sm font-semibold text-[var(--foreground)] transition hover:bg-[var(--surface-muted)]"
                 >
-                  <MessageSquarePlus size={16} />
+                  <MessageSquarePlus
+                    size={16}
+                  />
                   New message
                 </button>
 
                 <button
                   type="button"
-                  onClick={() => setGroupOpen(true)}
+                  onClick={() =>
+                    setGroupOpen(
+                      true,
+                    )
+                  }
                   className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] px-5 py-2.5 text-sm font-semibold text-white transition hover:opacity-90"
                 >
                   <Plus size={16} />
@@ -773,83 +1059,113 @@ export default function MessagesPage() {
             </div>
           ) : (
             <div className="divide-y divide-[var(--border)]">
-              {conversations.map((conversation) => {
-                const title = getConversationTitle(conversation);
-                const subtitle = getConversationSubtitle(conversation);
+              {conversations.map(
+                (
+                  conversation,
+                ) => {
+                  const title =
+                    getConversationTitle(
+                      conversation,
+                    );
 
-                const preview =
-                  conversation.latest_message?.preview ?? subtitle;
+                  const subtitle =
+                    getConversationSubtitle(
+                      conversation,
+                    );
 
-                const timestamp = formatConversationDate(
-                  conversation.latest_message?.created_at ??
-                    conversation.last_message_at ??
-                    conversation.updated_at ??
-                    conversation.created_at,
-                );
+                  const preview =
+                    conversation
+                      .latest_message
+                      ?.preview ??
+                    subtitle;
 
-                return (
-                  <Link
-                    key={conversation.id}
-                    href={`/messages/${encodeURIComponent(
-                      conversation.id,
-                    )}`}
-                    className="flex items-center gap-3 px-4 py-4 transition hover:bg-[var(--surface-muted)] sm:px-5"
-                  >
-                    <AgoreAvatar
-                      avatarPath={
-                        conversation.type === "group"
-                          ? conversation.image_path
-                          : conversation.participant?.avatar_path
+                  const timestamp =
+                    formatConversationDate(
+                      conversation
+                        .latest_message
+                        ?.created_at ??
+                        conversation.last_message_at ??
+                        conversation.updated_at ??
+                        conversation.created_at,
+                    );
+
+                  return (
+                    <Link
+                      key={
+                        conversation.id
                       }
-                      name={title}
-                      className="h-12 w-12 shrink-0"
-                      textClassName="text-sm"
-                    />
+                      href={`/messages/${encodeURIComponent(
+                        conversation.id,
+                      )}`}
+                      className="flex items-center gap-3 px-4 py-4 transition hover:bg-[var(--surface-muted)] sm:px-5"
+                    >
+                      <AgoreAvatar
+                        avatarPath={
+                          conversation.type ===
+                          "group"
+                            ? conversation.image_path
+                            : conversation
+                                .participant
+                                ?.avatar_path
+                        }
+                        name={title}
+                        bucketName={
+                          conversation.type ===
+                          "group"
+                            ? "group-media"
+                            : "avatars"
+                        }
+                        className="h-12 w-12 shrink-0"
+                        textClassName="text-sm"
+                      />
 
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-3">
+                          <p
+                            className={`truncate text-sm ${
+                              conversation.has_unread_messages
+                                ? "font-bold"
+                                : "font-semibold"
+                            }`}
+                          >
+                            {title}
+                          </p>
+
+                          <div className="flex shrink-0 items-center gap-2">
+                            {conversation.has_unread_messages ? (
+                              <span
+                                aria-label="Unread messages"
+                                className="h-2.5 w-2.5 rounded-full bg-[var(--accent)]"
+                              />
+                            ) : null}
+
+                            <span className="text-xs text-[var(--muted)]">
+                              {
+                                timestamp
+                              }
+                            </span>
+                          </div>
+                        </div>
+
                         <p
-                          className={`truncate text-sm ${
+                          className={`mt-1 truncate text-sm ${
                             conversation.has_unread_messages
-                              ? "font-bold"
-                              : "font-semibold"
+                              ? "font-semibold text-[var(--foreground)]"
+                              : "text-[var(--muted)]"
                           }`}
                         >
-                          {title}
+                          {preview}
                         </p>
-
-                        <div className="flex shrink-0 items-center gap-2">
-                          {conversation.has_unread_messages ? (
-                            <span
-                              aria-label="Unread messages"
-                              className="h-2.5 w-2.5 rounded-full bg-[var(--accent)]"
-                            />
-                          ) : null}
-
-                          <span className="text-xs text-[var(--muted)]">
-                            {timestamp}
-                          </span>
-                        </div>
                       </div>
 
-                      <p
-                        className={`mt-1 truncate text-sm ${
-                          conversation.has_unread_messages
-                            ? "font-semibold text-[var(--foreground)]"
-                            : "text-[var(--muted)]"
-                        }`}
-                      >
-                        {preview}
-                      </p>
-                    </div>
-
-                    <ChevronRight
-                      size={17}
-                      className="shrink-0 text-[var(--muted)]"
-                    />
-                  </Link>
-                );
-              })}
+                      <ChevronRight
+                        size={17}
+                        className="shrink-0 text-[var(--muted)]"
+                      />
+                    </Link>
+                  );
+                },
+              )}
             </div>
           )}
         </section>
@@ -879,8 +1195,12 @@ export default function MessagesPage() {
 
               <button
                 type="button"
-                onClick={closeDirectCreator}
-                disabled={openingDirect}
+                onClick={
+                  closeDirectCreator
+                }
+                disabled={
+                  openingDirect
+                }
                 aria-label="Close new message"
                 className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] text-[var(--muted)] transition hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -896,17 +1216,37 @@ export default function MessagesPage() {
                 />
 
                 <input
-                  value={directQuery}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setDirectQuery(value);
+                  value={
+                    directQuery
+                  }
+                  onChange={(
+                    event,
+                  ) => {
+                    const value =
+                      event.target
+                        .value;
 
-                    if (value.trim().length < 2) {
-                      setDirectResults([]);
+                    setDirectQuery(
+                      value,
+                    );
+
+                    if (
+                      value.trim()
+                        .length <
+                      2
+                    ) {
+                      setDirectResults(
+                        [],
+                      );
                     }
                   }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
+                  onKeyDown={(
+                    event,
+                  ) => {
+                    if (
+                      event.key ===
+                      "Enter"
+                    ) {
                       event.preventDefault();
                       void searchDirect();
                     }
@@ -914,7 +1254,9 @@ export default function MessagesPage() {
                   maxLength={50}
                   autoFocus
                   placeholder="Search username or name…"
-                  disabled={openingDirect}
+                  disabled={
+                    openingDirect
+                  }
                   className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)] py-3 pl-10 pr-4 text-sm outline-none transition placeholder:text-[var(--muted)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-soft)] disabled:cursor-not-allowed disabled:bg-[var(--surface-muted)]"
                 />
               </div>
@@ -922,7 +1264,9 @@ export default function MessagesPage() {
               {directError ? (
                 <div className="mt-4 rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3">
                   <p className="text-sm font-medium text-[var(--danger)]">
-                    {directError}
+                    {
+                      directError
+                    }
                   </p>
                 </div>
               ) : null}
@@ -930,10 +1274,14 @@ export default function MessagesPage() {
               <div className="mt-4 flex justify-end">
                 <button
                   type="button"
-                  onClick={() => void searchDirect()}
+                  onClick={() =>
+                    void searchDirect()
+                  }
                   disabled={
                     searchingDirect ||
-                    directQuery.trim().length < 2
+                    directQuery.trim()
+                      .length <
+                      2
                   }
                   className="inline-flex items-center gap-2 rounded-full bg-[var(--accent-soft)] px-4 py-2.5 text-sm font-semibold text-[var(--accent)] transition hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
                 >
@@ -943,56 +1291,78 @@ export default function MessagesPage() {
                       className="animate-spin"
                     />
                   ) : (
-                    <Search size={15} />
+                    <Search
+                      size={15}
+                    />
                   )}
                   Search
                 </button>
               </div>
 
-              {directResults.length > 0 ? (
+              {directResults.length >
+              0 ? (
                 <div className="mt-4 space-y-1">
-                  {directResults.map((person) => (
-                    <button
-                      key={person.id}
-                      type="button"
-                      onClick={() =>
-                        void startDirectConversation(person)
-                      }
-                      disabled={openingDirect}
-                      className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      <AgoreAvatar
-                        avatarPath={person.avatar_path}
-                        name={person.display_name}
-                        className="h-11 w-11 shrink-0"
-                        textClassName="text-xs"
-                      />
-
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold">
-                          {person.display_name}
-                        </p>
-
-                        <p className="mt-0.5 truncate text-xs text-[var(--muted)]">
-                          @{person.username}
-                        </p>
-                      </div>
-
-                      {openingDirect ? (
-                        <Loader2
-                          size={16}
-                          className="shrink-0 animate-spin text-[var(--accent)]"
+                  {directResults.map(
+                    (person) => (
+                      <button
+                        key={
+                          person.id
+                        }
+                        type="button"
+                        onClick={() =>
+                          void startDirectConversation(
+                            person,
+                          )
+                        }
+                        disabled={
+                          openingDirect
+                        }
+                        className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <AgoreAvatar
+                          avatarPath={
+                            person.avatar_path
+                          }
+                          name={
+                            person.display_name
+                          }
+                          className="h-11 w-11 shrink-0"
+                          textClassName="text-xs"
                         />
-                      ) : (
-                        <MessageCircle
-                          size={16}
-                          className="shrink-0 text-[var(--muted)]"
-                        />
-                      )}
-                    </button>
-                  ))}
+
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold">
+                            {
+                              person.display_name
+                            }
+                          </p>
+
+                          <p className="mt-0.5 truncate text-xs text-[var(--muted)]">
+                            @
+                            {
+                              person.username
+                            }
+                          </p>
+                        </div>
+
+                        {openingDirect ? (
+                          <Loader2
+                            size={16}
+                            className="shrink-0 animate-spin text-[var(--accent)]"
+                          />
+                        ) : (
+                          <MessageCircle
+                            size={16}
+                            className="shrink-0 text-[var(--muted)]"
+                          />
+                        )}
+                      </button>
+                    ),
+                  )}
                 </div>
-              ) : directQuery.trim().length >= 2 &&
+              ) : directQuery.trim()
+                  .length >=
+                  2 &&
                 !searchingDirect ? (
                 <p className="mt-4 rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3 text-sm text-[var(--muted)]">
                   No available people found.
@@ -1037,8 +1407,12 @@ export default function MessagesPage() {
 
               <button
                 type="button"
-                onClick={closeGroupCreator}
-                disabled={creatingGroup}
+                onClick={
+                  closeGroupCreator
+                }
+                disabled={
+                  creatingGroup
+                }
                 aria-label="Close group creator"
                 className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] text-[var(--muted)] transition hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -1047,7 +1421,9 @@ export default function MessagesPage() {
             </header>
 
             <form
-              onSubmit={handleCreateGroup}
+              onSubmit={
+                handleCreateGroup
+              }
               className="flex min-h-0 flex-1 flex-col"
             >
               <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
@@ -1057,14 +1433,23 @@ export default function MessagesPage() {
                   </span>
 
                   <input
-                    value={groupName}
-                    onChange={(event) =>
-                      setGroupName(event.target.value)
+                    value={
+                      groupName
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      setGroupName(
+                        event.target
+                          .value,
+                      )
                     }
                     maxLength={80}
                     autoFocus
                     placeholder="e.g. Project Defence Team"
-                    disabled={creatingGroup}
+                    disabled={
+                      creatingGroup
+                    }
                     className="mt-2 w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm outline-none transition placeholder:text-[var(--muted)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-soft)] disabled:cursor-not-allowed disabled:bg-[var(--surface-muted)]"
                   />
                 </label>
@@ -1078,19 +1463,29 @@ export default function MessagesPage() {
                   </span>
 
                   <textarea
-                    value={groupDescription}
-                    onChange={(event) =>
-                      setGroupDescription(event.target.value)
+                    value={
+                      groupDescription
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      setGroupDescription(
+                        event.target
+                          .value,
+                      )
                     }
                     maxLength={500}
                     rows={3}
                     placeholder="What is this group for?"
-                    disabled={creatingGroup}
+                    disabled={
+                      creatingGroup
+                    }
                     className="mt-2 w-full resize-none rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm leading-6 outline-none transition placeholder:text-[var(--muted)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-soft)] disabled:cursor-not-allowed disabled:bg-[var(--surface-muted)]"
                   />
                 </label>
 
-                {selectedMembers.length > 0 ? (
+                {selectedMembers.length >
+                0 ? (
                   <div className="mt-5">
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-semibold">
@@ -1098,25 +1493,45 @@ export default function MessagesPage() {
                       </span>
 
                       <span className="text-xs text-[var(--muted)]">
-                        {selectedMembers.length} selected
+                        {
+                          selectedMembers.length
+                        }{" "}
+                        selected
                       </span>
                     </div>
 
                     <div className="mt-2 flex flex-wrap gap-2">
-                      {selectedMembers.map((member) => (
-                        <button
-                          key={member.id}
-                          type="button"
-                          onClick={() =>
-                            removeSelectedMember(member.id)
-                          }
-                          disabled={creatingGroup}
-                          className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-xs font-semibold text-[var(--foreground)] transition hover:bg-[var(--background)] disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          @{member.username}
-                          <X size={13} />
-                        </button>
-                      ))}
+                      {selectedMembers.map(
+                        (
+                          member,
+                        ) => (
+                          <button
+                            key={
+                              member.id
+                            }
+                            type="button"
+                            onClick={() =>
+                              removeSelectedMember(
+                                member.id,
+                              )
+                            }
+                            disabled={
+                              creatingGroup
+                            }
+                            className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-xs font-semibold text-[var(--foreground)] transition hover:bg-[var(--background)] disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            @
+                            {
+                              member.username
+                            }
+                            <X
+                              size={
+                                13
+                              }
+                            />
+                          </button>
+                        ),
+                      )}
                     </div>
                   </div>
                 ) : null}
@@ -1128,7 +1543,10 @@ export default function MessagesPage() {
                     </span>
 
                     <span className="text-xs text-[var(--muted)]">
-                      {selectedMembers.length}/49
+                      {
+                        selectedMembers.length
+                      }
+                      /49
                     </span>
                   </div>
 
@@ -1140,35 +1558,62 @@ export default function MessagesPage() {
                       />
 
                       <input
-                        value={memberQuery}
-                        onChange={(event) => {
-                          const value = event.target.value;
-                          setMemberQuery(value);
+                        value={
+                          memberQuery
+                        }
+                        onChange={(
+                          event,
+                        ) => {
+                          const value =
+                            event.target
+                              .value;
 
-                          if (value.trim().length < 2) {
-                            setMemberResults([]);
+                          setMemberQuery(
+                            value,
+                          );
+
+                          if (
+                            value
+                              .trim()
+                              .length <
+                            2
+                          ) {
+                            setMemberResults(
+                              [],
+                            );
                           }
                         }}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") {
+                        onKeyDown={(
+                          event,
+                        ) => {
+                          if (
+                            event.key ===
+                            "Enter"
+                          ) {
                             event.preventDefault();
                             void searchMembers();
                           }
                         }}
                         maxLength={50}
                         placeholder="Search username or name…"
-                        disabled={creatingGroup}
+                        disabled={
+                          creatingGroup
+                        }
                         className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)] py-3 pl-10 pr-4 text-sm outline-none transition placeholder:text-[var(--muted)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-soft)] disabled:cursor-not-allowed disabled:bg-[var(--surface-muted)]"
                       />
                     </div>
 
                     <button
                       type="button"
-                      onClick={() => void searchMembers()}
+                      onClick={() =>
+                        void searchMembers()
+                      }
                       disabled={
                         searchingMembers ||
                         creatingGroup ||
-                        memberQuery.trim().length < 2
+                        memberQuery.trim()
+                          .length <
+                          2
                       }
                       className="rounded-2xl bg-[var(--accent-soft)] px-4 text-sm font-semibold text-[var(--accent)] transition hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
                     >
@@ -1183,53 +1628,88 @@ export default function MessagesPage() {
                     </button>
                   </div>
 
-                  {memberResults.length > 0 ? (
+                  {memberResults.length >
+                  0 ? (
                     <div className="mt-3 space-y-1 rounded-2xl border border-[var(--border)] bg-[var(--background)] p-2">
-                      {memberResults.map((person) => {
-                        const selected = selectedMembers.some(
-                          (member) => member.id === person.id,
-                        );
+                      {memberResults.map(
+                        (
+                          person,
+                        ) => {
+                          const selected =
+                            selectedMembers.some(
+                              (
+                                member,
+                              ) =>
+                                member.id ===
+                                person.id,
+                            );
 
-                        return (
-                          <button
-                            key={person.id}
-                            type="button"
-                            onClick={() => toggleMember(person)}
-                            disabled={creatingGroup}
-                            className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-[var(--surface)] disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            <AgoreAvatar
-                              avatarPath={person.avatar_path}
-                              name={person.display_name}
-                              className="h-10 w-10 shrink-0"
-                              textClassName="text-xs"
-                            />
-
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-semibold">
-                                {person.display_name}
-                              </p>
-
-                              <p className="mt-0.5 truncate text-xs text-[var(--muted)]">
-                                @{person.username}
-                              </p>
-                            </div>
-
-                            <span
-                              className={[
-                                "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border",
-                                selected
-                                  ? "border-[var(--accent)] bg-[var(--accent)] text-white"
-                                  : "border-[var(--border)] bg-[var(--surface)] text-transparent",
-                              ].join(" ")}
+                          return (
+                            <button
+                              key={
+                                person.id
+                              }
+                              type="button"
+                              onClick={() =>
+                                toggleMember(
+                                  person,
+                                )
+                              }
+                              disabled={
+                                creatingGroup
+                              }
+                              className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-[var(--surface)] disabled:cursor-not-allowed disabled:opacity-60"
                             >
-                              <Check size={14} />
-                            </span>
-                          </button>
-                        );
-                      })}
+                              <AgoreAvatar
+                                avatarPath={
+                                  person.avatar_path
+                                }
+                                name={
+                                  person.display_name
+                                }
+                                className="h-10 w-10 shrink-0"
+                                textClassName="text-xs"
+                              />
+
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-semibold">
+                                  {
+                                    person.display_name
+                                  }
+                                </p>
+
+                                <p className="mt-0.5 truncate text-xs text-[var(--muted)]">
+                                  @
+                                  {
+                                    person.username
+                                  }
+                                </p>
+                              </div>
+
+                              <span
+                                className={[
+                                  "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border",
+                                  selected
+                                    ? "border-[var(--accent)] bg-[var(--accent)] text-white"
+                                    : "border-[var(--border)] bg-[var(--surface)] text-transparent",
+                                ].join(
+                                  " ",
+                                )}
+                              >
+                                <Check
+                                  size={
+                                    14
+                                  }
+                                />
+                              </span>
+                            </button>
+                          );
+                        },
+                      )}
                     </div>
-                  ) : memberQuery.trim().length >= 2 &&
+                  ) : memberQuery.trim()
+                      .length >=
+                      2 &&
                     !searchingMembers ? (
                     <p className="mt-3 rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3 text-sm text-[var(--muted)]">
                       No available people found.
@@ -1240,7 +1720,9 @@ export default function MessagesPage() {
                 {groupError ? (
                   <div className="mt-5 rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3">
                     <p className="text-sm font-medium text-[var(--danger)]">
-                      {groupError}
+                      {
+                        groupError
+                      }
                     </p>
                   </div>
                 ) : null}
@@ -1249,8 +1731,12 @@ export default function MessagesPage() {
               <footer className="flex items-center justify-end gap-2 border-t border-[var(--border)] bg-[var(--surface-muted)] px-5 py-4 sm:px-6">
                 <button
                   type="button"
-                  onClick={closeGroupCreator}
-                  disabled={creatingGroup}
+                  onClick={
+                    closeGroupCreator
+                  }
+                  disabled={
+                    creatingGroup
+                  }
                   className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm font-semibold text-[var(--foreground)] transition hover:bg-[var(--background)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   Cancel
@@ -1261,7 +1747,8 @@ export default function MessagesPage() {
                   disabled={
                     creatingGroup ||
                     !groupName.trim() ||
-                    selectedMembers.length < 1
+                    selectedMembers.length <
+                      1
                   }
                   className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] px-5 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
