@@ -17,15 +17,9 @@ type BlockRow = {
   blocked_id: string;
 };
 
-type ConnectionProfile = {
-  id: string;
-  account_status: string;
-};
-
 type ConnectionFollowRow = {
   follower_id?: string;
   following_id?: string;
-  profiles?: ConnectionProfile[] | null;
 };
 
 function getBlockedConnectionIds(
@@ -46,6 +40,7 @@ function countVisibleConnections(
   rows: ConnectionFollowRow[],
   viewerId: string,
   blockedConnectionIds: Set<string>,
+  activeConnectionIds: Set<string>,
   direction:
     | "followers"
     | "following",
@@ -58,22 +53,15 @@ function countVisibleConnections(
         ? row.follower_id
         : row.following_id;
 
-    const connectionProfile =
-      Array.isArray(
-        row.profiles,
-      )
-        ? row.profiles[0] ??
-          null
-        : null;
-
     if (
       !connectionId ||
       connectionId === viewerId ||
       blockedConnectionIds.has(
         connectionId,
       ) ||
-      connectionProfile?.account_status !==
-        "active"
+      !activeConnectionIds.has(
+        connectionId,
+      )
     ) {
       continue;
     }
@@ -154,13 +142,7 @@ export async function GET(
     admin
       .from("follows")
       .select(
-        `
-          follower_id,
-          profiles!follows_follower_id_fkey (
-            id,
-            account_status
-          )
-        `,
+        "follower_id",
       )
       .eq(
         "following_id",
@@ -170,13 +152,7 @@ export async function GET(
     admin
       .from("follows")
       .select(
-        `
-          following_id,
-          profiles!follows_following_id_fkey (
-            id,
-            account_status
-          )
-        `,
+        "following_id",
       )
       .eq(
         "follower_id",
@@ -316,6 +292,69 @@ export async function GET(
     (followingResult.data ??
       []) as ConnectionFollowRow[];
 
+  const connectionIds = [
+    ...new Set([
+      ...followerRows.map(
+        (row) =>
+          row.follower_id,
+      ),
+      ...followingRows.map(
+        (row) =>
+          row.following_id,
+      ),
+    ]),
+  ];
+
+  let activeConnectionIds =
+    new Set<string>();
+
+  if (
+    connectionIds.length > 0
+  ) {
+    const {
+      data: connectionProfiles,
+      error: connectionProfilesError,
+    } = await admin
+      .from("profiles")
+      .select(
+        "id, account_status",
+      )
+      .in(
+        "id",
+        connectionIds,
+      )
+      .eq(
+        "account_status",
+        "active",
+      );
+
+    if (connectionProfilesError) {
+      console.error(
+        "Failed to resolve Agore connection profiles:",
+        connectionProfilesError,
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            "Unable to load the profile relationships.",
+        },
+        {
+          status: 500,
+        },
+      );
+    }
+
+    activeConnectionIds =
+      new Set(
+        (connectionProfiles ??
+          []).map(
+          (connection) =>
+            connection.id,
+        ),
+      );
+  }
+
   const followerCount =
     viewerBlockedTarget
       ? 0
@@ -323,6 +362,7 @@ export async function GET(
           followerRows,
           user.id,
           blockedConnectionIds,
+          activeConnectionIds,
           "followers",
         );
 
@@ -333,6 +373,7 @@ export async function GET(
           followingRows,
           user.id,
           blockedConnectionIds,
+          activeConnectionIds,
           "following",
         );
 
