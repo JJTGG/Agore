@@ -16,6 +16,12 @@ const querySchema = z.object({
     .max(100)
     .default(50),
   before: z.string().datetime().optional(),
+  search: z
+    .string()
+    .trim()
+    .min(1)
+    .max(80)
+    .optional(),
 });
 
 const createMessageSchema = z.object({
@@ -374,6 +380,15 @@ async function notifyConversationMembers(
   );
 }
 
+function escapeLikePattern(
+  value: string,
+) {
+  return value
+    .replaceAll("\\", "\\\\")
+    .replaceAll("%", "\\%")
+    .replaceAll("_", "\\_");
+}
+
 export async function GET(
   request: Request,
   {
@@ -430,6 +445,10 @@ export async function GET(
         url.searchParams.get(
           "before",
         ) ?? undefined,
+      search:
+        url.searchParams.get(
+          "search",
+        ) ?? undefined,
     });
 
   if (!parsedQuery.success) {
@@ -441,6 +460,13 @@ export async function GET(
       { status: 400 },
     );
   }
+
+  const searchTerm =
+    parsedQuery.data.search?.trim() ??
+    "";
+
+  const isSearch =
+    searchTerm.length > 0;
 
   const admin =
     createAdminClient();
@@ -500,7 +526,14 @@ export async function GET(
       parsedQuery.data.limit,
     );
 
-  if (
+  if (isSearch) {
+    query = query.ilike(
+      "content",
+      `%${escapeLikePattern(
+        searchTerm,
+      )}%`,
+    );
+  } else if (
     parsedQuery.data.before
   ) {
     query = query.lt(
@@ -530,10 +563,17 @@ export async function GET(
   }
 
   const orderedMessages =
-    (
-      (messages ??
-        []) as MessageRow[]
-    ).reverse();
+    isSearch
+      ? ((
+          (messages ??
+            []) as MessageRow[]
+        ))
+      : (
+          (
+            (messages ??
+              []) as MessageRow[]
+          )
+        ).reverse();
 
   try {
     const messagesWithDetails =
