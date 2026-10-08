@@ -28,8 +28,7 @@ function getBlockedConnectionIds(
 ) {
   return new Set(
     rows.map((relationship) =>
-      relationship.blocker_id ===
-      viewerId
+      relationship.blocker_id === viewerId
         ? relationship.blocked_id
         : relationship.blocker_id,
     ),
@@ -38,12 +37,9 @@ function getBlockedConnectionIds(
 
 function countVisibleConnections(
   rows: ConnectionFollowRow[],
-  viewerId: string,
   blockedConnectionIds: Set<string>,
   activeConnectionIds: Set<string>,
-  direction:
-    | "followers"
-    | "following",
+  direction: "followers" | "following",
 ) {
   const ids = new Set<string>();
 
@@ -55,20 +51,13 @@ function countVisibleConnections(
 
     if (
       !connectionId ||
-      connectionId === viewerId ||
-      blockedConnectionIds.has(
-        connectionId,
-      ) ||
-      !activeConnectionIds.has(
-        connectionId,
-      )
+      blockedConnectionIds.has(connectionId) ||
+      !activeConnectionIds.has(connectionId)
     ) {
       continue;
     }
 
-    ids.add(
-      connectionId,
-    );
+    ids.add(connectionId);
   }
 
   return ids.size;
@@ -78,20 +67,17 @@ export async function GET(
   _: Request,
   context: RouteContext,
 ) {
-  const supabase =
-    await createClient();
+  const supabase = await createClient();
 
   const {
     data: { user },
     error: userError,
-  } =
-    await supabase.auth.getUser();
+  } = await supabase.auth.getUser();
 
   if (userError || !user) {
     return NextResponse.json(
       {
-        error:
-          "Authentication required.",
+        error: "Authentication required.",
       },
       {
         status: 401,
@@ -99,19 +85,14 @@ export async function GET(
     );
   }
 
-  const { userId } =
-    await context.params;
+  const { userId } = await context.params;
 
-  const parsedUserId =
-    userIdSchema.safeParse(
-      userId,
-    );
+  const parsedUserId = userIdSchema.safeParse(userId);
 
   if (!parsedUserId.success) {
     return NextResponse.json(
       {
-        error:
-          "Invalid user ID.",
+        error: "Invalid user ID.",
       },
       {
         status: 400,
@@ -119,11 +100,9 @@ export async function GET(
     );
   }
 
-  const targetUserId =
-    parsedUserId.data;
+  const targetUserId = parsedUserId.data;
 
-  const admin =
-    createAdminClient();
+  const admin = createAdminClient();
 
   const [
     blockResult,
@@ -132,32 +111,20 @@ export async function GET(
   ] = await Promise.all([
     admin
       .from("blocks")
-      .select(
-        "blocker_id, blocked_id",
-      )
+      .select("blocker_id, blocked_id")
       .or(
         `blocker_id.eq.${user.id},blocked_id.eq.${user.id}`,
       ),
 
     admin
       .from("follows")
-      .select(
-        "follower_id",
-      )
-      .eq(
-        "following_id",
-        targetUserId,
-      ),
+      .select("follower_id")
+      .eq("following_id", targetUserId),
 
     admin
       .from("follows")
-      .select(
-        "following_id",
-      )
-      .eq(
-        "follower_id",
-        targetUserId,
-      ),
+      .select("following_id")
+      .eq("follower_id", targetUserId),
   ]);
 
   if (
@@ -168,12 +135,9 @@ export async function GET(
     console.error(
       "Failed to load Agore profile relationships:",
       {
-        blockError:
-          blockResult.error,
-        followersError:
-          followersResult.error,
-        followingError:
-          followingResult.error,
+        blockError: blockResult.error,
+        followersError: followersResult.error,
+        followingError: followingResult.error,
       },
     );
 
@@ -189,32 +153,26 @@ export async function GET(
   }
 
   const blockRelationships =
-    (blockResult.data ??
-      []) as BlockRow[];
+    (blockResult.data ?? []) as BlockRow[];
 
   const targetBlockedViewer =
     blockRelationships.some(
       (relationship) =>
-        relationship.blocker_id ===
-          targetUserId &&
-        relationship.blocked_id ===
-          user.id,
+        relationship.blocker_id === targetUserId &&
+        relationship.blocked_id === user.id,
     );
 
   const viewerBlockedTarget =
     blockRelationships.some(
       (relationship) =>
-        relationship.blocker_id ===
-          user.id &&
-        relationship.blocked_id ===
-          targetUserId,
+        relationship.blocker_id === user.id &&
+        relationship.blocked_id === targetUserId,
     );
 
   if (targetBlockedViewer) {
     return NextResponse.json(
       {
-        error:
-          "User not found.",
+        error: "User not found.",
       },
       {
         status: 404,
@@ -225,25 +183,21 @@ export async function GET(
   const {
     data: profile,
     error: profileError,
-  } =
-    await supabase
-      .from("profiles")
-      .select(
-        `
-          id,
-          display_name,
-          username,
-          bio,
-          avatar_path,
-          account_status,
-          created_at
-        `,
-      )
-      .eq(
-        "id",
-        targetUserId,
-      )
-      .maybeSingle();
+  } = await supabase
+    .from("profiles")
+    .select(
+      `
+        id,
+        display_name,
+        username,
+        bio,
+        avatar_path,
+        account_status,
+        created_at
+      `,
+    )
+    .eq("id", targetUserId)
+    .maybeSingle();
 
   if (profileError) {
     console.error(
@@ -253,8 +207,7 @@ export async function GET(
 
     return NextResponse.json(
       {
-        error:
-          "Unable to load the profile.",
+        error: "Unable to load the profile.",
       },
       {
         status: 500,
@@ -264,13 +217,11 @@ export async function GET(
 
   if (
     !profile ||
-    profile.account_status !==
-      "active"
+    profile.account_status !== "active"
   ) {
     return NextResponse.json(
       {
-        error:
-          "User not found.",
+        error: "User not found.",
       },
       {
         status: 404,
@@ -285,22 +236,18 @@ export async function GET(
     );
 
   const followerRows =
-    (followersResult.data ??
-      []) as ConnectionFollowRow[];
+    (followersResult.data ?? []) as ConnectionFollowRow[];
 
   const followingRows =
-    (followingResult.data ??
-      []) as ConnectionFollowRow[];
+    (followingResult.data ?? []) as ConnectionFollowRow[];
 
   const connectionIds = [
     ...new Set([
       ...followerRows.map(
-        (row) =>
-          row.follower_id,
+        (row) => row.follower_id,
       ),
       ...followingRows.map(
-        (row) =>
-          row.following_id,
+        (row) => row.following_id,
       ),
     ]),
   ];
@@ -308,25 +255,15 @@ export async function GET(
   let activeConnectionIds =
     new Set<string>();
 
-  if (
-    connectionIds.length > 0
-  ) {
+  if (connectionIds.length > 0) {
     const {
       data: connectionProfiles,
       error: connectionProfilesError,
     } = await admin
       .from("profiles")
-      .select(
-        "id, account_status",
-      )
-      .in(
-        "id",
-        connectionIds,
-      )
-      .eq(
-        "account_status",
-        "active",
-      );
+      .select("id, account_status")
+      .in("id", connectionIds)
+      .eq("account_status", "active");
 
     if (connectionProfilesError) {
       console.error(
@@ -345,14 +282,11 @@ export async function GET(
       );
     }
 
-    activeConnectionIds =
-      new Set(
-        (connectionProfiles ??
-          []).map(
-          (connection) =>
-            connection.id,
-        ),
-      );
+    activeConnectionIds = new Set(
+      (connectionProfiles ?? []).map(
+        (connection) => connection.id,
+      ),
+    );
   }
 
   const followerCount =
@@ -360,7 +294,6 @@ export async function GET(
       ? 0
       : countVisibleConnections(
           followerRows,
-          user.id,
           blockedConnectionIds,
           activeConnectionIds,
           "followers",
@@ -371,33 +304,28 @@ export async function GET(
       ? 0
       : countVisibleConnections(
           followingRows,
-          user.id,
           blockedConnectionIds,
           activeConnectionIds,
           "following",
         );
 
-  let isFollowing =
-    false;
+  let isFollowing = false;
 
   if (
     targetUserId !== user.id &&
     !viewerBlockedTarget
   ) {
-    isFollowing =
-      followerRows.some(
-        (row) =>
-          row.follower_id ===
-          user.id,
-      );
+    isFollowing = followerRows.some(
+      (row) =>
+        row.follower_id === user.id,
+    );
   }
 
   return NextResponse.json({
     profile: {
       ...profile,
       is_self:
-        targetUserId ===
-        user.id,
+        targetUserId === user.id,
       is_following:
         isFollowing,
       is_blocked:
