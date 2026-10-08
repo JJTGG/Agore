@@ -2219,14 +2219,16 @@ export default function ConversationPage() {
               </h1>
 
               <p className="truncate text-xs text-[var(--muted)]">
-                {conversation?.type ===
-                "direct" ? (
+                {conversation ? (
                   <ConversationPresence
                     conversationId={
                       conversation.id
                     }
                     currentUserId={
                       currentUserId
+                    }
+                    conversationType={
+                      conversation.type
                     }
                     participantId={
                       conversation
@@ -2235,9 +2237,7 @@ export default function ConversationPage() {
                     }
                     fallback={subtitle}
                   />
-                ) : (
-                  subtitle
-                )}
+                ) : null}
               </p>
             </div>
 
