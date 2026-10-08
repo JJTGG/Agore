@@ -1,10 +1,19 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+
+import {
+  getBlockedUserIds,
+} from "@/lib/messaging/conversation-access";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 const querySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(50).default(30),
+  limit: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(50)
+    .default(30),
 });
 
 type ConversationMember = {
@@ -17,7 +26,10 @@ type ConversationMember = {
 };
 
 type LatestMessageMedia = {
-  media_type: "image" | "file" | "audio";
+  media_type:
+    | "image"
+    | "file"
+    | "audio";
 };
 
 type LatestMessage = {
@@ -26,7 +38,9 @@ type LatestMessage = {
   content: string | null;
   created_at: string;
   deleted_at: string | null;
-  message_media: LatestMessageMedia[] | null;
+  message_media:
+    | LatestMessageMedia[]
+    | null;
 };
 
 type Conversation = {
@@ -36,12 +50,16 @@ type Conversation = {
   name: string | null;
   description: string | null;
   image_path: string | null;
-  direct_participant_a: string | null;
-  direct_participant_b: string | null;
+  direct_participant_a:
+    string | null;
+  direct_participant_b:
+    string | null;
   last_message_at: string | null;
   created_at: string;
   updated_at: string;
-  messages: LatestMessage[] | null;
+  messages:
+    | LatestMessage[]
+    | null;
 };
 
 type Profile = {
@@ -58,17 +76,21 @@ function getLatestMessagePreview(
     return "No messages yet";
   }
 
-  const content = message.content?.trim();
+  const content =
+    message.content?.trim();
 
   if (content) {
     return content;
   }
 
-  const media = message.message_media ?? [];
+  const media =
+    message.message_media ?? [];
 
   if (
     media.some(
-      (item) => item.media_type === "audio",
+      (item) =>
+        item.media_type ===
+        "audio",
     )
   ) {
     return "Voice message";
@@ -76,7 +98,9 @@ function getLatestMessagePreview(
 
   if (
     media.some(
-      (item) => item.media_type === "image",
+      (item) =>
+        item.media_type ===
+        "image",
     )
   ) {
     return "Image";
@@ -84,7 +108,9 @@ function getLatestMessagePreview(
 
   if (
     media.some(
-      (item) => item.media_type === "file",
+      (item) =>
+        item.media_type ===
+        "file",
     )
   ) {
     return "Attachment";
@@ -93,8 +119,11 @@ function getLatestMessagePreview(
   return "Message";
 }
 
-export async function GET(request: Request) {
-  const supabase = await createClient();
+export async function GET(
+  request: Request,
+) {
+  const supabase =
+    await createClient();
 
   const {
     data: { user },
@@ -104,7 +133,8 @@ export async function GET(request: Request) {
   if (userError || !user) {
     return NextResponse.json(
       {
-        error: "Authentication required.",
+        error:
+          "Authentication required.",
       },
       {
         status: 401,
@@ -118,8 +148,9 @@ export async function GET(request: Request) {
   const parsedQuery =
     querySchema.safeParse({
       limit:
-        searchParams.get("limit") ??
-        undefined,
+        searchParams.get(
+          "limit",
+        ) ?? undefined,
     });
 
   if (!parsedQuery.success) {
@@ -134,13 +165,35 @@ export async function GET(request: Request) {
     );
   }
 
-  const admin = createAdminClient();
+  const admin =
+    createAdminClient();
+
+  const {
+    ids: blockedUserIds,
+    error: blockError,
+  } = await getBlockedUserIds(
+    user.id,
+  );
+
+  if (blockError || !blockedUserIds) {
+    return NextResponse.json(
+      {
+        error:
+          "Unable to load your conversations.",
+      },
+      {
+        status: 500,
+      },
+    );
+  }
 
   const {
     data: memberships,
     error: membershipError,
   } = await admin
-    .from("conversation_members")
+    .from(
+      "conversation_members",
+    )
     .select(
       `
         conversation_id,
@@ -156,7 +209,13 @@ export async function GET(request: Request) {
     .order("joined_at", {
       ascending: false,
     })
-    .limit(parsedQuery.data.limit);
+    .limit(
+      Math.min(
+        parsedQuery.data.limit +
+          20,
+        100,
+      ),
+    );
 
   if (membershipError) {
     console.error(
@@ -197,7 +256,8 @@ export async function GET(request: Request) {
 
   const {
     data: conversations,
-    error: conversationsError,
+    error:
+      conversationsError,
   } = await admin
     .from("conversations")
     .select(
@@ -225,14 +285,22 @@ export async function GET(request: Request) {
         )
       `,
     )
-    .in("id", conversationIds)
-    .is("messages.deleted_at", null)
+    .in(
+      "id",
+      conversationIds,
+    )
+    .is(
+      "messages.deleted_at",
+      null,
+    )
     .order("created_at", {
       ascending: false,
-      referencedTable: "messages",
+      referencedTable:
+        "messages",
     })
     .limit(1, {
-      referencedTable: "messages",
+      referencedTable:
+        "messages",
     });
 
   if (conversationsError) {
@@ -289,10 +357,12 @@ export async function GET(request: Request) {
     ),
   ];
 
-  let profiles: Profile[] = [];
+  let profiles: Profile[] =
+    [];
 
   if (
-    directOtherUserIds.length > 0
+    directOtherUserIds.length >
+    0
   ) {
     const {
       data: profileRows,
@@ -333,135 +403,158 @@ export async function GET(request: Request) {
         []) as Profile[];
   }
 
-  const profileMap = new Map(
-    profiles.map((profile) => [
-      profile.id,
-      profile,
-    ]),
-  );
+  const profileMap =
+    new Map(
+      profiles.map(
+        (profile) => [
+          profile.id,
+          profile,
+        ],
+      ),
+    );
 
   const membershipMap =
     new Map(
       (
         memberships as ConversationMember[]
-      ).map((membership) => [
-        membership.conversation_id,
-        membership,
-      ]),
+      ).map(
+        (membership) => [
+          membership.conversation_id,
+          membership,
+        ],
+      ),
     );
 
   const result =
     typedConversations
-      .map((conversation) => {
-        const membership =
-          membershipMap.get(
-            conversation.id,
-          );
+      .map(
+        (conversation) => {
+          const membership =
+            membershipMap.get(
+              conversation.id,
+            );
 
-        if (!membership) {
-          return null;
-        }
+          if (!membership) {
+            return null;
+          }
 
-        let participant:
-          | Profile
-          | null = null;
+          let participant:
+            | Profile
+            | null = null;
 
-        if (
-          conversation.type ===
-            "direct" &&
-          conversation.direct_participant_a &&
-          conversation.direct_participant_b
-        ) {
-          const otherUserId =
-            conversation.direct_participant_a ===
-            user.id
-              ? conversation.direct_participant_b
-              : conversation.direct_participant_a;
+          if (
+            conversation.type ===
+              "direct" &&
+            conversation.direct_participant_a &&
+            conversation.direct_participant_b
+          ) {
+            const otherUserId =
+              conversation.direct_participant_a ===
+              user.id
+                ? conversation.direct_participant_b
+                : conversation.direct_participant_a;
 
-          participant =
-            profileMap.get(
-              otherUserId,
-            ) ?? null;
-        }
+            if (
+              blockedUserIds.has(
+                otherUserId,
+              )
+            ) {
+              return null;
+            }
 
-        const latestMessage =
-          conversation.messages?.[0] ??
-          null;
+            participant =
+              profileMap.get(
+                otherUserId,
+              ) ?? null;
 
-        const latestMessagePreview =
-          getLatestMessagePreview(
-            latestMessage,
-          );
+            if (!participant) {
+              return null;
+            }
+          }
 
-        const latestMessageIsOwn =
-          latestMessage?.sender_id ===
-          user.id;
+          const latestMessage =
+            conversation.messages?.[0] ??
+            null;
 
-        const hasUnreadMessages =
-          Boolean(
-            latestMessage &&
-              !latestMessageIsOwn &&
-              (
-                membership.last_read_at ===
-                  null ||
-                new Date(
-                  latestMessage.created_at,
-                ).getTime() >
+          const latestMessagePreview =
+            getLatestMessagePreview(
+              latestMessage,
+            );
+
+          const latestMessageIsOwn =
+            latestMessage?.sender_id ===
+            user.id;
+
+          const hasUnreadMessages =
+            Boolean(
+              latestMessage &&
+                !latestMessageIsOwn &&
+                (
+                  membership.last_read_at ===
+                    null ||
                   new Date(
-                    membership.last_read_at,
-                  ).getTime()
-              ),
-          );
-
-        return {
-          id: conversation.id,
-          type: conversation.type,
-          created_by:
-            conversation.created_by,
-          name: conversation.name,
-          description:
-            conversation.description,
-          image_path:
-            conversation.image_path,
-          last_message_at:
-            conversation.last_message_at,
-          created_at:
-            conversation.created_at,
-          updated_at:
-            conversation.updated_at,
-          membership: {
-            role: membership.role,
-            joined_at:
-              membership.joined_at,
-            last_read_at:
-              membership.last_read_at,
-          },
-          participant,
-          latest_message:
-            latestMessage
-              ? {
-                  id: latestMessage.id,
-                  sender_id:
-                    latestMessage.sender_id,
-                  content:
-                    latestMessage.content,
-                  created_at:
                     latestMessage.created_at,
-                  preview:
-                    latestMessagePreview,
-                }
-              : null,
-          has_unread_messages:
-            hasUnreadMessages,
-        };
-      })
+                  ).getTime() >
+                    new Date(
+                      membership.last_read_at,
+                    ).getTime()
+                ),
+            );
+
+          return {
+            id: conversation.id,
+            type: conversation.type,
+            created_by:
+              conversation.created_by,
+            name:
+              conversation.name,
+            description:
+              conversation.description,
+            image_path:
+              conversation.image_path,
+            last_message_at:
+              conversation.last_message_at,
+            created_at:
+              conversation.created_at,
+            updated_at:
+              conversation.updated_at,
+            membership: {
+              role:
+                membership.role,
+              joined_at:
+                membership.joined_at,
+              last_read_at:
+                membership.last_read_at,
+            },
+            participant,
+            latest_message:
+              latestMessage
+                ? {
+                    id:
+                      latestMessage.id,
+                    sender_id:
+                      latestMessage.sender_id,
+                    content:
+                      latestMessage.content,
+                    created_at:
+                      latestMessage.created_at,
+                    preview:
+                      latestMessagePreview,
+                  }
+                : null,
+            has_unread_messages:
+              hasUnreadMessages,
+          };
+        },
+      )
       .filter(
         (
           conversation,
         ): conversation is NonNullable<
           typeof conversation
         > =>
-          conversation !== null,
+          conversation !==
+          null,
       )
       .sort((a, b) => {
         const aDate =
@@ -484,6 +577,7 @@ export async function GET(request: Request) {
       );
 
   return NextResponse.json({
-    conversations: result,
+    conversations:
+      result,
   });
 }
