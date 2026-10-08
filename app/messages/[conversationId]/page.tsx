@@ -297,6 +297,9 @@ type MessageBubbleProps = {
   editDraft: string;
   editSaving: boolean;
   onReply: (message: ReplyTarget) => void;
+  onJumpToMessage: (
+    messageId: string,
+  ) => void;
   onEdit: (message: Message) => void;
   onEditDraftChange: (value: string) => void;
   onSaveEdit: (messageId: string) => Promise<void>;
@@ -315,6 +318,7 @@ function MessageBubble({
   editDraft,
   editSaving,
   onReply,
+  onJumpToMessage,
   onEdit,
   onEditDraftChange,
   onSaveEdit,
@@ -471,7 +475,9 @@ function MessageBubble({
               <button
                 type="button"
                 onClick={() =>
-                  onReply(replyTarget)
+                  onJumpToMessage(
+                    replyTarget.id,
+                  )
                 }
                 className={`mb-3 block w-full overflow-hidden rounded-xl border-l-2 px-3 py-2 text-left transition ${
                   isOwn
@@ -752,6 +758,13 @@ export default function ConversationPage() {
   ] = useState(false);
 
   const [
+    highlightedMessageId,
+    setHighlightedMessageId,
+  ] = useState<string | null>(
+    null,
+  );
+
+  const [
     groupOpen,
     setGroupOpen,
   ] = useState(false);
@@ -820,6 +833,9 @@ export default function ConversationPage() {
 
   const initialScrollDoneRef =
     useRef(false);
+
+  const highlightTimeoutRef =
+    useRef<number | null>(null);
 
   const title = useMemo(() => {
     if (!conversation) {
@@ -1298,6 +1314,19 @@ export default function ConversationPage() {
       );
   }, [messages]);
 
+  useEffect(() => {
+    return () => {
+      if (
+        highlightTimeoutRef.current !==
+        null
+      ) {
+        window.clearTimeout(
+          highlightTimeoutRef.current,
+        );
+      }
+    };
+  }, []);
+
   function scrollToLatest() {
     messagesBottomRef.current?.scrollIntoView(
       {
@@ -1310,6 +1339,44 @@ export default function ConversationPage() {
       true;
 
     setShowJumpToLatest(false);
+  }
+
+  function jumpToMessage(
+    messageId: string,
+  ) {
+    const element =
+      document.getElementById(
+        `agore-message-${messageId}`,
+      );
+
+    if (!element) {
+      return;
+    }
+
+    element.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+
+    setHighlightedMessageId(
+      messageId,
+    );
+
+    if (
+      highlightTimeoutRef.current !==
+      null
+    ) {
+      window.clearTimeout(
+        highlightTimeoutRef.current,
+      );
+    }
+
+    highlightTimeoutRef.current =
+      window.setTimeout(() => {
+        setHighlightedMessageId(null);
+        highlightTimeoutRef.current =
+          null;
+      }, 1200);
   }
 
   function startReply(
@@ -2298,12 +2365,18 @@ export default function ConversationPage() {
 
                     return (
                       <div
+                        id={`agore-message-${message.id}`}
                         key={message.id}
-                        className={
+                        className={`rounded-2xl transition-all duration-300 ${
+                          highlightedMessageId ===
+                          message.id
+                            ? "bg-[var(--accent-soft)]/70 ring-2 ring-[var(--accent)]/30"
+                            : ""
+                        } ${
                           grouped
                             ? "mt-0.5"
                             : "mt-4 first:mt-0"
-                        }
+                        }`}
                       >
                         {currentDay !==
                         previousDay ? (
@@ -2347,6 +2420,9 @@ export default function ConversationPage() {
                           }
                           onReply={
                             startReply
+                          }
+                          onJumpToMessage={
+                            jumpToMessage
                           }
                           onEdit={
                             beginEdit
