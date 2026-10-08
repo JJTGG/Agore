@@ -53,7 +53,9 @@ function sortPostMedia<
     sort_order: number;
     created_at: string;
   },
->(media: T[] | null | undefined) {
+>(
+  media: T[] | null | undefined,
+) {
   return [...(media ?? [])].sort(
     (a, b) =>
       a.sort_order - b.sort_order ||
@@ -66,7 +68,8 @@ export async function GET(
   request: Request,
   context: RouteContext,
 ) {
-  const supabase = await createClient();
+  const supabase =
+    await createClient();
 
   const {
     data: { user },
@@ -152,7 +155,8 @@ export async function PATCH(
   request: Request,
   context: RouteContext,
 ) {
-  const supabase = await createClient();
+  const supabase =
+    await createClient();
 
   const {
     data: { user },
@@ -221,7 +225,9 @@ export async function PATCH(
     error: existingPostError,
   } = await supabase
     .from("posts")
-    .select("id")
+    .select(
+      "id, author_id, deleted_at",
+    )
     .eq(
       "id",
       parsedPostId.data,
@@ -253,6 +259,29 @@ export async function PATCH(
     );
   }
 
+  if (
+    existingPost.author_id !==
+    user.id
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          "You can only edit your own post.",
+      },
+      { status: 403 },
+    );
+  }
+
+  if (existingPost.deleted_at) {
+    return NextResponse.json(
+      {
+        error:
+          "Deleted posts cannot be edited.",
+      },
+      { status: 400 },
+    );
+  }
+
   const {
     data: post,
     error: updateError,
@@ -261,10 +290,20 @@ export async function PATCH(
     .update({
       content:
         parsedBody.data.content,
+      updated_at:
+        new Date().toISOString(),
     })
     .eq(
       "id",
       parsedPostId.data,
+    )
+    .eq(
+      "author_id",
+      user.id,
+    )
+    .is(
+      "deleted_at",
+      null,
     )
     .select(
       `
@@ -273,9 +312,10 @@ export async function PATCH(
         content,
         created_at,
         updated_at,
-        profiles (
+        profiles!posts_author_id_fkey (
           display_name,
-          username
+          username,
+          avatar_path
         )
       `,
     )
@@ -403,7 +443,9 @@ export async function DELETE(
     error: mediaLookupError,
   } = await admin
     .from("post_media")
-    .select("id, storage_path")
+    .select(
+      "id, storage_path",
+    )
     .eq(
       "post_id",
       post.id,
@@ -440,23 +482,27 @@ export async function DELETE(
   const {
     data: deletedPost,
     error: deleteError,
-  } = await admin
-    .from("posts")
-    .update({
-      deleted_at:
-        new Date().toISOString(),
-    })
-    .eq(
-      "id",
-      post.id,
-    )
-    .eq(
-      "author_id",
-      user.id,
-    )
-    .is("deleted_at", null)
-    .select("id")
-    .maybeSingle();
+  } =
+    await admin
+      .from("posts")
+      .update({
+        deleted_at:
+          new Date().toISOString(),
+      })
+      .eq(
+        "id",
+        post.id,
+      )
+      .eq(
+        "author_id",
+        user.id,
+      )
+      .is(
+        "deleted_at",
+        null,
+      )
+      .select("id")
+      .maybeSingle();
 
   if (deleteError) {
     console.error(
@@ -488,7 +534,9 @@ export async function DELETE(
       error: storageError,
     } = await admin.storage
       .from("post-media")
-      .remove(storagePaths);
+      .remove(
+        storagePaths,
+      );
 
     if (storageError) {
       console.error(
@@ -502,13 +550,14 @@ export async function DELETE(
     } else {
       const {
         error: mediaDeleteError,
-      } = await admin
-        .from("post_media")
-        .delete()
-        .eq(
-          "post_id",
-          post.id,
-        );
+      } =
+        await admin
+          .from("post_media")
+          .delete()
+          .eq(
+            "post_id",
+            post.id,
+          );
 
       if (mediaDeleteError) {
         console.error(
@@ -520,13 +569,14 @@ export async function DELETE(
   } else {
     const {
       error: mediaDeleteError,
-    } = await admin
-      .from("post_media")
-      .delete()
-      .eq(
-        "post_id",
-        post.id,
-      );
+    } =
+      await admin
+        .from("post_media")
+        .delete()
+        .eq(
+          "post_id",
+          post.id,
+        );
 
     if (mediaDeleteError) {
       console.error(
