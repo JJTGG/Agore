@@ -7,7 +7,12 @@ import { createClient } from "@/lib/supabase/server";
 const userIdSchema = z.uuid();
 
 const querySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  limit: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(100)
+    .default(50),
 });
 
 type RouteContext = {
@@ -21,6 +26,21 @@ type BlockRow = {
   blocked_id: string;
 };
 
+type MediaProfile = {
+  account_status: string;
+};
+
+type MediaPost = {
+  id: string;
+  author_id: string;
+  content: string;
+  created_at: string;
+  deleted_at: string | null;
+  profiles:
+    | MediaProfile[]
+    | null;
+};
+
 type MediaRow = {
   id: string;
   post_id: string;
@@ -32,18 +52,7 @@ type MediaRow = {
   sort_order: number;
   created_at: string;
   posts:
-    | {
-        id: string;
-        author_id: string;
-        content: string;
-        created_at: string;
-        deleted_at: string | null;
-        profiles:
-          | {
-              account_status: string;
-            }
-          | null;
-      }
+    | MediaPost[]
     | null;
 };
 
@@ -96,12 +105,15 @@ export async function GET(
     parsedUserId.data;
 
   const searchParams =
-    new URL(request.url).searchParams;
+    new URL(request.url)
+      .searchParams;
 
   const parsedQuery =
     querySchema.safeParse({
       limit:
-        searchParams.get("limit") ??
+        searchParams.get(
+          "limit",
+        ) ??
         undefined,
     });
 
@@ -173,7 +185,8 @@ export async function GET(
 
   if (
     !profileResult.data ||
-    profileResult.data.account_status !==
+    profileResult.data
+      .account_status !==
       "active"
   ) {
     return NextResponse.json(
@@ -230,56 +243,58 @@ export async function GET(
     data: mediaRows,
     error: mediaError,
     count,
-  } = await admin
-    .from("post_media")
-    .select(
-      `
-        id,
-        post_id,
-        storage_path,
-        mime_type,
-        size_bytes,
-        width,
-        height,
-        sort_order,
-        created_at,
-        posts!post_media_post_id_fkey (
+  } =
+    await admin
+      .from("post_media")
+      .select(
+        `
           id,
-          author_id,
-          content,
+          post_id,
+          storage_path,
+          mime_type,
+          size_bytes,
+          width,
+          height,
+          sort_order,
           created_at,
-          deleted_at,
-          profiles!posts_author_id_fkey (
-            account_status
+          posts!post_media_post_id_fkey (
+            id,
+            author_id,
+            content,
+            created_at,
+            deleted_at,
+            profiles!posts_author_id_fkey (
+              account_status
+            )
           )
-        )
-      `,
-      {
-        count: "exact",
-      },
-    )
-    .eq(
-      "posts.author_id",
-      targetUserId,
-    )
-    .is(
-      "posts.deleted_at",
-      null,
-    )
-    .eq(
-      "posts.profiles.account_status",
-      "active",
-    )
-    .order(
-      "created_at",
-      {
-        ascending: false,
-      },
-    )
-    .range(
-      0,
-      parsedQuery.data.limit - 1,
-    );
+        `,
+        {
+          count: "exact",
+        },
+      )
+      .eq(
+        "posts.author_id",
+        targetUserId,
+      )
+      .is(
+        "posts.deleted_at",
+        null,
+      )
+      .eq(
+        "posts.profiles.account_status",
+        "active",
+      )
+      .order(
+        "created_at",
+        {
+          ascending: false,
+        },
+      )
+      .range(
+        0,
+        parsedQuery.data.limit -
+          1,
+      );
 
   if (mediaError) {
     console.error(
@@ -323,9 +338,29 @@ export async function GET(
 
   for (const row of rows) {
     const post =
-      row.posts;
+      Array.isArray(
+        row.posts,
+      )
+        ? row.posts[0] ??
+          null
+        : null;
 
     if (!post) {
+      continue;
+    }
+
+    const profile =
+      Array.isArray(
+        post.profiles,
+      )
+        ? post.profiles[0] ??
+          null
+        : null;
+
+    if (
+      profile?.account_status !==
+      "active"
+    ) {
       continue;
     }
 
@@ -369,10 +404,37 @@ export async function GET(
     });
   }
 
+  for (const post of posts.values()) {
+    post.post_media.sort(
+      (a, b) => {
+        if (
+          a.sort_order !==
+          b.sort_order
+        ) {
+          return (
+            a.sort_order -
+            b.sort_order
+          );
+        }
+
+        return (
+          new Date(
+            a.created_at,
+          ).getTime() -
+          new Date(
+            b.created_at,
+          ).getTime()
+        );
+      },
+    );
+  }
+
   return NextResponse.json({
     media: Array.from(
       posts.values(),
     ),
-    total: count ?? rows.length,
+    total:
+      count ??
+      rows.length,
   });
 }
