@@ -1,4 +1,3 @@
-
 "use client";
 
 import Link from "next/link";
@@ -41,6 +40,7 @@ type AccountType =
   | "institution";
 
 type VerificationKind =
+  | "agore_official"
   | "official"
   | "paid"
   | null;
