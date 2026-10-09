@@ -30,11 +30,6 @@ type MessageRow = {
   deleted_at: string | null;
 };
 
-type MessageMediaRow = {
-  id: string;
-  storage_path: string;
-};
-
 async function getAuthenticatedUser() {
   const supabase = await createClient();
 
@@ -232,18 +227,14 @@ export async function PATCH(
       },
       {
         status:
-          loaded.error ===
-          "Message not found."
+          loaded.error === "Message not found."
             ? 404
             : 500,
       },
     );
   }
 
-  if (
-    loaded.message.sender_id !==
-    user.id
-  ) {
+  if (loaded.message.sender_id !== user.id) {
     return NextResponse.json(
       {
         error:
@@ -253,9 +244,7 @@ export async function PATCH(
     );
   }
 
-  if (
-    !loaded.message.content?.trim()
-  ) {
+  if (!loaded.message.content?.trim()) {
     return NextResponse.json(
       {
         error:
@@ -265,22 +254,20 @@ export async function PATCH(
     );
   }
 
-  const { data: message, error } =
-    await admin
-      .from("messages")
-      .update({
-        content: parsedBody.data.content,
-        updated_at:
-          new Date().toISOString(),
-      })
-      .eq("id", messageId)
-      .eq("conversation_id", conversationId)
-      .eq("sender_id", user.id)
-      .is("deleted_at", null)
-      .select(
-        "id, conversation_id, sender_id, content, reply_to_message_id, created_at, updated_at, deleted_at",
-      )
-      .single();
+  const { data: message, error } = await admin
+    .from("messages")
+    .update({
+      content: parsedBody.data.content,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", messageId)
+    .eq("conversation_id", conversationId)
+    .eq("sender_id", user.id)
+    .is("deleted_at", null)
+    .select(
+      "id, conversation_id, sender_id, content, reply_to_message_id, created_at, updated_at, deleted_at",
+    )
+    .single();
 
   if (error) {
     console.error(
@@ -379,18 +366,14 @@ export async function DELETE(
       },
       {
         status:
-          loaded.error ===
-          "Message not found."
+          loaded.error === "Message not found."
             ? 404
             : 500,
       },
     );
   }
 
-  if (
-    loaded.message.sender_id !==
-    user.id
-  ) {
+  if (loaded.message.sender_id !== user.id) {
     return NextResponse.json(
       {
         error:
@@ -400,32 +383,99 @@ export async function DELETE(
     );
   }
 
-  const {
-    data: media,
-    error: mediaError,
-  } = await admin
-    .from("message_media")
-    .select("id, storage_path")
-    .eq("message_id", messageId);
+  const messageFolder = messageId;
+  const expectedPrefix = `${messageFolder}/`;
+  const storagePaths = new Set<string>();
 
-  if (mediaError) {
+  // Discover stored objects even if their database
+  // metadata was never created.
+  const {
+    data: storedFiles,
+    error: storageListError,
+  } = await admin.storage
+    .from("message-media")
+    .list(messageFolder, {
+      limit: 100,
+    });
+
+  if (storageListError) {
     console.error(
-      "Failed to load Agore message media for deletion:",
-      mediaError,
+      "Failed to list Agore message media for deletion:",
+      storageListError,
     );
 
     return NextResponse.json(
       {
         error:
-          "Unable to prepare the message for deletion.",
+          "Unable to inspect message attachments. You can retry deletion.",
       },
       { status: 500 },
     );
   }
 
-  const mediaRows =
-    (media ?? []) as MessageMediaRow[];
+  for (const file of storedFiles ?? []) {
+    if (
+      !file.name ||
+      file.id === null ||
+      file.id === undefined ||
+      file.name.includes("/")
+    ) {
+      continue;
+    }
 
+    storagePaths.add(
+      `${expectedPrefix}${file.name}`,
+    );
+  }
+
+  // Do not delete the message or its metadata unless
+  // Storage cleanup succeeds. This keeps retries possible.
+  if (storagePaths.size > 0) {
+    const { error: storageError } =
+      await admin.storage
+        .from("message-media")
+        .remove([...storagePaths]);
+
+    if (storageError) {
+      console.error(
+        "Failed to remove Agore message media:",
+        storageError,
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            "Unable to remove message attachments. Retry deletion.",
+        },
+        { status: 500 },
+      );
+    }
+  }
+
+  // Remove metadata whether or not corresponding files
+  // were found in Storage.
+  const { error: mediaDeleteError } = await admin
+    .from("message_media")
+    .delete()
+    .eq("message_id", messageId);
+
+  if (mediaDeleteError) {
+    console.error(
+      "Failed to delete Agore message media records:",
+      mediaDeleteError,
+    );
+
+    return NextResponse.json(
+      {
+        error:
+          "Attachments were cleaned up, but metadata deletion failed. Retry deletion.",
+      },
+      { status: 500 },
+    );
+  }
+
+  // Soft-delete only after storage and metadata cleanup
+  // succeed, so an earlier failure does not block retries.
   const now = new Date().toISOString();
 
   const {
@@ -454,42 +504,9 @@ export async function DELETE(
     );
 
     return NextResponse.json(
-      { error: "Unable to delete the message." },
+      { error: "Unable to delete the message. Retry deletion." },
       { status: 500 },
     );
-  }
-
-  if (mediaRows.length > 0) {
-    const storagePaths = mediaRows.map(
-      (item) => item.storage_path,
-    );
-
-    const {
-      error: storageError,
-    } = await admin.storage
-      .from("message-media")
-      .remove(storagePaths);
-
-    if (storageError) {
-      console.error(
-        "Failed to remove Agore message media:",
-        storageError,
-      );
-    }
-
-    const {
-      error: mediaDeleteError,
-    } = await admin
-      .from("message_media")
-      .delete()
-      .eq("message_id", messageId);
-
-    if (mediaDeleteError) {
-      console.error(
-        "Failed to delete Agore message media records:",
-        mediaDeleteError,
-      );
-    }
   }
 
   return NextResponse.json({
