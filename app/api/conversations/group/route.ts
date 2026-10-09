@@ -103,12 +103,19 @@ export async function POST(request: Request) {
     );
   }
 
-  const { data: blockRelationships, error: blockError } = await admin
+  // Include the creator and every selected participant so that
+  // block relationships between any two group participants
+  // are checked before the group is created.
+  const participantIds = [user.id, ...memberIds];
+
+  const {
+    data: blockRelationships,
+    error: blockError,
+  } = await admin
     .from("blocks")
     .select("blocker_id, blocked_id")
-    .or(
-      `blocker_id.eq.${user.id},blocked_id.eq.${user.id}`,
-    );
+    .in("blocker_id", participantIds)
+    .in("blocked_id", participantIds);
 
   if (blockError) {
     console.error(
@@ -122,33 +129,20 @@ export async function POST(request: Request) {
     );
   }
 
-  const blockedUserIds = new Set<string>();
-
-  for (const relationship of blockRelationships ?? []) {
-    if (relationship.blocker_id === user.id) {
-      blockedUserIds.add(relationship.blocked_id);
-    }
-
-    if (relationship.blocked_id === user.id) {
-      blockedUserIds.add(relationship.blocker_id);
-    }
-  }
-
-  const blockedSelectedMember = memberIds.some((memberId) =>
-    blockedUserIds.has(memberId),
-  );
-
-  if (blockedSelectedMember) {
+  if ((blockRelationships ?? []).length > 0) {
     return NextResponse.json(
       {
         error:
-          "You cannot add someone with an active block relationship.",
+          "You cannot create a group when selected members have an active block relationship.",
       },
       { status: 403 },
     );
   }
 
-  const { data: conversation, error: conversationError } = await admin
+  const {
+    data: conversation,
+    error: conversationError,
+  } = await admin
     .from("conversations")
     .insert({
       type: "group",
@@ -156,19 +150,17 @@ export async function POST(request: Request) {
       name,
       description: description || null,
     })
-    .select(
-      `
-        id,
-        type,
-        created_by,
-        name,
-        description,
-        image_path,
-        last_message_at,
-        created_at,
-        updated_at
-      `,
-    )
+    .select(`
+      id,
+      type,
+      created_by,
+      name,
+      description,
+      image_path,
+      last_message_at,
+      created_at,
+      updated_at
+    `)
     .single();
 
   if (conversationError || !conversation) {
@@ -206,10 +198,17 @@ export async function POST(request: Request) {
       membersError,
     );
 
-    await admin
+    const { error: cleanupError } = await admin
       .from("conversations")
       .delete()
       .eq("id", conversation.id);
+
+    if (cleanupError) {
+      console.error(
+        "Failed to roll back incomplete Agore group creation:",
+        cleanupError,
+      );
+    }
 
     return NextResponse.json(
       { error: "Unable to finish creating the group." },
