@@ -894,46 +894,95 @@ export async function DELETE(
   } = await admin
     .from("message_media")
     .select("storage_path")
-    .eq(
-      "message_id",
-      parsedMessageId.data,
-    );
+    .eq("message_id", parsedMessageId.data);
 
   if (mediaLookupError) {
     console.error(
       "Failed to load Agore media cleanup attachments:",
       mediaLookupError,
     );
+
+    return NextResponse.json(
+      { error: "Unable to prepare the media cleanup." },
+      { status: 500 },
+    );
   }
 
-  const storagePaths =
-    (media ?? [])
-      .map(
-        (item) =>
-          item.storage_path,
-      )
-      .filter(
-        (path) =>
-          path.startsWith(
-            `${parsedMessageId.data}/`,
-          ),
-      );
+  const messageFolder = parsedMessageId.data;
+  const expectedPrefix = `${messageFolder}/`;
+  const storagePaths = new Set<string>();
 
-  if (
-    storagePaths.length > 0
-  ) {
+  // Include paths that made it into message metadata.
+  for (const item of media ?? []) {
+    const path =
+      typeof item.storage_path === "string"
+        ? item.storage_path
+        : "";
+
+    if (!path.startsWith(expectedPrefix)) continue;
+
+    const relativePath = path.slice(expectedPrefix.length);
+
+    // Message uploads are deliberately one level below the message UUID.
+    // Never let cleanup remove objects from another folder.
+    if (relativePath && !relativePath.includes("/")) {
+      storagePaths.add(path);
+    }
+  }
+
+  // An upload may have reached Storage while finalization failed before its
+  // message_media row was inserted. Inspect this message's unique folder too.
+  const {
+    data: storedObjects,
+    error: storageListError,
+  } = await admin.storage
+    .from("message-media")
+    .list(messageFolder, {
+      limit: 100,
+    });
+
+  if (storageListError) {
+    console.error(
+      "Failed to list abandoned Agore media objects:",
+      storageListError,
+    );
+
+    return NextResponse.json(
+      { error: "Unable to inspect uploaded media for cleanup." },
+      { status: 500 },
+    );
+  }
+
+  for (const file of storedObjects ?? []) {
+    if (
+      !file.name ||
+      file.id === null ||
+      file.id === undefined ||
+      file.name.includes("/")
+    ) {
+      continue;
+    }
+
+    storagePaths.add(`${expectedPrefix}${file.name}`);
+  }
+
+  if (storagePaths.size > 0) {
     const {
       error: storageError,
     } = await admin.storage
       .from("message-media")
-      .remove(
-        storagePaths,
-      );
+      .remove([...storagePaths]);
 
     if (storageError) {
       console.error(
-        "Failed to remove Agore media objects:",
+        "Failed to remove Agore media objects during cleanup:",
         storageError,
+      );
+
+      // Keep the message and metadata available so cleanup can be retried.
+      return NextResponse.json(
+        { error: "Unable to remove uploaded media. Please retry cleanup." },
+        { status: 500 },
       );
     }
   }
@@ -943,15 +992,17 @@ export async function DELETE(
   } = await admin
     .from("message_media")
     .delete()
-    .eq(
-      "message_id",
-      parsedMessageId.data,
-    );
+    .eq("message_id", parsedMessageId.data);
 
   if (mediaDeleteError) {
     console.error(
       "Failed to remove Agore media metadata:",
       mediaDeleteError,
+    );
+
+    return NextResponse.json(
+      { error: "Unable to remove media metadata. Please retry cleanup." },
+      { status: 500 },
     );
   }
 
