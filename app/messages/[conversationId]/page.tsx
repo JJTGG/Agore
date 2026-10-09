@@ -6,6 +6,7 @@ import {
   KeyboardEvent,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -196,6 +197,7 @@ function isSameMessageGroup(
   current: Message,
 ) {
   if (!previous) return false;
+
   if (
     previous.sender_id !== current.sender_id ||
     !previous.sender_id ||
@@ -268,14 +270,17 @@ function MessageBubble({
   onDelete,
 }: MessageBubbleProps) {
   const hasText = Boolean(message.content?.trim());
+
   const audioMedia = message.media.filter(
     (media) => media.media_type === "audio",
   );
+
   const visualMedia = message.media.filter(
     (media) =>
       media.media_type === "image" ||
       media.media_type === "file",
   );
+
   const senderName = message.sender?.display_name ?? "Agoré user";
 
   if (editing) {
@@ -300,6 +305,7 @@ function MessageBubble({
               disabled={editSaving}
               className="min-h-20 w-full resize-none rounded-xl bg-[var(--surface-muted)] px-3 py-3 text-sm leading-6 outline-none placeholder:text-[var(--muted)] focus:ring-2 focus:ring-[var(--accent)]/10 disabled:opacity-50"
             />
+
             <div className="mt-2 flex items-center justify-end gap-2">
               <button
                 type="button"
@@ -309,6 +315,7 @@ function MessageBubble({
               >
                 Cancel
               </button>
+
               <button
                 type="submit"
                 disabled={editSaving || !editDraft.trim()}
@@ -399,6 +406,7 @@ function MessageBubble({
                       ? "You"
                       : "Message")}
                 </p>
+
                 <p
                   className={`mt-1 line-clamp-2 text-xs leading-5 ${
                     isOwn ? "text-white/75" : "text-[var(--muted)]"
@@ -434,6 +442,7 @@ function MessageBubble({
                 }
               >
                 <MessageMediaContent media={visualMedia} isOwn={isOwn} />
+
                 {audioMedia.length > 0 ? (
                   <div className="space-y-3">
                     {audioMedia.map((media) => (
@@ -446,6 +455,7 @@ function MessageBubble({
                     ))}
                   </div>
                 ) : null}
+
                 {hasText ? (
                   <p className="whitespace-pre-wrap break-words text-[15px] leading-6">
                     {message.content}
@@ -462,6 +472,7 @@ function MessageBubble({
                     isOwn={isOwn}
                   />
                 ))}
+
                 {hasText ? (
                   <p className="whitespace-pre-wrap break-words text-[15px] leading-6">
                     {message.content}
@@ -485,6 +496,7 @@ function MessageBubble({
             >
               {wasEdited(message) ? <span>edited</span> : null}
               <span>{formatMessageTime(message.created_at)}</span>
+
               {isOwn ? (
                 <MessageStatus
                   conversationId={message.conversation_id}
@@ -544,6 +556,9 @@ export default function ConversationPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [historyCursor, setHistoryCursor] = useState<string | null>(null);
+  const [hasOlderMessages, setHasOlderMessages] = useState(false);
+  const [loadingOlderMessages, setLoadingOlderMessages] = useState(false);
   const [draft, setDraft] = useState("");
   const [replyingTo, setReplyingTo] = useState<ReplyTarget | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
@@ -581,6 +596,14 @@ export default function ConversationPage() {
 
   const messagesViewportRef = useRef<HTMLDivElement | null>(null);
   const messagesBottomRef = useRef<HTMLDivElement | null>(null);
+
+  const pendingScrollRestoreRef = useRef<{
+    scrollHeight: number;
+    scrollTop: number;
+  } | null>(null);
+
+  const loadingOlderRef = useRef(false);
+  const hasLoadedOlderHistoryRef = useRef(false);
   const nearBottomRef = useRef(true);
   const initialScrollDoneRef = useRef(false);
   const highlightTimeoutRef = useRef<number | null>(null);
@@ -636,6 +659,7 @@ export default function ConversationPage() {
       }
 
       const found = data.conversation as Conversation | undefined;
+
       if (!found || found.id !== conversationId) {
         setError("Conversation not found.");
         setConversation(null);
@@ -669,6 +693,7 @@ export default function ConversationPage() {
 
       try {
         const params = new URLSearchParams({ limit: "50" });
+
         if (append && requestedCursor) {
           params.set("cursor", requestedCursor);
         }
@@ -765,9 +790,42 @@ export default function ConversationPage() {
           return;
         }
 
-        setMessages(
-          Array.isArray(data.messages) ? data.messages : [],
-        );
+        const incoming: Message[] = Array.isArray(data.messages)
+          ? data.messages
+          : [];
+
+        // Merge refresh/realtime results instead of replacing pages the user
+        // has already loaded from history.
+        setMessages((current) => {
+          const byId = new Map<string, Message>();
+
+          for (const message of current) {
+            byId.set(message.id, message);
+          }
+
+          for (const message of incoming) {
+            byId.set(message.id, message);
+          }
+
+          return [...byId.values()].sort((left, right) => {
+            const timeDifference =
+              new Date(left.created_at).getTime() -
+              new Date(right.created_at).getTime();
+
+            return timeDifference || left.id.localeCompare(right.id);
+          });
+        });
+
+        // Background refreshes must not reset the cursor after the user has
+        // paged into older history.
+        if (!hasLoadedOlderHistoryRef.current) {
+          setHistoryCursor(
+            typeof data.nextCursor === "string" ? data.nextCursor : null,
+          );
+          setHasOlderMessages(Boolean(data.hasMore));
+        }
+
+        setError("");
         void markConversationRead();
       } catch {
         setError("Unable to load messages.");
@@ -777,6 +835,98 @@ export default function ConversationPage() {
     },
     [conversationId, markConversationRead, router],
   );
+
+  const loadOlderMessages = useCallback(async () => {
+    const cursor = historyCursor;
+    const viewport = messagesViewportRef.current;
+
+    if (
+      !conversationId ||
+      !cursor ||
+      !hasOlderMessages ||
+      loadingOlderRef.current
+    ) {
+      return;
+    }
+
+    loadingOlderRef.current = true;
+    setLoadingOlderMessages(true);
+    setError("");
+
+    if (viewport) {
+      pendingScrollRestoreRef.current = {
+        scrollHeight: viewport.scrollHeight,
+        scrollTop: viewport.scrollTop,
+      };
+    }
+
+    try {
+      const params = new URLSearchParams({
+        limit: "100",
+        cursor,
+      });
+
+      const response = await fetch(
+        `/api/conversations/${encodeURIComponent(conversationId)}/messages?${params.toString()}`,
+        { cache: "no-store" },
+      );
+      const data = await response.json();
+
+      if (response.status === 401) {
+        pendingScrollRestoreRef.current = null;
+        router.push("/auth");
+        return;
+      }
+
+      if (!response.ok) {
+        pendingScrollRestoreRef.current = null;
+        setError(data.error ?? "Unable to load older messages.");
+        return;
+      }
+
+      const olderMessages: Message[] = Array.isArray(data.messages)
+        ? data.messages
+        : [];
+
+      hasLoadedOlderHistoryRef.current = true;
+
+      setMessages((current) => {
+        const byId = new Map<string, Message>();
+
+        for (const message of current) {
+          byId.set(message.id, message);
+        }
+
+        for (const message of olderMessages) {
+          byId.set(message.id, message);
+        }
+
+        return [...byId.values()].sort((left, right) => {
+          const timeDifference =
+            new Date(left.created_at).getTime() -
+            new Date(right.created_at).getTime();
+
+          return timeDifference || left.id.localeCompare(right.id);
+        });
+      });
+
+      setHistoryCursor(
+        typeof data.nextCursor === "string" ? data.nextCursor : null,
+      );
+      setHasOlderMessages(Boolean(data.hasMore));
+    } catch {
+      pendingScrollRestoreRef.current = null;
+      setError("Unable to load older messages. Try again.");
+    } finally {
+      loadingOlderRef.current = false;
+      setLoadingOlderMessages(false);
+    }
+  }, [
+    conversationId,
+    hasOlderMessages,
+    historyCursor,
+    router,
+  ]);
 
   const loadGroupMembers = useCallback(async () => {
     if (!conversationId || !conversation || conversation.type !== "group") {
@@ -836,6 +986,15 @@ export default function ConversationPage() {
       setLoading(true);
       setError("");
       initialScrollDoneRef.current = false;
+
+      pendingScrollRestoreRef.current = null;
+      hasLoadedOlderHistoryRef.current = false;
+      loadingOlderRef.current = false;
+
+      setHistoryCursor(null);
+      setHasOlderMessages(false);
+      setLoadingOlderMessages(false);
+      setMessages([]);
 
       try {
         await Promise.all([loadConversation(), loadMessages()]);
@@ -906,6 +1065,17 @@ export default function ConversationPage() {
 
       nearBottomRef.current = nearBottom;
       setShowJumpToLatest(!nearBottom);
+
+      // Automatically request the next older page when the user reaches the
+      // top of an already-open conversation. The initial mount is excluded.
+      if (
+        initialScrollDoneRef.current &&
+        viewport.scrollTop <= 72 &&
+        hasOlderMessages &&
+        !loadingOlderMessages
+      ) {
+        void loadOlderMessages();
+      }
     };
 
     viewport.addEventListener("scroll", handleScroll, {
@@ -916,7 +1086,19 @@ export default function ConversationPage() {
     return () => {
       viewport.removeEventListener("scroll", handleScroll);
     };
-  }, []);
+  }, [hasOlderMessages, loadingOlderMessages, loadOlderMessages]);
+
+  useLayoutEffect(() => {
+    const viewport = messagesViewportRef.current;
+    const pending = pendingScrollRestoreRef.current;
+
+    if (!viewport || !pending) return;
+
+    // Keep the same visible message in place after a page is prepended.
+    const heightDifference = viewport.scrollHeight - pending.scrollHeight;
+    viewport.scrollTop = pending.scrollTop + heightDifference;
+    pendingScrollRestoreRef.current = null;
+  }, [messages]);
 
   useEffect(() => {
     if (messages.length === 0) return;
@@ -934,6 +1116,7 @@ export default function ConversationPage() {
         behavior: initialScrollDoneRef.current ? "smooth" : "auto",
         block: "end",
       });
+
       initialScrollDoneRef.current = true;
       nearBottomRef.current = true;
       setShowJumpToLatest(false);
@@ -956,6 +1139,7 @@ export default function ConversationPage() {
       behavior: "smooth",
       block: "end",
     });
+
     nearBottomRef.current = true;
     setShowJumpToLatest(false);
   }
@@ -1278,6 +1462,7 @@ export default function ConversationPage() {
 
   async function searchMembers(value = memberQuery) {
     const query = value.trim();
+
     if (query.length < 2) {
       setMemberResults([]);
       return;
@@ -1309,6 +1494,7 @@ export default function ConversationPage() {
       const currentMemberIds = new Set(
         groupMembers.map((member) => member.userId),
       );
+
       setMemberResults(
         (Array.isArray(data.people) ? data.people : []).filter(
           (person: MemberSearchResult) =>
@@ -1353,6 +1539,7 @@ export default function ConversationPage() {
       setMemberResults((current) =>
         current.filter((person) => person.id !== userId),
       );
+
       await loadGroupMembers();
     } catch {
       setGroupActionError("Unable to add the member.");
@@ -1375,6 +1562,7 @@ export default function ConversationPage() {
 
     const member = groupMembers.find((item) => item.userId === userId);
     const memberName = member?.profile?.display_name ?? "this member";
+
     const actionLabel =
       requestedRole === "admin"
         ? "promote this member to admin"
@@ -1430,6 +1618,7 @@ export default function ConversationPage() {
     }
 
     const isSelf = userId === currentUserId;
+
     if (
       !window.confirm(
         isSelf
@@ -1550,12 +1739,14 @@ export default function ConversationPage() {
             <ArrowLeft size={17} />
             <span className="hidden sm:inline">Messages</span>
           </button>
+
           <Link
             href="/home"
             className="text-sm font-bold tracking-[0.18em] text-[var(--accent)]"
           >
             AGORÉ
           </Link>
+
           <div className="w-20 sm:w-28" />
         </header>
 
@@ -1582,6 +1773,7 @@ export default function ConversationPage() {
               <h1 className="truncate text-[15px] font-bold tracking-[-0.01em]">
                 {title}
               </h1>
+
               <p className="truncate text-xs text-[var(--muted)]">
                 {conversation ? (
                   <ConversationPresence
@@ -1646,9 +1838,11 @@ export default function ConversationPage() {
                 <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--danger-soft)] text-[var(--danger)]">
                   <MessageCircle size={20} />
                 </div>
+
                 <p className="mt-4 max-w-sm text-sm font-medium text-[var(--danger)]">
                   {error}
                 </p>
+
                 <Link
                   href="/messages"
                   className="mt-5 rounded-full bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--accent-strong)]"
@@ -1661,15 +1855,36 @@ export default function ConversationPage() {
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]">
                   <MessageCircle size={22} />
                 </div>
+
                 <h2 className="mt-5 text-lg font-bold tracking-[-0.02em]">
                   Start the conversation
                 </h2>
+
                 <p className="mt-2 max-w-sm text-sm leading-6 text-[var(--muted)]">
                   Send the first message and this space becomes yours to fill.
                 </p>
               </div>
             ) : (
               <div className="mx-auto flex w-full max-w-4xl flex-col gap-1">
+                {hasOlderMessages || loadingOlderMessages ? (
+                  <div className="flex justify-center py-2">
+                    <button
+                      type="button"
+                      onClick={() => void loadOlderMessages()}
+                      disabled={loadingOlderMessages}
+                      className="inline-flex min-h-9 items-center justify-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-raised)] px-4 py-2 text-xs font-semibold text-[var(--muted-strong)] transition hover:border-[var(--accent)]/40 hover:bg-[var(--accent-soft)] hover:text-[var(--accent)] disabled:cursor-wait disabled:opacity-60"
+                    >
+                      {loadingOlderMessages ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : null}
+
+                      {loadingOlderMessages
+                        ? "Loading older messages…"
+                        : "Load older messages"}
+                    </button>
+                  </div>
+                ) : null}
+
                 {messages.map((message, index) => {
                   const previousMessage = messages[index - 1];
                   const isOwn = message.sender_id === currentUserId;
@@ -1700,9 +1915,11 @@ export default function ConversationPage() {
                       {currentDay !== previousDay ? (
                         <div className="mb-5 mt-2 flex items-center gap-3">
                           <div className="h-px flex-1 bg-[var(--border)]" />
+
                           <span className="rounded-full border border-[var(--border)] bg-[var(--surface-raised)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--muted)]">
                             {currentDay}
                           </span>
+
                           <div className="h-px flex-1 bg-[var(--border)]" />
                         </div>
                       ) : null}
@@ -1731,7 +1948,12 @@ export default function ConversationPage() {
                     </div>
                   );
                 })}
-                <div ref={messagesBottomRef} className="h-1" aria-hidden="true" />
+
+                <div
+                  ref={messagesBottomRef}
+                  className="h-1"
+                  aria-hidden="true"
+                />
               </div>
             )}
 
@@ -1766,6 +1988,7 @@ export default function ConversationPage() {
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent)]">
                     <CornerUpLeft size={16} />
                   </div>
+
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-semibold text-[var(--accent)]">
                       Replying to{" "}
@@ -1773,10 +1996,12 @@ export default function ConversationPage() {
                         ? "yourself"
                         : replyingTo.sender?.display_name ?? "message"}
                     </p>
+
                     <p className="mt-1 truncate text-xs text-[var(--muted)]">
                       {truncateMessage(replyingTo)}
                     </p>
                   </div>
+
                   <button
                     type="button"
                     onClick={cancelReply}
@@ -1853,6 +2078,7 @@ export default function ConversationPage() {
                 <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--accent)]">
                   Message
                 </p>
+
                 <h2
                   id="forward-message-title"
                   className="mt-1 text-xl font-bold tracking-[-0.03em]"
@@ -1860,6 +2086,7 @@ export default function ConversationPage() {
                   Forward to…
                 </h2>
               </div>
+
               <button
                 type="button"
                 onClick={closeForwardDialog}
@@ -1879,6 +2106,7 @@ export default function ConversationPage() {
                     Forwarded message
                   </p>
                 </div>
+
                 <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-[var(--foreground)]">
                   {truncateMessage(forwardingMessage, 240)}
                 </p>
@@ -1889,6 +2117,7 @@ export default function ConversationPage() {
                   size={16}
                   className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"
                 />
+
                 <input
                   value={forwardSearch}
                   onChange={(event) => setForwardSearch(event.target.value)}
@@ -1914,12 +2143,15 @@ export default function ConversationPage() {
               ) : (
                 (() => {
                   const query = forwardSearch.trim().toLowerCase();
+
                   const filtered = forwardConversations.filter((item) => {
                     if (!query) return true;
+
                     const name =
                       item.type === "group"
                         ? item.name ?? "Unnamed group"
                         : item.participant?.display_name ?? "Agoré user";
+
                     const username = item.participant?.username ?? "";
 
                     return (
@@ -1934,9 +2166,11 @@ export default function ConversationPage() {
                         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]">
                           <MessageCircle size={19} />
                         </div>
+
                         <p className="mt-4 text-sm font-semibold">
                           No conversation found
                         </p>
+
                         <p className="mt-1 text-xs leading-5 text-[var(--muted)]">
                           Choose another conversation or search again.
                         </p>
@@ -1951,10 +2185,12 @@ export default function ConversationPage() {
                           item.type === "group"
                             ? item.name?.trim() || "Unnamed group"
                             : item.participant?.display_name || "Agoré user";
+
                         const avatarPath =
                           item.type === "group"
                             ? item.image_path
                             : item.participant?.avatar_path;
+
                         const targetSubtitle =
                           item.type === "group"
                             ? "Group conversation"
@@ -1976,14 +2212,17 @@ export default function ConversationPage() {
                               className="h-11 w-11 shrink-0"
                               textClassName="text-xs"
                             />
+
                             <div className="min-w-0 flex-1">
                               <p className="truncate text-sm font-semibold">
                                 {name}
                               </p>
+
                               <p className="mt-0.5 truncate text-xs text-[var(--muted)]">
                                 {targetSubtitle}
                               </p>
                             </div>
+
                             {forwardSending ? (
                               <Loader2
                                 size={16}
@@ -2015,6 +2254,7 @@ export default function ConversationPage() {
                   {forwardLoadingMore ? (
                     <Loader2 size={16} className="animate-spin" />
                   ) : null}
+
                   {forwardLoadingMore
                     ? "Loading destinations…"
                     : "Load more destinations"}
@@ -2038,6 +2278,7 @@ export default function ConversationPage() {
                 <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--accent)]">
                   Group
                 </p>
+
                 <h2
                   id="group-settings-title"
                   className="mt-1 text-xl font-bold tracking-[-0.03em]"
@@ -2045,6 +2286,7 @@ export default function ConversationPage() {
                   Group details
                 </h2>
               </div>
+
               <button
                 type="button"
                 onClick={() => {
@@ -2087,11 +2329,13 @@ export default function ConversationPage() {
                     <p className="truncate text-lg font-bold tracking-[-0.02em]">
                       {title}
                     </p>
+
                     <Users
                       size={15}
                       className="shrink-0 text-[var(--accent)]"
                     />
                   </div>
+
                   <p className="mt-1 text-sm text-[var(--muted)]">
                     {subtitle}
                   </p>
@@ -2112,6 +2356,7 @@ export default function ConversationPage() {
                     <span className="text-xs font-semibold text-[var(--muted-strong)]">
                       Group name
                     </span>
+
                     <input
                       value={groupName}
                       onChange={(event) => setGroupName(event.target.value)}
@@ -2125,6 +2370,7 @@ export default function ConversationPage() {
                     <span className="text-xs font-semibold text-[var(--muted-strong)]">
                       Description
                     </span>
+
                     <textarea
                       value={groupDescription}
                       onChange={(event) =>
@@ -2160,11 +2406,13 @@ export default function ConversationPage() {
                     <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">
                       Members
                     </p>
+
                     <p className="mt-1 text-sm text-[var(--muted)]">
                       {groupMembers.length} active member
                       {groupMembers.length === 1 ? "" : "s"}
                     </p>
                   </div>
+
                   <button
                     type="button"
                     onClick={() => void loadGroupMembers()}
@@ -2198,6 +2446,7 @@ export default function ConversationPage() {
                       <p className="text-sm font-semibold">
                         No active members found
                       </p>
+
                       <p className="mt-1 text-xs text-[var(--muted)]">
                         Refresh the group to try again.
                       </p>
@@ -2209,10 +2458,12 @@ export default function ConversationPage() {
                         const memberName =
                           profile?.display_name ?? "Agoré user";
                         const isSelf = member.userId === currentUserId;
+
                         const actionLoading =
                           memberActionLoading?.endsWith(
                             `:${member.userId}`,
                           ) ?? false;
+
                         const canManage =
                           currentUserRole === "admin" && !isSelf;
 
@@ -2227,22 +2478,26 @@ export default function ConversationPage() {
                               className="h-10 w-10"
                               textClassName="text-[10px]"
                             />
+
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-2">
                                 <p className="truncate text-sm font-semibold">
                                   {memberName}
                                 </p>
+
                                 {isSelf ? (
                                   <span className="rounded-full bg-[var(--accent-soft)] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-[var(--accent)]">
                                     You
                                   </span>
                                 ) : null}
+
                                 {member.role === "admin" ? (
                                   <span className="rounded-full bg-[var(--surface-muted)] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-[var(--muted-strong)]">
                                     Admin
                                   </span>
                                 ) : null}
                               </div>
+
                               {profile?.username ? (
                                 <p className="mt-0.5 truncate text-xs text-[var(--muted)]">
                                   @{profile.username}
@@ -2329,6 +2584,7 @@ export default function ConversationPage() {
                     <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">
                       Add members
                     </p>
+
                     <p className="mt-1 text-sm text-[var(--muted)]">
                       Search for another Agoré user to add to this group.
                     </p>
@@ -2336,11 +2592,13 @@ export default function ConversationPage() {
 
                   <div className="mt-3 flex items-center gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)] px-3">
                     <Search size={16} className="shrink-0 text-[var(--muted)]" />
+
                     <input
                       value={memberQuery}
                       onChange={(event) => {
                         const value = event.target.value;
                         setMemberQuery(value);
+
                         if (value.trim().length < 2) {
                           setMemberResults([]);
                         }
@@ -2354,6 +2612,7 @@ export default function ConversationPage() {
                       placeholder="Search people…"
                       className="h-11 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-[var(--muted)]"
                     />
+
                     <button
                       type="button"
                       onClick={() => void searchMembers()}
@@ -2388,14 +2647,17 @@ export default function ConversationPage() {
                               className="h-10 w-10"
                               textClassName="text-[10px]"
                             />
+
                             <div className="min-w-0 flex-1">
                               <p className="truncate text-sm font-semibold">
                                 {person.display_name}
                               </p>
+
                               <p className="mt-0.5 truncate text-xs text-[var(--muted)]">
                                 @{person.username}
                               </p>
                             </div>
+
                             <button
                               type="button"
                               onClick={() => void addMember(person.id)}
@@ -2422,6 +2684,7 @@ export default function ConversationPage() {
                       <p className="text-sm font-semibold">
                         No new members found
                       </p>
+
                       <p className="mt-1 text-xs text-[var(--muted)]">
                         Try a different name or username.
                       </p>
@@ -2435,9 +2698,11 @@ export default function ConversationPage() {
                   <p className="text-sm font-semibold text-[var(--danger)]">
                     Leave group
                   </p>
+
                   <p className="mt-1 text-xs leading-5 text-[var(--danger)]/80">
                     You will stop receiving messages from this group until you are added again.
                   </p>
+
                   <button
                     type="button"
                     onClick={() => void removeMember(currentUserId ?? "")}
