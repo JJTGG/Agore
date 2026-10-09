@@ -517,7 +517,7 @@ function MessageBubble({
               onReply={() => onReply(message)}
               onForward={() => onForward(message)}
               onEdit={() => onEdit(message)}
-              onDelete={() => void onDelete(message.id)}
+              onDelete={() => onDelete(message.id)}
             />
           </div>
         </div>
