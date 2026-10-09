@@ -11,13 +11,27 @@ const createCommentSchema = z.object({
     .string()
     .trim()
     .min(1, "Comment content is required.")
-    .max(1000, "Comment content must be 1000 characters or fewer."),
+    .max(
+      1000,
+      "Comment content must be 1000 characters or fewer.",
+    ),
   parentCommentId: z.string().uuid().nullable().optional(),
 });
 
-const listCommentsSchema = z.object({
-  limit: z.coerce.number().int().min(1).max(100).default(100),
-});
+const listCommentsSchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+    afterCreatedAt: z.string().datetime({ offset: true }).optional(),
+    afterId: z.string().uuid().optional(),
+  })
+  .superRefine((value, context) => {
+    if (Boolean(value.afterCreatedAt) !== Boolean(value.afterId)) {
+      context.addIssue({
+        code: "custom",
+        message: "Both cursor fields must be provided together.",
+      });
+    }
+  });
 
 type RouteContext = {
   params: Promise<{
@@ -59,7 +73,6 @@ export async function GET(
   }
 
   const { postId } = await context.params;
-
   const parsedPostId = uuidSchema.safeParse(postId);
 
   if (!parsedPostId.success) {
@@ -73,6 +86,8 @@ export async function GET(
 
   const parsedQuery = listCommentsSchema.safeParse({
     limit: searchParams.get("limit") ?? undefined,
+    afterCreatedAt: searchParams.get("afterCreatedAt") ?? undefined,
+    afterId: searchParams.get("afterId") ?? undefined,
   });
 
   if (!parsedQuery.success) {
@@ -86,13 +101,11 @@ export async function GET(
     .from("posts")
     .select("id")
     .eq("id", parsedPostId.data)
+    .is("deleted_at", null)
     .maybeSingle();
 
   if (postError) {
-    console.error(
-      "Failed to verify Agore post for comments:",
-      postError,
-    );
+    console.error("Failed to verify Agore post for comments:", postError);
 
     return NextResponse.json(
       { error: "Unable to load comments." },
@@ -107,26 +120,33 @@ export async function GET(
     );
   }
 
-  const { data: comments, error: commentsError, count } =
-    await supabase
-      .from("comments")
-      .select(commentSelect, {
-        count: "exact",
-      })
-      .eq("post_id", parsedPostId.data)
-      .order("created_at", {
-        ascending: true,
-      })
-      .order("id", {
-        ascending: true,
-      })
-      .limit(parsedQuery.data.limit);
+  const {
+    limit,
+    afterCreatedAt,
+    afterId,
+  } = parsedQuery.data;
+
+  let query = supabase
+    .from("comments")
+    .select(commentSelect, { count: "exact" })
+    .eq("post_id", parsedPostId.data)
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
+
+  if (afterCreatedAt && afterId) {
+    query = query.or(
+      `created_at.gt.${afterCreatedAt},and(created_at.eq.${afterCreatedAt},id.gt.${afterId})`,
+    );
+  }
+
+  const {
+    data: rows,
+    error: commentsError,
+    count,
+  } = await query.limit(limit + 1);
 
   if (commentsError) {
-    console.error(
-      "Failed to load Agore comments:",
-      commentsError,
-    );
+    console.error("Failed to load Agore comments:", commentsError);
 
     return NextResponse.json(
       { error: "Unable to load comments." },
@@ -134,9 +154,50 @@ export async function GET(
     );
   }
 
+  const returnedRows = rows ?? [];
+  const hasMore = returnedRows.length > limit;
+  const comments = returnedRows.slice(0, limit);
+  const lastComment = comments[comments.length - 1];
+
+  let commentCount = count ?? returnedRows.length;
+
+  // When a cursor is present, the page query's count is the number of
+  // remaining rows, not the total. Fetch the complete visible count instead.
+  if (afterCreatedAt) {
+    const {
+      count: totalCount,
+      error: countError,
+    } = await supabase
+      .from("comments")
+      .select("id", { count: "exact", head: true })
+      .eq("post_id", parsedPostId.data);
+
+    if (countError) {
+      console.error(
+        "Failed to count Agore comments:",
+        countError,
+      );
+
+      return NextResponse.json(
+        { error: "Unable to load comments." },
+        { status: 500 },
+      );
+    }
+
+    commentCount = totalCount ?? 0;
+  }
+
   return NextResponse.json({
-    comments: comments ?? [],
-    commentCount: count ?? 0,
+    comments,
+    commentCount,
+    hasMore,
+    nextCursor:
+      hasMore && lastComment
+        ? {
+            createdAt: lastComment.created_at,
+            id: lastComment.id,
+          }
+        : null,
   });
 }
 
@@ -159,7 +220,6 @@ export async function POST(
   }
 
   const { postId } = await context.params;
-
   const parsedPostId = uuidSchema.safeParse(postId);
 
   if (!parsedPostId.success) {
@@ -197,13 +257,11 @@ export async function POST(
     .from("posts")
     .select("id, author_id")
     .eq("id", parsedPostId.data)
+    .is("deleted_at", null)
     .maybeSingle();
 
   if (postError) {
-    console.error(
-      "Failed to verify Agore post for comment:",
-      postError,
-    );
+    console.error("Failed to verify Agore post for comment:", postError);
 
     return NextResponse.json(
       { error: "Unable to create the comment." },
@@ -218,9 +276,7 @@ export async function POST(
     );
   }
 
-  const parentCommentId =
-    parsedBody.data.parentCommentId ?? null;
-
+  const parentCommentId = parsedBody.data.parentCommentId ?? null;
   let parentCommentAuthorId: string | null = null;
 
   if (parentCommentId) {
@@ -230,16 +286,14 @@ export async function POST(
     } = await supabase
       .from("comments")
       .select(
-        "id, post_id, author_id, parent_comment_id",
+        "id, post_id, author_id, parent_comment_id, deleted_at",
       )
       .eq("id", parentCommentId)
+      .is("deleted_at", null)
       .maybeSingle();
 
     if (parentError) {
-      console.error(
-        "Failed to verify Agore parent comment:",
-        parentError,
-      );
+      console.error("Failed to verify Agore parent comment:", parentError);
 
       return NextResponse.json(
         { error: "Unable to verify the parent comment." },
@@ -259,20 +313,14 @@ export async function POST(
 
     if (parentComment.post_id !== parsedPostId.data) {
       return NextResponse.json(
-        {
-          error:
-            "Parent comment must belong to this post.",
-        },
+        { error: "Parent comment must belong to this post." },
         { status: 400 },
       );
     }
 
     if (parentComment.parent_comment_id !== null) {
       return NextResponse.json(
-        {
-          error:
-            "Replies can only target top-level comments.",
-        },
+        { error: "Replies can only target top-level comments." },
         { status: 400 },
       );
     }
@@ -295,10 +343,20 @@ export async function POST(
     .single();
 
   if (commentError) {
-    console.error(
-      "Failed to create Agore comment:",
-      commentError,
-    );
+    console.error("Failed to create Agore comment:", commentError);
+
+    if (
+      commentError.code === "42501" ||
+      commentError.code === "23514"
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "The post or parent comment is no longer available. Refresh and try again.",
+        },
+        { status: 409 },
+      );
+    }
 
     return NextResponse.json(
       { error: "Unable to create the comment." },
@@ -306,6 +364,8 @@ export async function POST(
     );
   }
 
+  // Resolve the authoritative event through the existing notification
+  // pipeline. Do not insert a second notification implementation here.
   await createNotification({
     recipientId: post.author_id,
     actorId: user.id,
@@ -329,7 +389,7 @@ export async function POST(
       data: {
         commentId: comment.id,
         parentCommentId,
-        isReply: true,
+        is_reply: true,
       },
     });
   }
