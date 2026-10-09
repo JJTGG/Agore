@@ -15,7 +15,9 @@ const querySchema = z.object({
     .min(1)
     .max(100)
     .default(50),
-  before: z.string().datetime().optional(),
+  cursor: z.string().min(1).max(500).optional(),
+  // Kept for compatibility with older callers.
+  before: z.string().datetime({ offset: true }).optional(),
   search: z
     .string()
     .trim()
@@ -23,6 +25,13 @@ const querySchema = z.object({
     .max(80)
     .optional(),
 });
+
+const messageCursorSchema = z.object({
+  createdAt: z.string().datetime({ offset: true }),
+  id: z.string().uuid(),
+});
+
+type MessageCursor = z.infer<typeof messageCursorSchema>;
 
 const createMessageSchema = z.object({
   content: z
@@ -72,6 +81,21 @@ type ProfileRow = {
   username: string;
   avatar_path: string | null;
 };
+
+function encodeMessageCursor(cursor: MessageCursor) {
+  return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
+}
+
+function decodeMessageCursor(value: string): MessageCursor | null {
+  try {
+    const decoded = Buffer.from(value, "base64url").toString("utf8");
+    const parsed = messageCursorSchema.safeParse(JSON.parse(decoded));
+
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
 
 async function getAuthenticatedUser() {
   const supabase = await createClient();
@@ -441,6 +465,10 @@ export async function GET(
         url.searchParams.get(
           "limit",
         ) ?? undefined,
+      cursor:
+        url.searchParams.get(
+          "cursor",
+        ) ?? undefined,
       before:
         url.searchParams.get(
           "before",
@@ -456,6 +484,20 @@ export async function GET(
       {
         error:
           "Invalid message parameters.",
+      },
+      { status: 400 },
+    );
+  }
+
+  const cursorToken = parsedQuery.data.cursor;
+  const historyCursor = cursorToken
+    ? decodeMessageCursor(cursorToken)
+    : null;
+
+  if (cursorToken && !historyCursor) {
+    return NextResponse.json(
+      {
+        error: "Invalid message cursor.",
       },
       { status: 400 },
     );
@@ -519,12 +561,28 @@ export async function GET(
       conversationId,
     )
     .is("deleted_at", null)
+    // The ID tie-breaker keeps pagination stable for identical timestamps.
     .order("created_at", {
       ascending: false,
     })
+    .order("id", {
+      ascending: false,
+    })
+    // Fetch one extra raw row to determine whether another page exists.
     .limit(
-      parsedQuery.data.limit,
+      parsedQuery.data.limit + 1,
     );
+
+  if (historyCursor) {
+    query = query.or(
+      `created_at.lt.${historyCursor.createdAt},and(created_at.eq.${historyCursor.createdAt},id.lt.${historyCursor.id})`,
+    );
+  } else if (parsedQuery.data.before) {
+    query = query.lt(
+      "created_at",
+      parsedQuery.data.before,
+    );
+  }
 
   if (isSearch) {
     query = query.ilike(
@@ -532,13 +590,6 @@ export async function GET(
       `%${escapeLikePattern(
         searchTerm,
       )}%`,
-    );
-  } else if (
-    parsedQuery.data.before
-  ) {
-    query = query.lt(
-      "created_at",
-      parsedQuery.data.before,
     );
   }
 
@@ -562,18 +613,26 @@ export async function GET(
     );
   }
 
-  const orderedMessages =
-    isSearch
-      ? ((
-          (messages ??
-            []) as MessageRow[]
-        ))
-      : (
-          (
-            (messages ??
-              []) as MessageRow[]
-          )
-        ).reverse();
+  const rawRows = (messages ?? []) as MessageRow[];
+  const hasMore = rawRows.length > parsedQuery.data.limit;
+
+  // The query is newest-first. Return only the requested page;
+  // the extra row is used only to determine hasMore.
+  const pageRows = rawRows.slice(0, parsedQuery.data.limit);
+
+  const orderedMessages = isSearch
+    ? pageRows
+    : [...pageRows].reverse();
+
+  const oldestPageRow = pageRows[pageRows.length - 1];
+
+  const nextCursor =
+    hasMore && oldestPageRow
+      ? encodeMessageCursor({
+          createdAt: oldestPageRow.created_at,
+          id: oldestPageRow.id,
+        })
+      : null;
 
   try {
     const messagesWithDetails =
@@ -587,9 +646,11 @@ export async function GET(
         conversationId,
       messages:
         messagesWithDetails,
-      has_more:
-        orderedMessages.length ===
-        parsedQuery.data.limit,
+
+      // Retain the legacy field for any existing clients.
+      has_more: hasMore,
+      hasMore,
+      nextCursor,
     });
   } catch (error) {
     console.error(
