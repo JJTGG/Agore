@@ -1,3 +1,4 @@
+
 "use client";
 
 import Link from "next/link";
@@ -27,9 +28,22 @@ import {
 
 import { createClient } from "@/lib/supabase/browser";
 import AgoreAvatar from "@/components/agore-avatar";
+import VerificationBadge from "@/components/verification-badge";
 import ProfilePosts from "./profile-posts";
 import ProfileConnections from "./profile-connections";
 import ProfileReportDialog from "./profile-report-dialog";
+
+type AccountType =
+  | "personal"
+  | "creator"
+  | "business"
+  | "organization"
+  | "institution";
+
+type VerificationKind =
+  | "official"
+  | "paid"
+  | null;
 
 type Profile = {
   id: string;
@@ -37,6 +51,11 @@ type Profile = {
   username: string;
   bio: string | null;
   avatar_path: string | null;
+  account_type: AccountType;
+  verification: {
+    status: "verified" | "unverified";
+    kind: VerificationKind;
+  };
   follower_count: number;
   following_count: number;
   is_following: boolean;
@@ -580,6 +599,21 @@ export default function ProfilePage() {
                             profile.display_name
                           }
                         </h1>
+
+                        {!profile.is_blocked &&
+                        profile.verification?.status ===
+                          "verified" &&
+                        profile.verification.kind ? (
+                          <VerificationBadge
+                            accountType={
+                              profile.account_type
+                            }
+                            kind={
+                              profile.verification.kind
+                            }
+                            size={20}
+                          />
+                        ) : null}
 
                         {profile.is_blocked ? (
                           <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--danger-soft)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--danger)]">
