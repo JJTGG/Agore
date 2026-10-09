@@ -1,4 +1,7 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
+
+import { getConversationMessagingAccess } from "@/lib/messaging/conversation-access";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -7,6 +10,8 @@ type RouteContext = {
     conversationId: string;
   }>;
 };
+
+const conversationIdSchema = z.string().uuid();
 
 export async function PATCH(
   _request: Request,
@@ -28,53 +33,45 @@ export async function PATCH(
 
   const { conversationId } = await context.params;
 
-  if (!conversationId) {
+  const parsedConversationId =
+    conversationIdSchema.safeParse(conversationId);
+
+  if (!parsedConversationId.success) {
     return NextResponse.json(
-      { error: "Conversation ID is required." },
+      { error: "A valid conversation ID is required." },
       { status: 400 },
+    );
+  }
+
+  // Reuse the central access policy for active membership,
+  // conversation existence, and direct-message block checks.
+  const access = await getConversationMessagingAccess(
+    parsedConversationId.data,
+    user.id,
+  );
+
+  if (!access.ok) {
+    return NextResponse.json(
+      { error: access.error },
+      { status: access.status },
     );
   }
 
   const admin = createAdminClient();
 
-  const { data: membership, error: membershipError } = await admin
-    .from("conversation_members")
-    .select("conversation_id, user_id, joined_at, left_at")
-    .eq("conversation_id", conversationId)
-    .eq("user_id", user.id)
-    .maybeSingle();
+  const { data: updatedMembership, error: updateError } =
+    await admin
+      .from("conversation_members")
+      .update({
+        last_read_at: new Date().toISOString(),
+      })
+      .eq("conversation_id", parsedConversationId.data)
+      .eq("user_id", user.id)
+      .is("left_at", null)
+      .select("conversation_id, user_id, last_read_at")
+      .single();
 
-  if (membershipError) {
-    console.error(
-      "Failed to load Agore conversation read-state membership:",
-      membershipError,
-    );
-
-    return NextResponse.json(
-      { error: "Unable to update read state." },
-      { status: 500 },
-    );
-  }
-
-  if (!membership || membership.left_at) {
-    return NextResponse.json(
-      { error: "Conversation not found." },
-      { status: 404 },
-    );
-  }
-
-  const { data: updatedMembership, error: updateError } = await admin
-    .from("conversation_members")
-    .update({
-      last_read_at: new Date().toISOString(),
-    })
-    .eq("conversation_id", conversationId)
-    .eq("user_id", user.id)
-    .is("left_at", null)
-    .select("conversation_id, user_id, last_read_at")
-    .single();
-
-  if (updateError) {
+  if (updateError || !updatedMembership) {
     console.error(
       "Failed to update Agore conversation read state:",
       updateError,
