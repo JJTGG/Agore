@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -26,7 +27,7 @@ type Actor = {
   account_status: string;
 } | null;
 
-type Notification = {
+type AgoreNotification = {
   id: string;
   event_id: string | null;
   actor_id: string | null;
@@ -39,91 +40,63 @@ type Notification = {
 };
 
 type NotificationsResponse = {
-  notifications: Notification[];
+  notifications: AgoreNotification[];
   unreadCount: number;
   totalCount?: number;
+  error?: string;
 };
 
 type PushConfigResponse = {
   enabled: boolean;
   publicKey: string | null;
+  error?: string;
 };
 
-const supabase =
-  createClient();
+const supabase = createClient();
 
-function formatDate(
-  value: string,
-) {
-  const date =
-    new Date(value);
+function formatDate(value: string): string {
+  const date = new Date(value);
 
-  if (
-    Number.isNaN(
-      date.getTime(),
-    )
-  ) {
+  if (Number.isNaN(date.getTime())) {
     return "";
   }
 
-  const now =
-    new Date();
+  const now = new Date();
+  const difference = now.getTime() - date.getTime();
 
-  const diffMs =
-    now.getTime() -
-    date.getTime();
+  const minutes = Math.floor(difference / 60_000);
+  const hours = Math.floor(difference / 3_600_000);
+  const days = Math.floor(difference / 86_400_000);
 
-  const diffMinutes =
-    Math.floor(
-      diffMs / 60000,
-    );
-
-  const diffHours =
-    Math.floor(
-      diffMs / 3600000,
-    );
-
-  const diffDays =
-    Math.floor(
-      diffMs / 86400000,
-    );
-
-  if (diffMinutes < 1) {
+  if (minutes < 1) {
     return "now";
   }
 
-  if (diffMinutes < 60) {
-    return `${diffMinutes}m`;
+  if (minutes < 60) {
+    return `${minutes}m`;
   }
 
-  if (diffHours < 24) {
-    return `${diffHours}h`;
+  if (hours < 24) {
+    return `${hours}h`;
   }
 
-  if (diffDays < 7) {
-    return `${diffDays}d`;
+  if (days < 7) {
+    return `${days}d`;
   }
 
-  return new Intl.DateTimeFormat(
-    "en-GB",
-    {
-      day: "numeric",
-      month: "short",
-    },
-  ).format(date);
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+  }).format(date);
 }
 
 function getNotificationText(
-  notification: Notification,
-) {
+  notification: AgoreNotification,
+): string {
   const actorName =
-    notification.actor
-      ?.display_name ??
-    "Someone";
+    notification.actor?.display_name ?? "Someone";
 
-  switch (
-    notification.type
-  ) {
+  switch (notification.type) {
     case "follow":
       return `${actorName} followed you.`;
 
@@ -131,8 +104,7 @@ function getNotificationText(
       return `${actorName} reacted to your post.`;
 
     case "comment":
-      return notification.data
-        .is_reply === true
+      return notification.data?.is_reply === true
         ? `${actorName} replied to your comment.`
         : `${actorName} commented on your post.`;
 
@@ -151,854 +123,627 @@ function getNotificationText(
 }
 
 function getNotificationHref(
-  notification: Notification,
-) {
-  switch (
-    notification.type
-  ) {
+  notification: AgoreNotification,
+): string | null {
+  switch (notification.type) {
     case "follow":
       return notification.actor_id
-        ? `/profile/${encodeURIComponent(
-            notification.actor_id,
-          )}`
+        ? `/profile/${encodeURIComponent(notification.actor_id)}`
         : null;
 
     case "message":
-      return notification.entity_id
-        ? `/messages/${encodeURIComponent(
-            notification.entity_id,
-          )}`
-        : "/messages";
-
     case "group_activity":
       return notification.entity_id
-        ? `/messages/${encodeURIComponent(
-            notification.entity_id,
-          )}`
+        ? `/messages/${encodeURIComponent(notification.entity_id)}`
         : "/messages";
 
     default:
       return notification.entity_id
-        ? `/post/${encodeURIComponent(
-            notification.entity_id,
-          )}`
+        ? `/post/${encodeURIComponent(notification.entity_id)}`
         : null;
   }
 }
 
-function getInitials(
-  value: string,
-) {
+function getInitials(value: string): string {
   return (
     value
       .split(/\s+/)
       .filter(Boolean)
       .slice(0, 2)
-      .map(
-        (part) =>
-          part[0]?.toUpperCase() ??
-          "",
-      )
+      .map((part) => part[0]?.toUpperCase() ?? "")
       .join("") || "A"
   );
 }
 
-function urlBase64ToUint8Array(
-  value: string,
-) {
-  const padding =
-    "=".repeat(
-      (4 -
-        (value.length % 4)) %
-        4,
-    );
+function urlBase64ToUint8Array(value: string): Uint8Array {
+  const padding = "=".repeat((4 - (value.length % 4)) % 4);
 
-  const base64 =
-    (
-      value +
-      padding
-    )
-      .replace(
-        /-/g,
-        "+",
-      )
-      .replace(
-        /_/g,
-        "/",
-      );
+  const base64 = (value + padding)
+    .replace(/-/g, "+")
+    .replace(/_/g, "/");
 
-  const raw =
-    window.atob(base64);
+  const raw = window.atob(base64);
 
   return Uint8Array.from(
-    [...raw].map(
-      (character) =>
-        character.charCodeAt(0),
-    ),
+    [...raw].map((character) => character.charCodeAt(0)),
   );
 }
 
 export default function NotificationsPage() {
-  const [notifications, setNotifications] =
-    useState<
-      Notification[]
-    >([]);
+  const [notifications, setNotifications] = useState<
+    AgoreNotification[]
+  >([]);
 
-  const [unreadCount, setUnreadCount] =
-    useState(0);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [markingAll, setMarkingAll] = useState(false);
+  const [markingId, setMarkingId] = useState<string | null>(null);
+  const [error, setError] = useState("");
 
-  const [loading, setLoading] =
-    useState(true);
+  const [pushSupported, setPushSupported] = useState(false);
+  const [pushConfigured, setPushConfigured] = useState(false);
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushError, setPushError] = useState("");
 
-  const [refreshing, setRefreshing] =
-    useState(false);
+  /*
+   * Track notification IDs already seen through the initial load
+   * or realtime channel. This prevents duplicate INSERT deliveries
+   * from incrementing the unread count more than once.
+   */
+  const seenNotificationIds = useRef(new Set<string>());
 
-  const [markingAll, setMarkingAll] =
-    useState(false);
+  /*
+   * Realtime events can arrive more than once while a hydration
+   * request is still running. Track pending IDs to avoid duplicate
+   * requests for the same notification.
+   */
+  const pendingNotificationIds = useRef(new Set<string>());
 
-  const [markingId, setMarkingId] =
-    useState<string | null>(
-      null,
-    );
+  const loadNotifications = useCallback(
+    async (manual = false) => {
+      if (manual) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
 
-  const [error, setError] =
-    useState("");
+      setError("");
 
-  const [pushSupported, setPushSupported] =
-    useState(false);
-
-  const [pushConfigured, setPushConfigured] =
-    useState(false);
-
-  const [pushEnabled, setPushEnabled] =
-    useState(false);
-
-  const [pushBusy, setPushBusy] =
-    useState(false);
-
-  const [pushError, setPushError] =
-    useState("");
-
-  const loadNotifications =
-    useCallback(
-      async (
-        manual = false,
-      ) => {
-        if (manual) {
-          setRefreshing(
-            true,
-          );
-        } else {
-          setLoading(
-            true,
-          );
-        }
-
-        setError("");
-
-        try {
-          const response =
-            await fetch(
-              "/api/notifications?limit=50",
-              {
-                cache:
-                  "no-store",
-              },
-            );
-
-          const data =
-            (await response.json()) as NotificationsResponse & {
-              error?: string;
-            };
-
-          if (
-            response.status ===
-            401
-          ) {
-            window.location.href =
-              "/auth";
-            return;
-          }
-
-          if (
-            !response.ok
-          ) {
-            throw new Error(
-              data.error ??
-                "Unable to load notifications.",
-            );
-          }
-
-          setNotifications(
-            Array.isArray(
-              data.notifications,
-            )
-              ? data.notifications
-              : [],
-          );
-
-          setUnreadCount(
-            typeof data.unreadCount ===
-              "number"
-              ? data.unreadCount
-              : 0,
-          );
-        } catch (
-          requestError,
-        ) {
-          setError(
-            requestError instanceof
-              Error
-              ? requestError.message
-              : "Unable to load notifications.",
-          );
-        } finally {
-          setLoading(
-            false,
-          );
-
-          setRefreshing(
-            false,
-          );
-        }
-      },
-      [],
-    );
-
-  const refreshRealtimeNotification =
-    useCallback(
-      async (
-        notificationId: string,
-      ) => {
-        try {
-          const response =
-            await fetch(
-              `/api/notifications?notificationId=${encodeURIComponent(
-                notificationId,
-              )}`,
-              {
-                cache:
-                  "no-store",
-              },
-            );
-
-          if (
-            !response.ok
-          ) {
-            return;
-          }
-
-          const data =
-            (await response.json()) as NotificationsResponse;
-
-          const incoming =
-            data.notifications?.[0];
-
-          if (!incoming) {
-            return;
-          }
-
-          setNotifications(
-            (current) => {
-              const withoutExisting =
-                current.filter(
-                  (
-                    notification,
-                  ) =>
-                    notification.id !==
-                    incoming.id,
-                );
-
-              return [
-                incoming,
-                ...withoutExisting,
-              ].slice(
-                0,
-                50,
-              );
-            },
-          );
-
-          if (
-            !incoming.read_at
-          ) {
-            setUnreadCount(
-              (current) =>
-                current + 1,
-            );
-          }
-        } catch (
-          realtimeError,
-        ) {
-          console.error(
-            "Failed to hydrate Agore realtime notification:",
-            realtimeError,
-          );
-        }
-      },
-      [],
-    );
-
-  useEffect(
-    () => {
-      void loadNotifications();
-    },
-    [loadNotifications],
-  );
-
-  useEffect(
-    () => {
-      let active = true;
-
-      async function initialiseRealtime() {
-        const {
-          data: {
-            user,
+      try {
+        const response = await fetch(
+          "/api/notifications?limit=50",
+          {
+            cache: "no-store",
           },
-        } =
-          await supabase.auth.getUser();
+        );
 
-        if (
-          !active ||
-          !user
-        ) {
+        const data = (await response.json()) as NotificationsResponse;
+
+        if (response.status === 401) {
+          window.location.href = "/auth";
           return;
         }
 
-        const channel =
-          supabase
-            .channel(
-              `agore-notifications-${user.id}`,
-            )
-            .on(
-              "postgres_changes",
-              {
-                event: "INSERT",
-                schema: "public",
-                table: "notifications",
-                filter: `recipient_id=eq.${user.id}`,
-              },
-              (
-                payload,
-              ) => {
-                const id =
-                  typeof payload.new?.id ===
-                  "string"
-                    ? payload.new
-                        .id
-                    : null;
-
-                if (
-                  id
-                ) {
-                  void refreshRealtimeNotification(
-                    id,
-                  );
-                }
-              },
-            )
-            .subscribe();
-
-        return () => {
-          void supabase.removeChannel(
-            channel,
-          );
-        };
-      }
-
-      const cleanupPromise =
-        initialiseRealtime();
-
-      return () => {
-        active =
-          false;
-
-        void cleanupPromise;
-      };
-    },
-    [
-      refreshRealtimeNotification,
-    ],
-  );
-
-  useEffect(
-    () => {
-      let active = true;
-
-      async function initialisePush() {
-        const supported =
-          typeof window !==
-            "undefined" &&
-          "Notification" in
-            window &&
-          "serviceWorker" in
-            navigator &&
-          "PushManager" in
-            window;
-
-        if (
-          !supported
-        ) {
-          return;
-        }
-
-        try {
-          const response =
-            await fetch(
-              "/api/push/config",
-              {
-                cache:
-                  "no-store",
-              },
-            );
-
-          const config =
-            (await response.json()) as PushConfigResponse;
-
-          if (
-            !active
-          ) {
-            return;
-          }
-
-          setPushSupported(
-            true,
-          );
-
-          setPushConfigured(
-            config.enabled,
-          );
-
-          if (
-            !config.enabled
-          ) {
-            return;
-          }
-
-          const registration =
-            await navigator.serviceWorker.register(
-              "/sw.js",
-            );
-
-          const subscription =
-            await registration.pushManager.getSubscription();
-
-          if (
-            active
-          ) {
-            setPushEnabled(
-              Boolean(
-                subscription,
-              ),
-            );
-          }
-        } catch (
-          pushInitError,
-        ) {
-          console.error(
-            "Failed to initialise Agore push notifications:",
-            pushInitError,
+        if (!response.ok) {
+          throw new Error(
+            data.error ?? "Unable to load notifications.",
           );
         }
+
+        const loadedNotifications = Array.isArray(data.notifications)
+          ? data.notifications
+          : [];
+
+        for (const notification of loadedNotifications) {
+          seenNotificationIds.current.add(notification.id);
+        }
+
+        setNotifications(loadedNotifications);
+
+        setUnreadCount(
+          typeof data.unreadCount === "number"
+            ? data.unreadCount
+            : 0,
+        );
+      } catch (requestError) {
+        setError(
+          requestError instanceof Error
+            ? requestError.message
+            : "Unable to load notifications.",
+        );
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
       }
-
-      void initialisePush();
-
-      return () => {
-        active =
-          false;
-      };
     },
     [],
   );
 
+  const refreshRealtimeNotification = useCallback(
+    async (notificationId: string) => {
+      try {
+        const response = await fetch(
+          `/api/notifications?notificationId=${encodeURIComponent(
+            notificationId,
+          )}`,
+          {
+            cache: "no-store",
+          },
+        );
+
+        if (!response.ok) {
+          return;
+        }
+
+        const data =
+          (await response.json()) as NotificationsResponse;
+
+        const incoming = data.notifications?.[0];
+
+        if (!incoming) {
+          return;
+        }
+
+        /*
+         * Only a previously unseen notification should increment
+         * the unread counter. The ref is updated synchronously,
+         * before React processes the state updates.
+         */
+        const isNewNotification =
+          !seenNotificationIds.current.has(incoming.id);
+
+        seenNotificationIds.current.add(incoming.id);
+
+        setNotifications((current) => {
+          const withoutExisting = current.filter(
+            (notification) => notification.id !== incoming.id,
+          );
+
+          return [incoming, ...withoutExisting].slice(0, 50);
+        });
+
+        if (isNewNotification && !incoming.read_at) {
+          setUnreadCount((current) => current + 1);
+        }
+      } catch (realtimeError) {
+        console.error(
+          "Failed to hydrate Agoré realtime notification:",
+          realtimeError,
+        );
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    void loadNotifications();
+  }, [loadNotifications]);
+
+  /*
+   * Subscribe to the signed-in user's notification INSERT events.
+   * Cleanup removes the actual Supabase channel, including when
+   * authentication lookup is still resolving during unmount.
+   */
+  useEffect(() => {
+    let active = true;
+
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    async function initialiseRealtime() {
+      try {
+        const {
+          data: { user },
+          error: authError,
+        } = await supabase.auth.getUser();
+
+        if (!active || authError || !user) {
+          return;
+        }
+
+        channel = supabase
+          .channel(`agore-notifications-${user.id}`)
+          .on(
+            "postgres_changes",
+            {
+              event: "INSERT",
+              schema: "public",
+              table: "notifications",
+              filter: `recipient_id=eq.${user.id}`,
+            },
+            (payload) => {
+              const id =
+                typeof payload.new?.id === "string"
+                  ? payload.new.id
+                  : null;
+
+              if (
+                !id ||
+                seenNotificationIds.current.has(id) ||
+                pendingNotificationIds.current.has(id)
+              ) {
+                return;
+              }
+
+              pendingNotificationIds.current.add(id);
+
+              void refreshRealtimeNotification(id).finally(() => {
+                pendingNotificationIds.current.delete(id);
+              });
+            },
+          )
+          .subscribe((status, subscriptionError) => {
+            if (subscriptionError) {
+              console.error(
+                "Agoré notification realtime subscription error:",
+                subscriptionError,
+              );
+            }
+
+            if (status === "CHANNEL_ERROR") {
+              console.error(
+                "Agoré notification realtime channel failed.",
+              );
+            }
+          });
+      } catch (realtimeInitError) {
+        console.error(
+          "Unable to initialise Agoré notification realtime:",
+          realtimeInitError,
+        );
+      }
+    }
+
+    void initialiseRealtime();
+
+    return () => {
+      active = false;
+
+      if (channel) {
+        void supabase.removeChannel(channel);
+      }
+    };
+  }, [refreshRealtimeNotification]);
+
+  /*
+   * Detect Web Push support and determine whether VAPID is
+   * configured. This checks capability and configuration without
+   * requesting notification permission from the user.
+   */
+  useEffect(() => {
+    let active = true;
+
+    async function initialisePush() {
+      const supported =
+        typeof window !== "undefined" &&
+        "Notification" in window &&
+        "serviceWorker" in navigator &&
+        "PushManager" in window;
+
+      if (!supported) {
+        return;
+      }
+
+      setPushSupported(true);
+
+      try {
+        const response = await fetch("/api/push/config", {
+          cache: "no-store",
+        });
+
+        const config =
+          (await response.json()) as PushConfigResponse;
+
+        if (!active) {
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error(
+            config.error ?? "Unable to read push configuration.",
+          );
+        }
+
+        setPushConfigured(config.enabled);
+
+        if (!config.enabled) {
+          return;
+        }
+
+        const registration =
+          await navigator.serviceWorker.register("/sw.js");
+
+        const subscription =
+          await registration.pushManager.getSubscription();
+
+        if (active) {
+          setPushEnabled(Boolean(subscription));
+        }
+      } catch (pushInitError) {
+        console.error(
+          "Failed to initialise Agoré push notifications:",
+          pushInitError,
+        );
+      }
+    }
+
+    void initialisePush();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   async function enablePush() {
-    if (
-      pushBusy ||
-      !pushSupported ||
-      !pushConfigured
-    ) {
+    if (pushBusy || !pushSupported || !pushConfigured) {
       return;
     }
 
-    setPushBusy(
-      true,
-    );
-
+    setPushBusy(true);
     setPushError("");
 
     try {
-      const permission =
-        await Notification.requestPermission();
+      const permission = await Notification.requestPermission();
 
-      if (
-        permission !==
-        "granted"
-      ) {
+      if (permission !== "granted") {
         throw new Error(
-          permission ===
-            "denied"
+          permission === "denied"
             ? "Browser notifications are blocked. Enable them in your browser settings."
             : "Notification permission was not granted.",
         );
       }
 
-      const configResponse =
-        await fetch(
-          "/api/push/config",
-          {
-            cache:
-              "no-store",
-          },
-        );
+      const configResponse = await fetch("/api/push/config", {
+        cache: "no-store",
+      });
 
       const config =
         (await configResponse.json()) as PushConfigResponse;
 
       if (
+        !configResponse.ok ||
         !config.enabled ||
         !config.publicKey
       ) {
         throw new Error(
-          "Push notifications are not configured on this Agoré deployment.",
+          config.error ??
+            "Push notifications are not configured on this Agoré deployment.",
         );
       }
 
       const registration =
-        await navigator.serviceWorker.register(
-          "/sw.js",
-        );
+        await navigator.serviceWorker.register("/sw.js");
 
       const existingSubscription =
         await registration.pushManager.getSubscription();
 
       const subscription =
         existingSubscription ??
-        (await registration.pushManager.subscribe(
-          {
-            userVisibleOnly:
-              true,
-            applicationServerKey:
-              urlBase64ToUint8Array(
-                config.publicKey,
-              ),
-          },
-        ));
+        (await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(
+            config.publicKey,
+          ),
+        }));
 
-      const response =
-        await fetch(
-          "/api/push/subscription",
-          {
-            method:
-              "POST",
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-            body: JSON.stringify(
-              subscription.toJSON(),
-            ),
-          },
-        );
+      const response = await fetch("/api/push/subscription", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(subscription.toJSON()),
+      });
 
-      const data =
-        (await response.json().catch(
-          () => ({}),
-        )) as {
-          error?: string;
-        };
+      const data = (await response.json().catch(() => ({}))) as {
+        error?: string;
+      };
 
-      if (
-        !response.ok
-      ) {
+      if (!response.ok) {
         throw new Error(
-          data.error ??
-            "Unable to enable push notifications.",
+          data.error ?? "Unable to enable push notifications.",
         );
       }
 
-      setPushEnabled(
-        true,
-      );
-    } catch (
-      pushEnableError,
-    ) {
+      setPushEnabled(true);
+    } catch (pushEnableError) {
       setPushError(
-        pushEnableError instanceof
-          Error
+        pushEnableError instanceof Error
           ? pushEnableError.message
           : "Unable to enable push notifications.",
       );
     } finally {
-      setPushBusy(
-        false,
-      );
+      setPushBusy(false);
     }
   }
 
   async function disablePush() {
-    if (
-      pushBusy ||
-      !pushSupported
-    ) {
+    if (pushBusy || !pushSupported) {
       return;
     }
 
-    setPushBusy(
-      true,
-    );
-
+    setPushBusy(true);
     setPushError("");
 
     try {
       const registration =
-        await navigator.serviceWorker.getRegistration(
-          "/",
-        );
+        await navigator.serviceWorker.getRegistration("/");
 
       const subscription =
         await registration?.pushManager.getSubscription();
 
-      if (
-        subscription
-      ) {
-        await fetch(
+      if (subscription) {
+        const response = await fetch(
           "/api/push/subscription",
           {
-            method:
-              "DELETE",
+            method: "DELETE",
             headers: {
-              "Content-Type":
-                "application/json",
+              "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              endpoint:
-                subscription.endpoint,
+              endpoint: subscription.endpoint,
             }),
           },
         );
+
+        if (!response.ok) {
+          const data = (await response.json().catch(() => ({}))) as {
+            error?: string;
+          };
+
+          throw new Error(
+            data.error ?? "Unable to disable push notifications.",
+          );
+        }
 
         await subscription.unsubscribe();
       }
 
-      setPushEnabled(
-        false,
-      );
-    } catch (
-      pushDisableError,
-    ) {
+      setPushEnabled(false);
+    } catch (pushDisableError) {
       setPushError(
-        pushDisableError instanceof
-          Error
+        pushDisableError instanceof Error
           ? pushDisableError.message
           : "Unable to disable push notifications.",
       );
     } finally {
-      setPushBusy(
-        false,
-      );
+      setPushBusy(false);
     }
   }
 
-  async function markAsRead(
-    notificationId: string,
-  ) {
-    if (
-      markingId
-    ) {
+  async function markAsRead(notificationId: string) {
+    if (markingId) {
       return;
     }
 
-    setMarkingId(
-      notificationId,
+    const existingNotification = notifications.find(
+      (notification) => notification.id === notificationId,
     );
 
+    const wasUnread = Boolean(
+      existingNotification && !existingNotification.read_at,
+    );
+
+    if (existingNotification && !wasUnread) {
+      return;
+    }
+
+    setMarkingId(notificationId);
     setError("");
 
     try {
-      const response =
-        await fetch(
-          "/api/notifications",
-          {
-            method:
-              "PATCH",
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-            body: JSON.stringify({
-              notificationId,
-            }),
-          },
-        );
+      const response = await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          notificationId,
+        }),
+      });
 
-      const data =
-        (await response.json().catch(
-          () => ({}),
-        )) as {
-          error?: string;
-        };
+      const data = (await response.json().catch(() => ({}))) as {
+        error?: string;
+      };
 
-      if (
-        response.status ===
-        401
-      ) {
-        window.location.href =
-          "/auth";
+      if (response.status === 401) {
+        window.location.href = "/auth";
         return;
       }
 
-      if (
-        !response.ok
-      ) {
+      if (!response.ok) {
         throw new Error(
-          data.error ??
-            "Unable to mark notification as read.",
+          data.error ?? "Unable to mark notification as read.",
         );
       }
 
-      setNotifications(
-        (current) =>
-          current.map(
-            (
-              notification,
-            ) =>
-              notification.id ===
-              notificationId
-                ? {
-                    ...notification,
-                    read_at:
-                      new Date().toISOString(),
-                  }
-                : notification,
-          ),
+      setNotifications((current) =>
+        current.map((notification) =>
+          notification.id === notificationId
+            ? {
+                ...notification,
+                read_at: new Date().toISOString(),
+              }
+            : notification,
+        ),
       );
 
-      setUnreadCount(
-        (current) =>
-          Math.max(
-            current - 1,
-            0,
-          ),
-      );
-    } catch (
-      requestError,
-    ) {
+      if (wasUnread) {
+        setUnreadCount((current) => Math.max(current - 1, 0));
+      }
+    } catch (requestError) {
       setError(
-        requestError instanceof
-          Error
+        requestError instanceof Error
           ? requestError.message
           : "Unable to mark notification as read.",
       );
     } finally {
-      setMarkingId(
-        null,
-      );
+      setMarkingId(null);
     }
   }
 
   async function markAllAsRead() {
-    if (
-      markingAll ||
-      unreadCount === 0
-    ) {
+    if (markingAll || unreadCount === 0) {
       return;
     }
 
-    setMarkingAll(
-      true,
-    );
-
+    setMarkingAll(true);
     setError("");
 
     try {
-      const response =
-        await fetch(
-          "/api/notifications",
-          {
-            method:
-              "PATCH",
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-            body: JSON.stringify({
-              all: true,
-            }),
-          },
-        );
+      const response = await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          all: true,
+        }),
+      });
 
-      const data =
-        (await response.json().catch(
-          () => ({}),
-        )) as {
-          error?: string;
-        };
+      const data = (await response.json().catch(() => ({}))) as {
+        error?: string;
+      };
 
-      if (
-        response.status ===
-        401
-      ) {
-        window.location.href =
-          "/auth";
+      if (response.status === 401) {
+        window.location.href = "/auth";
         return;
       }
 
-      if (
-        !response.ok
-      ) {
+      if (!response.ok) {
         throw new Error(
-          data.error ??
-            "Unable to mark notifications as read.",
+          data.error ?? "Unable to mark notifications as read.",
         );
       }
 
-      const now =
-        new Date().toISOString();
+      const now = new Date().toISOString();
 
-      setNotifications(
-        (current) =>
-          current.map(
-            (
-              notification,
-            ) => ({
-              ...notification,
-              read_at:
-                notification.read_at ??
-                now,
-            }),
-          ),
+      setNotifications((current) =>
+        current.map((notification) => ({
+          ...notification,
+          read_at: notification.read_at ?? now,
+        })),
       );
 
-      setUnreadCount(
-        0,
-      );
-    } catch (
-      requestError,
-    ) {
+      setUnreadCount(0);
+    } catch (requestError) {
       setError(
-        requestError instanceof
-          Error
+        requestError instanceof Error
           ? requestError.message
           : "Unable to mark notifications as read.",
       );
     } finally {
-      setMarkingAll(
-        false,
-      );
+      setMarkingAll(false);
     }
   }
 
-  const unreadLabel =
-    useMemo(
-      () =>
-        `${unreadCount} unread notification${
-          unreadCount === 1
-            ? ""
-            : "s"
-        }.`,
-      [unreadCount],
-    );
+  const unreadLabel = useMemo(
+    () =>
+      `${unreadCount} unread notification${
+        unreadCount === 1 ? "" : "s"
+      }.`,
+    [unreadCount],
+  );
 
   return (
     <main className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
@@ -1036,20 +781,12 @@ export default function NotificationsPage() {
             <div className="flex shrink-0 items-center gap-2">
               <button
                 type="button"
-                onClick={() =>
-                  void markAllAsRead()
-                }
-                disabled={
-                  markingAll ||
-                  unreadCount === 0
-                }
+                onClick={() => void markAllAsRead()}
+                disabled={markingAll || unreadCount === 0}
                 className="inline-flex h-10 items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 text-sm font-semibold text-[var(--foreground)] transition hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {markingAll ? (
-                  <Loader2
-                    size={16}
-                    className="animate-spin"
-                  />
+                  <Loader2 size={16} className="animate-spin" />
                 ) : (
                   <CheckCheck size={16} />
                 )}
@@ -1058,25 +795,14 @@ export default function NotificationsPage() {
 
               <button
                 type="button"
-                onClick={() =>
-                  void loadNotifications(
-                    true,
-                  )
-                }
-                disabled={
-                  refreshing ||
-                  loading
-                }
+                onClick={() => void loadNotifications(true)}
+                disabled={refreshing || loading}
                 aria-label="Refresh notifications"
                 className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--muted)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <RefreshCw
                   size={16}
-                  className={
-                    refreshing
-                      ? "animate-spin"
-                      : ""
-                  }
+                  className={refreshing ? "animate-spin" : ""}
                 />
               </button>
             </div>
@@ -1112,16 +838,11 @@ export default function NotificationsPage() {
                 ) : null}
               </div>
 
-              {pushConfigured &&
-              pushSupported ? (
+              {pushConfigured && pushSupported ? (
                 <button
                   type="button"
                   onClick={() =>
-                    void (
-                      pushEnabled
-                        ? disablePush()
-                        : enablePush()
-                    )
+                    void (pushEnabled ? disablePush() : enablePush())
                   }
                   disabled={pushBusy}
                   className={[
@@ -1138,9 +859,7 @@ export default function NotificationsPage() {
                       ? "Disable push notifications"
                       : "Enable push notifications"
                   }
-                  aria-pressed={
-                    pushEnabled
-                  }
+                  aria-pressed={pushEnabled}
                 >
                   <span
                     className={[
@@ -1155,17 +874,14 @@ export default function NotificationsPage() {
             </div>
           </div>
 
-          {unreadCount > 0 &&
-          !loading ? (
+          {unreadCount > 0 && !loading ? (
             <div className="flex items-center gap-2 border-b border-[var(--border)] bg-[var(--accent-soft)] px-5 py-3 text-sm text-[var(--foreground)] sm:px-6">
               <Bell
                 size={15}
                 className="text-[var(--accent)]"
               />
 
-              <span>
-                {unreadLabel}
-              </span>
+              <span>{unreadLabel}</span>
             </div>
           ) : null}
 
@@ -1177,31 +893,23 @@ export default function NotificationsPage() {
 
           {loading ? (
             <div className="space-y-1 p-2">
-              {Array.from({
-                length: 5,
-              }).map(
-                (
-                  _,
-                  index,
-                ) => (
-                  <div
-                    key={index}
-                    className="animate-pulse rounded-2xl px-4 py-4"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="h-11 w-11 rounded-full bg-[var(--surface-muted)]" />
+              {Array.from({ length: 5 }).map((_, index) => (
+                <div
+                  key={index}
+                  className="animate-pulse rounded-2xl px-4 py-4"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="h-11 w-11 rounded-full bg-[var(--surface-muted)]" />
 
-                      <div className="min-w-0 flex-1 space-y-2">
-                        <div className="h-4 w-3/4 rounded bg-[var(--surface-muted)]" />
-                        <div className="h-3 w-16 rounded bg-[var(--surface-muted)]" />
-                      </div>
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <div className="h-4 w-3/4 rounded bg-[var(--surface-muted)]" />
+                      <div className="h-3 w-16 rounded bg-[var(--surface-muted)]" />
                     </div>
                   </div>
-                ),
-              )}
+                </div>
+              ))}
             </div>
-          ) : notifications.length ===
-            0 ? (
+          ) : notifications.length === 0 ? (
             <div className="px-6 py-14 text-center">
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]">
                 <Bell size={22} />
@@ -1218,156 +926,108 @@ export default function NotificationsPage() {
             </div>
           ) : (
             <div className="space-y-1 p-2">
-              {notifications.map(
-                (
-                  notification,
-                ) => {
-                  const href =
-                    getNotificationHref(
-                      notification,
-                    );
+              {notifications.map((notification) => {
+                const href = getNotificationHref(notification);
+                const unread = !notification.read_at;
 
-                  const unread =
-                    !notification.read_at;
+                const actorName =
+                  notification.actor?.display_name ?? "Agoré user";
 
-                  const actorName =
-                    notification
-                      .actor
-                      ?.display_name ??
-                    "Agoré user";
+                const initials = getInitials(actorName);
+                const isMarking = markingId === notification.id;
 
-                  const initials =
-                    getInitials(
-                      actorName,
-                    );
-
-                  const isMarking =
-                    markingId ===
-                    notification.id;
-
-                  const content = (
+                const content = (
+                  <div
+                    className={[
+                      "flex items-start gap-3 rounded-2xl px-4 py-4 transition",
+                      unread
+                        ? "bg-[var(--accent-soft)]"
+                        : "hover:bg-[var(--surface-muted)]",
+                    ].join(" ")}
+                  >
                     <div
+                      aria-hidden="true"
                       className={[
-                        "flex items-start gap-3 rounded-2xl px-4 py-4 transition",
+                        "flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-xs font-bold",
                         unread
-                          ? "bg-[var(--accent-soft)]"
-                          : "hover:bg-[var(--surface-muted)]",
-                      ].join(
-                        " ",
-                      )}
+                          ? "bg-[var(--accent)]/15 text-[var(--accent)]"
+                          : "bg-[var(--surface-muted)] text-[var(--muted)]",
+                      ].join(" ")}
                     >
-                      <div
-                        aria-hidden="true"
-                        className={[
-                          "flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-xs font-bold",
-                          unread
-                            ? "bg-[var(--accent)]/15 text-[var(--accent)]"
-                            : "bg-[var(--surface-muted)] text-[var(--muted)]",
-                        ].join(
-                          " ",
-                        )}
-                      >
-                        {initials}
-                      </div>
+                      {initials}
+                    </div>
 
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p
-                              className={[
-                                "text-sm leading-6",
-                                unread
-                                  ? "font-semibold"
-                                  : "font-medium",
-                              ].join(
-                                " ",
-                              )}
-                            >
-                              {getNotificationText(
-                                notification,
-                              )}
-                            </p>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p
+                            className={[
+                              "text-sm leading-6",
+                              unread
+                                ? "font-semibold"
+                                : "font-medium",
+                            ].join(" ")}
+                          >
+                            {getNotificationText(notification)}
+                          </p>
 
-                            <p className="mt-1 text-xs text-[var(--muted)]">
-                              {formatDate(
-                                notification.created_at,
-                              )}
-                            </p>
-                          </div>
-
-                          {unread ? (
-                            <span
-                              aria-label="Unread"
-                              className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-[var(--accent)]"
-                            />
-                          ) : null}
+                          <p className="mt-1 text-xs text-[var(--muted)]">
+                            {formatDate(notification.created_at)}
+                          </p>
                         </div>
+
+                        {unread ? (
+                          <span
+                            aria-label="Unread"
+                            className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-[var(--accent)]"
+                          />
+                        ) : null}
                       </div>
-
-                      {unread ? (
-                        <button
-                          type="button"
-                          onClick={(
-                            event,
-                          ) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-
-                            void markAsRead(
-                              notification.id,
-                            );
-                          }}
-                          disabled={
-                            isMarking
-                          }
-                          aria-label="Mark notification as read"
-                          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--muted)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {isMarking ? (
-                            <Loader2
-                              size={14}
-                              className="animate-spin"
-                            />
-                          ) : (
-                            <Check size={14} />
-                          )}
-                        </button>
-                      ) : null}
                     </div>
-                  );
 
-                  return href ? (
-                    <Link
-                      key={
-                        notification.id
+                    {unread ? (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+
+                          void markAsRead(notification.id);
+                        }}
+                        disabled={isMarking}
+                        aria-label="Mark notification as read"
+                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--muted)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {isMarking ? (
+                          <Loader2
+                            size={14}
+                            className="animate-spin"
+                          />
+                        ) : (
+                          <Check size={14} />
+                        )}
+                      </button>
+                    ) : null}
+                  </div>
+                );
+
+                return href ? (
+                  <Link
+                    key={notification.id}
+                    href={href}
+                    onClick={() => {
+                      if (unread) {
+                        void markAsRead(notification.id);
                       }
-                      href={
-                        href
-                      }
-                      onClick={() => {
-                        if (
-                          unread
-                        ) {
-                          void markAsRead(
-                            notification.id,
-                          );
-                        }
-                      }}
-                      className="block"
-                    >
-                      {content}
-                    </Link>
-                  ) : (
-                    <div
-                      key={
-                        notification.id
-                      }
-                    >
-                      {content}
-                    </div>
-                  );
-                },
-              )}
+                    }}
+                    className="block"
+                  >
+                    {content}
+                  </Link>
+                ) : (
+                  <div key={notification.id}>{content}</div>
+                );
+              })}
             </div>
           )}
         </section>
