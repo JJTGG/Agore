@@ -192,6 +192,7 @@ export async function GET(
         username,
         bio,
         avatar_path,
+        account_type,
         account_status,
         created_at
       `,
