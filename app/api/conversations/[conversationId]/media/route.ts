@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+
+import { getConversationMessagingAccess } from "@/lib/messaging/conversation-access";
 import { createNotification } from "@/lib/notifications";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -19,26 +21,14 @@ const allowedMediaMimeTypes = [
 const prepareSchema = z.object({
   action: z.literal("prepare"),
   mime_type: z.enum(allowedMediaMimeTypes),
-  file_name: z
-    .string()
-    .trim()
-    .min(1)
-    .max(255),
+  file_name: z.string().trim().min(1).max(255),
 });
 
 const finalizeSchema = z.object({
   action: z.literal("finalize"),
   message_id: z.string().uuid(),
-  storage_path: z
-    .string()
-    .trim()
-    .min(1)
-    .max(500),
-  file_name: z
-    .string()
-    .trim()
-    .min(1)
-    .max(255),
+  storage_path: z.string().trim().min(1).max(500),
+  file_name: z.string().trim().min(1).max(255),
   mime_type: z.enum(allowedMediaMimeTypes),
   size_bytes: z.coerce
     .number()
@@ -59,10 +49,10 @@ const finalizeSchema = z.object({
     .optional(),
 });
 
-const requestSchema = z.discriminatedUnion(
-  "action",
-  [prepareSchema, finalizeSchema],
-);
+const requestSchema = z.discriminatedUnion("action", [
+  prepareSchema,
+  finalizeSchema,
+]);
 
 type MessageRow = {
   id: string;
@@ -75,22 +65,16 @@ type MessageRow = {
   deleted_at: string | null;
 };
 
-function getExtension(
-  fileName: string,
-  mimeType: string,
-) {
-  const providedExtension =
-    fileName
-      .split(".")
-      .pop()
-      ?.trim()
-      .toLowerCase();
+function getExtension(fileName: string, mimeType: string) {
+  const providedExtension = fileName
+    .split(".")
+    .pop()
+    ?.trim()
+    .toLowerCase();
 
   if (
     providedExtension &&
-    /^[a-z0-9]{1,10}$/.test(
-      providedExtension,
-    )
+    /^[a-z0-9]{1,10}$/.test(providedExtension)
   ) {
     return providedExtension;
   }
@@ -111,9 +95,7 @@ function getExtension(
   }
 }
 
-function getMediaType(
-  mimeType: string,
-) {
+function getMediaType(mimeType: string) {
   return mimeType.startsWith("image/")
     ? "image"
     : "file";
@@ -134,10 +116,11 @@ async function getAuthenticatedUser() {
   return user;
 }
 
+// This membership-only check is intentionally retained for DELETE.
+// Cleanup must remain available when a block relationship changes
+// while an upload is in progress.
 async function getMembership(
-  admin: ReturnType<
-    typeof createAdminClient
-  >,
+  admin: ReturnType<typeof createAdminClient>,
   conversationId: string,
   userId: string,
 ) {
@@ -146,13 +129,8 @@ async function getMembership(
     error,
   } = await admin
     .from("conversation_members")
-    .select(
-      "conversation_id, user_id, role, left_at",
-    )
-    .eq(
-      "conversation_id",
-      conversationId,
-    )
+    .select("conversation_id, user_id, role, left_at")
+    .eq("conversation_id", conversationId)
     .eq("user_id", userId)
     .is("left_at", null)
     .maybeSingle();
@@ -165,16 +143,14 @@ async function getMembership(
 
     return {
       membership: null,
-      error:
-        "Unable to access this conversation.",
+      error: "Unable to access this conversation.",
     };
   }
 
   if (!membership) {
     return {
       membership: null,
-      error:
-        "Conversation not found.",
+      error: "Conversation not found.",
     };
   }
 
@@ -185,9 +161,7 @@ async function getMembership(
 }
 
 async function notifyConversationMembers(
-  admin: ReturnType<
-    typeof createAdminClient
-  >,
+  admin: ReturnType<typeof createAdminClient>,
   conversationId: string,
   senderId: string,
   messageId: string,
@@ -198,10 +172,7 @@ async function notifyConversationMembers(
   } = await admin
     .from("conversation_members")
     .select("user_id")
-    .eq(
-      "conversation_id",
-      conversationId,
-    )
+    .eq("conversation_id", conversationId)
     .is("left_at", null)
     .neq("user_id", senderId);
 
@@ -214,22 +185,17 @@ async function notifyConversationMembers(
     return;
   }
 
-  if (
-    !members ||
-    members.length === 0
-  ) {
+  if (!members || members.length === 0) {
     return;
   }
 
   await Promise.allSettled(
     members.map((member) =>
       createNotification({
-        recipientId:
-          member.user_id,
+        recipientId: member.user_id,
         actorId: senderId,
         type: "message",
-        entityId:
-          conversationId,
+        entityId: conversationId,
         data: {
           messageId,
         },
@@ -248,36 +214,25 @@ export async function POST(
     }>;
   },
 ) {
-  const user =
-    await getAuthenticatedUser();
+  const user = await getAuthenticatedUser();
 
   if (!user) {
     return NextResponse.json(
-      {
-        error:
-          "Authentication required.",
-      },
+      { error: "Authentication required." },
       { status: 401 },
     );
   }
 
-  const parsedParams =
-    paramsSchema.safeParse(
-      await params,
-    );
+  const parsedParams = paramsSchema.safeParse(await params);
 
   if (!parsedParams.success) {
     return NextResponse.json(
-      {
-        error:
-          "Invalid conversation ID.",
-      },
+      { error: "Invalid conversation ID." },
       { status: 400 },
     );
   }
 
-  const conversationId =
-    parsedParams.data.conversationId;
+  const conversationId = parsedParams.data.conversationId;
 
   let body: unknown;
 
@@ -285,67 +240,45 @@ export async function POST(
     body = await request.json();
   } catch {
     return NextResponse.json(
-      {
-        error:
-          "Invalid JSON body.",
-      },
+      { error: "Invalid JSON body." },
       { status: 400 },
     );
   }
 
-  const parsedBody =
-    requestSchema.safeParse(body);
+  const parsedBody = requestSchema.safeParse(body);
 
   if (!parsedBody.success) {
     return NextResponse.json(
       {
         error:
-          parsedBody.error.issues[0]
-            ?.message ??
+          parsedBody.error.issues[0]?.message ??
           "Invalid media request.",
       },
       { status: 400 },
     );
   }
 
-  const admin =
-    createAdminClient();
+  const admin = createAdminClient();
 
-  const {
-    membership,
-    error: membershipError,
-  } = await getMembership(
-    admin,
+  // Both prepare and finalize enforce the centralized messaging policy.
+  // A block or inactive membership prevents further media posting.
+  const access = await getConversationMessagingAccess(
     conversationId,
     user.id,
   );
 
-  if (!membership) {
+  if (!access.ok) {
     return NextResponse.json(
-      {
-        error:
-          membershipError ??
-          "Conversation not found.",
-      },
-      {
-        status:
-          membershipError ===
-          "Conversation not found."
-            ? 404
-            : 500,
-      },
+      { error: access.error },
+      { status: access.status },
     );
   }
 
-  if (
-    parsedBody.data.action ===
-    "prepare"
-  ) {
-    const extension =
-      getExtension(
-        parsedBody.data.file_name,
-        parsedBody.data.mime_type,
-      );
+  if (parsedBody.data.action === "prepare") {
+    const extension = getExtension(
+      parsedBody.data.file_name,
+      parsedBody.data.mime_type,
+    );
 
     const {
       data: message,
@@ -353,23 +286,20 @@ export async function POST(
     } = await admin
       .from("messages")
       .insert({
-        conversation_id:
-          conversationId,
+        conversation_id: conversationId,
         sender_id: user.id,
         content: null,
       })
-      .select(
-        `
-          id,
-          conversation_id,
-          sender_id,
-          content,
-          reply_to_message_id,
-          created_at,
-          updated_at,
-          deleted_at
-        `,
-      )
+      .select(`
+        id,
+        conversation_id,
+        sender_id,
+        content,
+        reply_to_message_id,
+        created_at,
+        updated_at,
+        deleted_at
+      `)
       .single();
 
     if (messageError) {
@@ -379,27 +309,20 @@ export async function POST(
       );
 
       return NextResponse.json(
-        {
-          error:
-            "Unable to prepare the media message.",
-        },
+        { error: "Unable to prepare the media message." },
         { status: 500 },
       );
     }
 
-    const storagePath = `${
-      message.id
-    }/${crypto.randomUUID()}.${extension}`;
+    const storagePath =
+      `${message.id}/${crypto.randomUUID()}.${extension}`;
 
     return NextResponse.json(
       {
-        message:
-          message as MessageRow,
+        message: message as MessageRow,
         storage_path: storagePath,
-        mime_type:
-          parsedBody.data.mime_type,
-        file_name:
-          parsedBody.data.file_name,
+        mime_type: parsedBody.data.mime_type,
+        file_name: parsedBody.data.file_name,
       },
       { status: 201 },
     );
@@ -415,51 +338,33 @@ export async function POST(
     height,
   } = parsedBody.data;
 
-  const expectedPrefix =
-    `${messageId}/`;
+  const expectedPrefix = `${messageId}/`;
 
-  if (
-    !storagePath.startsWith(
-      expectedPrefix,
-    )
-  ) {
+  if (!storagePath.startsWith(expectedPrefix)) {
     return NextResponse.json(
-      {
-        error:
-          "Invalid media storage path.",
-      },
+      { error: "Invalid media storage path." },
       { status: 400 },
     );
   }
 
-  const storageSegments =
-    storagePath.split("/");
+  const storageSegments = storagePath.split("/");
 
   if (
     storageSegments.length !== 2 ||
     !storageSegments[1]
   ) {
     return NextResponse.json(
-      {
-        error:
-          "Invalid media storage path.",
-      },
+      { error: "Invalid media storage path." },
       { status: 400 },
     );
   }
 
-  const extension =
-    getExtension(
-      fileName,
-      mimeType,
-    );
+  const extension = getExtension(fileName, mimeType);
 
   if (
     !storageSegments[1]
       .toLowerCase()
-      .endsWith(
-        `.${extension}`,
-      )
+      .endsWith(`.${extension}`)
   ) {
     return NextResponse.json(
       {
@@ -475,27 +380,19 @@ export async function POST(
     error: messageError,
   } = await admin
     .from("messages")
-    .select(
-      `
-        id,
-        conversation_id,
-        sender_id,
-        content,
-        reply_to_message_id,
-        created_at,
-        updated_at,
-        deleted_at
-      `,
-    )
+    .select(`
+      id,
+      conversation_id,
+      sender_id,
+      content,
+      reply_to_message_id,
+      created_at,
+      updated_at,
+      deleted_at
+    `)
     .eq("id", messageId)
-    .eq(
-      "conversation_id",
-      conversationId,
-    )
-    .eq(
-      "sender_id",
-      user.id,
-    )
+    .eq("conversation_id", conversationId)
+    .eq("sender_id", user.id)
     .is("deleted_at", null)
     .maybeSingle();
 
@@ -506,20 +403,14 @@ export async function POST(
     );
 
     return NextResponse.json(
-      {
-        error:
-          "Unable to finalize the media message.",
-      },
+      { error: "Unable to finalize the media message." },
       { status: 500 },
     );
   }
 
   if (!message) {
     return NextResponse.json(
-      {
-        error:
-          "Media message not found.",
-      },
+      { error: "Media message not found." },
       { status: 404 },
     );
   }
@@ -529,25 +420,20 @@ export async function POST(
     error: existingMediaError,
   } = await admin
     .from("message_media")
-    .select(
-      `
-        id,
-        message_id,
-        media_type,
-        storage_path,
-        file_name,
-        mime_type,
-        size_bytes,
-        width,
-        height,
-        duration_ms,
-        created_at
-      `,
-    )
-    .eq(
-      "message_id",
-      messageId,
-    )
+    .select(`
+      id,
+      message_id,
+      media_type,
+      storage_path,
+      file_name,
+      mime_type,
+      size_bytes,
+      width,
+      height,
+      duration_ms,
+      created_at
+    `)
+    .eq("message_id", messageId)
     .maybeSingle();
 
   if (existingMediaError) {
@@ -557,10 +443,7 @@ export async function POST(
     );
 
     return NextResponse.json(
-      {
-        error:
-          "Unable to finalize the media message.",
-      },
+      { error: "Unable to finalize the media message." },
       { status: 500 },
     );
   }
@@ -589,31 +472,22 @@ export async function POST(
     );
 
     return NextResponse.json(
-      {
-        error:
-          "Unable to verify the uploaded media.",
-      },
+      { error: "Unable to verify the uploaded media." },
       { status: 500 },
     );
   }
 
-  const fileNameInStorage =
-    storageSegments[1];
+  const fileNameInStorage = storageSegments[1];
 
-  const storedFile =
-    (storedFiles ?? []).find(
-      (file) =>
-        file.id !== null &&
-        file.name ===
-          fileNameInStorage,
-    );
+  const storedFile = (storedFiles ?? []).find(
+    (file) =>
+      file.id !== null &&
+      file.name === fileNameInStorage,
+  );
 
   if (!storedFile) {
     return NextResponse.json(
-      {
-        error:
-          "The media file has not finished uploading.",
-      },
+      { error: "The media file has not finished uploading." },
       { status: 400 },
     );
   }
@@ -625,32 +499,27 @@ export async function POST(
     .from("message_media")
     .insert({
       message_id: messageId,
-      media_type:
-        getMediaType(mimeType),
+      media_type: getMediaType(mimeType),
       storage_path: storagePath,
       file_name: fileName,
       mime_type: mimeType,
       size_bytes: sizeBytes,
-      width:
-        width ?? null,
-      height:
-        height ?? null,
+      width: width ?? null,
+      height: height ?? null,
     })
-    .select(
-      `
-        id,
-        message_id,
-        media_type,
-        storage_path,
-        file_name,
-        mime_type,
-        size_bytes,
-        width,
-        height,
-        duration_ms,
-        created_at
-      `,
-    )
+    .select(`
+      id,
+      message_id,
+      media_type,
+      storage_path,
+      file_name,
+      mime_type,
+      size_bytes,
+      width,
+      height,
+      duration_ms,
+      created_at
+    `)
     .single();
 
   if (mediaError) {
@@ -660,16 +529,12 @@ export async function POST(
     );
 
     return NextResponse.json(
-      {
-        error:
-          "Unable to finalize the media message.",
-      },
+      { error: "Unable to finalize the media message." },
       { status: 500 },
     );
   }
 
-  const finalizedAt =
-    new Date().toISOString();
+  const finalizedAt = new Date().toISOString();
 
   const {
     error: messageUpdateError,
@@ -679,14 +544,8 @@ export async function POST(
       updated_at: finalizedAt,
     })
     .eq("id", messageId)
-    .eq(
-      "conversation_id",
-      conversationId,
-    )
-    .eq(
-      "sender_id",
-      user.id,
-    )
+    .eq("conversation_id", conversationId)
+    .eq("sender_id", user.id)
     .is("deleted_at", null);
 
   if (messageUpdateError) {
@@ -697,19 +556,14 @@ export async function POST(
   }
 
   const {
-    error:
-      conversationUpdateError,
+    error: conversationUpdateError,
   } = await admin
     .from("conversations")
     .update({
-      last_message_at:
-        message.created_at,
+      last_message_at: message.created_at,
       updated_at: finalizedAt,
     })
-    .eq(
-      "id",
-      conversationId,
-    );
+    .eq("id", conversationId);
 
   if (conversationUpdateError) {
     console.error(
@@ -748,73 +602,49 @@ export async function DELETE(
     }>;
   },
 ) {
-  const user =
-    await getAuthenticatedUser();
+  const user = await getAuthenticatedUser();
 
   if (!user) {
     return NextResponse.json(
-      {
-        error:
-          "Authentication required.",
-      },
+      { error: "Authentication required." },
       { status: 401 },
     );
   }
 
-  const parsedParams =
-    paramsSchema.safeParse(
-      await params,
-    );
+  const parsedParams = paramsSchema.safeParse(await params);
 
   if (!parsedParams.success) {
     return NextResponse.json(
-      {
-        error:
-          "Invalid conversation ID.",
-      },
+      { error: "Invalid conversation ID." },
       { status: 400 },
     );
   }
 
-  const conversationId =
-    parsedParams.data.conversationId;
-
-  const url =
-    new URL(request.url);
-
-  const messageId =
-    url.searchParams.get(
-      "messageId",
-    );
+  const conversationId = parsedParams.data.conversationId;
+  const url = new URL(request.url);
+  const messageId = url.searchParams.get("messageId");
 
   if (!messageId) {
     return NextResponse.json(
-      {
-        error:
-          "Message ID is required.",
-      },
+      { error: "Message ID is required." },
       { status: 400 },
     );
   }
 
-  const parsedMessageId =
-    z.string().uuid().safeParse(
-      messageId,
-    );
+  const parsedMessageId = z.string().uuid().safeParse(messageId);
 
   if (!parsedMessageId.success) {
     return NextResponse.json(
-      {
-        error:
-          "Invalid message ID.",
-      },
+      { error: "Invalid message ID." },
       { status: 400 },
     );
   }
 
-  const admin =
-    createAdminClient();
+  const admin = createAdminClient();
 
+  // Cleanup is intentionally membership-based rather than subject to
+  // direct-message block restrictions, so an interrupted upload can
+  // still be cleaned up after a block relationship changes.
   const {
     membership,
     error: membershipError,
@@ -833,8 +663,7 @@ export async function DELETE(
       },
       {
         status:
-          membershipError ===
-          "Conversation not found."
+          membershipError === "Conversation not found."
             ? 404
             : 500,
       },
@@ -846,17 +675,9 @@ export async function DELETE(
     error: messageError,
   } = await admin
     .from("messages")
-    .select(
-      "id, sender_id, content, deleted_at",
-    )
-    .eq(
-      "id",
-      parsedMessageId.data,
-    )
-    .eq(
-      "conversation_id",
-      conversationId,
-    )
+    .select("id, sender_id, content, deleted_at")
+    .eq("id", parsedMessageId.data)
+    .eq("conversation_id", conversationId)
     .maybeSingle();
 
   if (messageError) {
@@ -866,24 +687,14 @@ export async function DELETE(
     );
 
     return NextResponse.json(
-      {
-        error:
-          "Unable to clean up the media message.",
-      },
+      { error: "Unable to clean up the media message." },
       { status: 500 },
     );
   }
 
-  if (
-    !message ||
-    message.sender_id !==
-      user.id
-  ) {
+  if (!message || message.sender_id !== user.id) {
     return NextResponse.json(
-      {
-        error:
-          "Media message not found.",
-      },
+      { error: "Media message not found." },
       { status: 404 },
     );
   }
@@ -912,26 +723,24 @@ export async function DELETE(
   const expectedPrefix = `${messageFolder}/`;
   const storagePaths = new Set<string>();
 
-  // Include paths that made it into message metadata.
   for (const item of media ?? []) {
     const path =
       typeof item.storage_path === "string"
         ? item.storage_path
         : "";
 
-    if (!path.startsWith(expectedPrefix)) continue;
+    if (!path.startsWith(expectedPrefix)) {
+      continue;
+    }
 
     const relativePath = path.slice(expectedPrefix.length);
 
-    // Message uploads are deliberately one level below the message UUID.
-    // Never let cleanup remove objects from another folder.
     if (relativePath && !relativePath.includes("/")) {
       storagePaths.add(path);
     }
   }
 
-  // An upload may have reached Storage while finalization failed before its
-  // message_media row was inserted. Inspect this message's unique folder too.
+  // Discover files that reached Storage but never received metadata.
   const {
     data: storedObjects,
     error: storageListError,
@@ -967,9 +776,7 @@ export async function DELETE(
   }
 
   if (storagePaths.size > 0) {
-    const {
-      error: storageError,
-    } = await admin.storage
+    const { error: storageError } = await admin.storage
       .from("message-media")
       .remove([...storagePaths]);
 
@@ -979,17 +786,17 @@ export async function DELETE(
         storageError,
       );
 
-      // Keep the message and metadata available so cleanup can be retried.
       return NextResponse.json(
-        { error: "Unable to remove uploaded media. Please retry cleanup." },
+        {
+          error:
+            "Unable to remove uploaded media. Please retry cleanup.",
+        },
         { status: 500 },
       );
     }
   }
 
-  const {
-    error: mediaDeleteError,
-  } = await admin
+  const { error: mediaDeleteError } = await admin
     .from("message_media")
     .delete()
     .eq("message_id", parsedMessageId.data);
@@ -1001,32 +808,24 @@ export async function DELETE(
     );
 
     return NextResponse.json(
-      { error: "Unable to remove media metadata. Please retry cleanup." },
+      {
+        error:
+          "Unable to remove media metadata. Please retry cleanup.",
+      },
       { status: 500 },
     );
   }
 
-  const {
-    error: messageDeleteError,
-  } = await admin
+  const { error: messageDeleteError } = await admin
     .from("messages")
     .update({
       content: null,
-      deleted_at:
-        new Date().toISOString(),
+      deleted_at: new Date().toISOString(),
     })
-    .eq(
-      "id",
-      parsedMessageId.data,
-    )
-    .eq(
-      "sender_id",
-      user.id,
-    )
-    .is(
-      "deleted_at",
-      null,
-    );
+    .eq("id", parsedMessageId.data)
+    .eq("conversation_id", conversationId)
+    .eq("sender_id", user.id)
+    .is("deleted_at", null);
 
   if (messageDeleteError) {
     console.error(
@@ -1035,10 +834,7 @@ export async function DELETE(
     );
 
     return NextResponse.json(
-      {
-        error:
-          "Unable to clean up the media message.",
-      },
+      { error: "Unable to clean up the media message." },
       { status: 500 },
     );
   }
