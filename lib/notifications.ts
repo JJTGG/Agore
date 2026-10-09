@@ -94,42 +94,66 @@ async function findAuthoritativeEventId({
   entityId: string | null;
   data: Record<string, unknown>;
 }) {
-  const eventTypes = getEventTypes(
-    type,
-    data,
-  );
+  const eventTypes = getEventTypes(type, data);
+  let messageId: string | null = null;
 
   if (type === "message") {
-    const messageId =
+    messageId =
       typeof data.messageId === "string"
         ? data.messageId
         : null;
 
-    if (messageId) {
-      const {
-        data: sourceMessage,
-      } = await admin
-        .from("messages")
-        .select("content")
-        .eq("id", messageId)
-        .maybeSingle();
+    if (!messageId) {
+      console.error(
+        "Agore message notification requires a message ID.",
+        {
+          actorId,
+          entityId,
+        },
+      );
 
-      if (
-        sourceMessage &&
-        sourceMessage.content === null
-      ) {
-        eventTypes.splice(
-          0,
-          eventTypes.length,
-          "message.media_added",
-        );
-      } else {
-        eventTypes.splice(
-          0,
-          eventTypes.length,
-          "message.created",
-        );
-      }
+      return null;
+    }
+
+    const {
+      data: sourceMessage,
+      error: sourceMessageError,
+    } = await admin
+      .from("messages")
+      .select("content")
+      .eq("id", messageId)
+      .maybeSingle();
+
+    if (sourceMessageError) {
+      console.error(
+        "Failed to resolve Agore notification message:",
+        sourceMessageError,
+      );
+
+      return null;
+    }
+
+    if (!sourceMessage) {
+      console.error(
+        "Agore notification message was not found.",
+        { messageId },
+      );
+
+      return null;
+    }
+
+    if (sourceMessage.content === null) {
+      eventTypes.splice(
+        0,
+        eventTypes.length,
+        "message.media_added",
+      );
+    } else {
+      eventTypes.splice(
+        0,
+        eventTypes.length,
+        "message.created",
+      );
     }
   }
 
@@ -143,52 +167,39 @@ async function findAuthoritativeEventId({
     .limit(25);
 
   if (actorId) {
-    query = query.eq(
-      "actor_id",
-      actorId,
-    );
+    query = query.eq("actor_id", actorId);
   }
 
-  if (entityId) {
+  if (type === "message" && messageId) {
+    // Match the exact message instead of selecting an unrelated
+    // event from the same conversation.
+    query = query.eq("subject_id", messageId);
+
+    // Text-message events store the conversation in target_id.
+    // Media events store the message ID in subject_id but leave
+    // target_id null, so filter by conversation only for text.
     if (
-      type === "follow"
+      entityId &&
+      eventTypes.includes("message.created")
     ) {
-      query = query.eq(
-        "target_id",
-        entityId,
-      );
-    } else if (
-      type === "message"
-    ) {
-      query = query.eq(
-        "target_id",
-        entityId,
-      );
-    } else if (
-      type === "comment"
-    ) {
+      query = query.eq("target_id", entityId);
+    }
+  } else if (entityId) {
+    if (type === "follow") {
+      query = query.eq("target_id", entityId);
+    } else if (type === "comment") {
       const commentId =
-        typeof data.commentId ===
-        "string"
+        typeof data.commentId === "string"
           ? data.commentId
           : null;
 
       if (commentId) {
-        query = query.eq(
-          "subject_id",
-          commentId,
-        );
+        query = query.eq("subject_id", commentId);
       } else {
-        query = query.eq(
-          "target_id",
-          entityId,
-        );
+        query = query.eq("target_id", entityId);
       }
     } else {
-      query = query.eq(
-        "subject_id",
-        entityId,
-      );
+      query = query.eq("subject_id", entityId);
     }
   }
 
@@ -237,9 +248,7 @@ function getPushPresentation({
         title: "New reaction",
         body: `${actorName} reacted to your post.`,
         url: entityId
-          ? `/post/${encodeURIComponent(
-              entityId,
-            )}`
+          ? `/post/${encodeURIComponent(entityId)}`
           : "/notifications",
       };
 
@@ -254,9 +263,7 @@ function getPushPresentation({
             ? `${actorName} replied to your comment.`
             : `${actorName} commented on your post.`,
         url: entityId
-          ? `/post/${encodeURIComponent(
-              entityId,
-            )}`
+          ? `/post/${encodeURIComponent(entityId)}`
           : "/notifications",
       };
 
@@ -265,9 +272,7 @@ function getPushPresentation({
         title: "New repost",
         body: `${actorName} reposted your post.`,
         url: entityId
-          ? `/post/${encodeURIComponent(
-              entityId,
-            )}`
+          ? `/post/${encodeURIComponent(entityId)}`
           : "/notifications",
       };
 
@@ -276,9 +281,7 @@ function getPushPresentation({
         title: "New message",
         body: `${actorName} sent you a message.`,
         url: entityId
-          ? `/messages/${encodeURIComponent(
-              entityId,
-            )}`
+          ? `/messages/${encodeURIComponent(entityId)}`
           : "/messages",
       };
 
@@ -287,9 +290,7 @@ function getPushPresentation({
         title: "Group activity",
         body: `${actorName} updated a group conversation.`,
         url: entityId
-          ? `/messages/${encodeURIComponent(
-              entityId,
-            )}`
+          ? `/messages/${encodeURIComponent(entityId)}`
           : "/messages",
       };
   }
@@ -313,26 +314,19 @@ export async function createNotification({
     return false;
   }
 
-  const admin =
-    createAdminClient();
+  const admin = createAdminClient();
 
-  const preferenceColumn =
-    preferenceByType[type];
+  const preferenceColumn = preferenceByType[type];
 
   const {
     data: preferences,
     error: preferencesError,
   } = await admin
-    .from(
-      "notification_preferences",
-    )
+    .from("notification_preferences")
     .select(
       "follows, reactions, comments, reposts, messages, group_activity",
     )
-    .eq(
-      "user_id",
-      recipientId,
-    )
+    .eq("user_id", recipientId)
     .maybeSingle();
 
   if (preferencesError) {
@@ -345,26 +339,22 @@ export async function createNotification({
   }
 
   const typedPreferences =
-    (preferences as NotificationPreferences | null) ??
-    null;
+    (preferences as NotificationPreferences | null) ?? null;
 
   if (
     typedPreferences &&
-    typedPreferences[
-      preferenceColumn
-    ] === false
+    typedPreferences[preferenceColumn] === false
   ) {
     return false;
   }
 
-  const eventId =
-    await findAuthoritativeEventId({
-      admin,
-      actorId,
-      type,
-      entityId,
-      data,
-    });
+  const eventId = await findAuthoritativeEventId({
+    admin,
+    actorId,
+    type,
+    entityId,
+    data,
+  });
 
   if (!eventId) {
     console.error(
@@ -385,26 +375,18 @@ export async function createNotification({
     error: existingError,
   } = await admin
     .from("notifications")
-    .select(
-      `
-        id,
-        event_id,
-        recipient_id,
-        actor_id,
-        type,
-        entity_id,
-        data,
-        push_sent_at
-      `,
-    )
-    .eq(
-      "event_id",
-      eventId,
-    )
-    .eq(
-      "recipient_id",
-      recipientId,
-    )
+    .select(`
+      id,
+      event_id,
+      recipient_id,
+      actor_id,
+      type,
+      entity_id,
+      data,
+      push_sent_at
+    `)
+    .eq("event_id", eventId)
+    .eq("recipient_id", recipientId)
     .maybeSingle();
 
   if (existingError) {
@@ -416,8 +398,7 @@ export async function createNotification({
     return false;
   }
 
-  let notification =
-    existingNotification;
+  let notification = existingNotification;
 
   if (!notification) {
     const {
@@ -426,29 +407,23 @@ export async function createNotification({
     } = await admin
       .from("notifications")
       .insert({
-        event_id:
-          eventId,
-        recipient_id:
-          recipientId,
-        actor_id:
-          actorId,
+        event_id: eventId,
+        recipient_id: recipientId,
+        actor_id: actorId,
         type,
-        entity_id:
-          entityId,
+        entity_id: entityId,
         data,
       })
-      .select(
-        `
-          id,
-          event_id,
-          recipient_id,
-          actor_id,
-          type,
-          entity_id,
-          data,
-          push_sent_at
-        `,
-      )
+      .select(`
+        id,
+        event_id,
+        recipient_id,
+        actor_id,
+        type,
+        entity_id,
+        data,
+        push_sent_at
+      `)
       .single();
 
     if (insertError) {
@@ -460,8 +435,7 @@ export async function createNotification({
       return false;
     }
 
-    notification =
-      insertedNotification;
+    notification = insertedNotification;
   }
 
   if (
@@ -474,59 +448,42 @@ export async function createNotification({
     } = actorId
       ? await admin
           .from("profiles")
-          .select(
-            "display_name",
-          )
-          .eq(
-            "id",
-            actorId,
-          )
+          .select("display_name")
+          .eq("id", actorId)
           .maybeSingle()
       : {
           data: null,
         };
 
     const actorName =
-      actorProfile?.display_name ??
-      "Someone";
+      actorProfile?.display_name ?? "Someone";
 
-    const presentation =
-      getPushPresentation({
-        type,
-        actorName,
-        entityId,
-        data: {
-          ...data,
-          actorId,
-        },
-      });
+    const presentation = getPushPresentation({
+      type,
+      actorName,
+      entityId,
+      data: {
+        ...data,
+        actorId,
+      },
+    });
 
     try {
-      const sent =
-        await sendPushNotification(
-          {
-            recipientId,
-          },
-          presentation,
-        );
+      const sent = await sendPushNotification(
+        {
+          recipientId,
+        },
+        presentation,
+      );
 
       if (sent) {
         await admin
-          .from(
-            "notifications",
-          )
+          .from("notifications")
           .update({
-            push_sent_at:
-              new Date().toISOString(),
+            push_sent_at: new Date().toISOString(),
           })
-          .eq(
-            "id",
-            notification.id,
-          )
-          .is(
-            "push_sent_at",
-            null,
-          );
+          .eq("id", notification.id)
+          .is("push_sent_at", null);
       }
     } catch (pushError) {
       console.error(
