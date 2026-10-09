@@ -1,3 +1,4 @@
+
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -36,10 +37,7 @@ const uuidSchema = z.uuid();
 const cursorTimestampPattern =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
 
-function privateJson(
-  payload: unknown,
-  status = 200,
-) {
+function privateJson(payload: unknown, status = 200) {
   return NextResponse.json(payload, {
     status,
     headers: {
@@ -110,12 +108,9 @@ export async function GET(
 
   const beforeCreatedAt =
     url.searchParams.get("beforeCreatedAt");
-  const beforeId =
-    url.searchParams.get("beforeId");
+  const beforeId = url.searchParams.get("beforeId");
 
-  if (
-    Boolean(beforeCreatedAt) !== Boolean(beforeId)
-  ) {
+  if (Boolean(beforeCreatedAt) !== Boolean(beforeId)) {
     return privateJson(
       {
         error:
@@ -150,8 +145,7 @@ export async function GET(
 
   const admin = createAdminClient();
 
-  // Ownership is part of the query itself. Knowing another
-  // user's case ID cannot grant access to their case.
+  // Ownership is enforced directly in the database query.
   const {
     data: supportCase,
     error: caseError,
@@ -189,8 +183,6 @@ export async function GET(
   }
 
   if (!supportCase) {
-    // Return the same response for nonexistent cases and
-    // cases owned by someone else.
     return privateJson(
       { error: "Support case not found." },
       404,
@@ -199,9 +191,7 @@ export async function GET(
 
   let messagesQuery = admin
     .from("support_case_messages")
-    .select(
-      "id, sender_id, body, created_at",
-    )
+    .select("id, sender_id, body, created_at")
     .eq("case_id", parsedCaseId.data)
     .eq("visibility", "customer")
     .order("created_at", { ascending: false })
@@ -233,8 +223,8 @@ export async function GET(
     );
   }
 
-  // Local types are used until the generated Supabase database
-  // types include the new support tables.
+  // Local types are used until generated Supabase types
+  // include the new support tables.
   const rows = (
     messageData ?? []
   ) as unknown as SupportCaseMessage[];
@@ -244,8 +234,7 @@ export async function GET(
   const oldestVisible =
     visibleRows[visibleRows.length - 1];
 
-  // Query newest-first for stable pagination, but return the
-  // selected page in chronological order for conversation UI.
+  // Return messages chronologically for the conversation UI.
   const messages = visibleRows
     .slice()
     .reverse()
@@ -260,7 +249,9 @@ export async function GET(
     }));
 
   return privateJson({
-    case: supportCase as SupportCaseSummary,
+    // Fix: Supabase's current generated type requires
+    // casting through unknown for this locally defined type.
+    case: supportCase as unknown as SupportCaseSummary,
     messages,
     pagination: {
       limit,
