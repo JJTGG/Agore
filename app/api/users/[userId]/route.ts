@@ -1,3 +1,4 @@
+
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -20,6 +21,13 @@ type BlockRow = {
 type ConnectionFollowRow = {
   follower_id?: string;
   following_id?: string;
+};
+
+type VerificationGrant = {
+  verification_kind: "official" | "paid";
+  verified_at: string;
+  expires_at: string | null;
+  revoked_at: string | null;
 };
 
 function getBlockedConnectionIds(
@@ -63,6 +71,37 @@ function countVisibleConnections(
   return ids.size;
 }
 
+function getActiveVerificationKind(
+  grant: VerificationGrant | null,
+): "official" | "paid" | null {
+  if (!grant || grant.revoked_at !== null) {
+    return null;
+  }
+
+  if (
+    grant.verification_kind === "official" &&
+    grant.expires_at === null
+  ) {
+    return "official";
+  }
+
+  if (
+    grant.verification_kind === "paid" &&
+    grant.expires_at !== null
+  ) {
+    const expiresAt = Date.parse(grant.expires_at);
+
+    if (
+      Number.isFinite(expiresAt) &&
+      expiresAt > Date.now()
+    ) {
+      return "paid";
+    }
+  }
+
+  return null;
+}
+
 export async function GET(
   _: Request,
   context: RouteContext,
@@ -101,7 +140,6 @@ export async function GET(
   }
 
   const targetUserId = parsedUserId.data;
-
   const admin = createAdminClient();
 
   const [
@@ -230,6 +268,41 @@ export async function GET(
     );
   }
 
+  // Verification grants are private to trusted server-side code.
+  // Never return internal_note or other administrative fields.
+  const {
+    data: verificationGrantData,
+    error: verificationError,
+  } = await admin
+    .from("profile_verifications")
+    .select(
+      "verification_kind, verified_at, expires_at, revoked_at",
+    )
+    .eq("user_id", targetUserId)
+    .maybeSingle();
+
+  if (verificationError) {
+    console.error(
+      "Failed to load Agore verification status:",
+      verificationError,
+    );
+
+    return NextResponse.json(
+      {
+        error: "Unable to load verification status.",
+      },
+      {
+        status: 500,
+      },
+    );
+  }
+
+  const verificationGrant =
+    verificationGrantData as VerificationGrant | null;
+
+  const verificationKind =
+    getActiveVerificationKind(verificationGrant);
+
   const blockedConnectionIds =
     getBlockedConnectionIds(
       blockRelationships,
@@ -253,8 +326,7 @@ export async function GET(
     ]),
   ];
 
-  let activeConnectionIds =
-    new Set<string>();
+  let activeConnectionIds = new Set<string>();
 
   if (connectionIds.length > 0) {
     const {
@@ -317,24 +389,24 @@ export async function GET(
     !viewerBlockedTarget
   ) {
     isFollowing = followerRows.some(
-      (row) =>
-        row.follower_id === user.id,
+      (row) => row.follower_id === user.id,
     );
   }
 
   return NextResponse.json({
     profile: {
       ...profile,
-      is_self:
-        targetUserId === user.id,
-      is_following:
-        isFollowing,
-      is_blocked:
-        viewerBlockedTarget,
-      follower_count:
-        followerCount,
-      following_count:
-        followingCount,
+      verification: {
+        status: verificationKind
+          ? "verified"
+          : "unverified",
+        kind: verificationKind,
+      },
+      is_self: targetUserId === user.id,
+      is_following: isFollowing,
+      is_blocked: viewerBlockedTarget,
+      follower_count: followerCount,
+      following_count: followingCount,
     },
   });
 }
