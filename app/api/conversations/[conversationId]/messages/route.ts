@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+
+import { getConversationMessagingAccess } from "@/lib/messaging/conversation-access";
 import { createNotification } from "@/lib/notifications";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -113,49 +115,26 @@ async function getAuthenticatedUser() {
 }
 
 async function verifyConversationMembership(
-  admin: ReturnType<typeof createAdminClient>,
   conversationId: string,
   userId: string,
 ) {
-  const {
-    data: membership,
-    error,
-  } = await admin
-    .from("conversation_members")
-    .select(
-      "conversation_id, user_id, role, left_at",
-    )
-    .eq(
-      "conversation_id",
-      conversationId,
-    )
-    .eq("user_id", userId)
-    .is("left_at", null)
-    .maybeSingle();
+  const access = await getConversationMessagingAccess(
+    conversationId,
+    userId,
+  );
 
-  if (error) {
-    console.error(
-      "Failed to verify Agore conversation membership:",
-      error,
-    );
-
+  if (!access.ok) {
     return {
       membership: null,
-      error:
-        "Unable to access this conversation.",
-    };
-  }
-
-  if (!membership) {
-    return {
-      membership: null,
-      error: "Conversation not found.",
+      error: access.error,
+      status: access.status,
     };
   }
 
   return {
-    membership,
+    membership: access.membership,
     error: null,
+    status: null,
   };
 }
 
@@ -166,24 +145,16 @@ async function attachSenderProfiles(
   const senderIds = [
     ...new Set(
       messages
-        .map(
-          (message) =>
-            message.sender_id,
-        )
-        .filter(
-          (id): id is string =>
-            Boolean(id),
-        ),
+        .map((message) => message.sender_id)
+        .filter((id): id is string => Boolean(id)),
     ),
   ];
 
   if (senderIds.length === 0) {
-    return messages.map(
-      (message) => ({
-        ...message,
-        sender: null,
-      }),
-    );
+    return messages.map((message) => ({
+      ...message,
+      sender: null,
+    }));
   }
 
   const {
@@ -191,14 +162,9 @@ async function attachSenderProfiles(
     error,
   } = await admin
     .from("profiles")
-    .select(
-      "id, display_name, username, avatar_path",
-    )
+    .select("id, display_name, username, avatar_path")
     .in("id", senderIds)
-    .eq(
-      "account_status",
-      "active",
-    );
+    .eq("account_status", "active");
 
   if (error) {
     console.error(
@@ -206,33 +172,22 @@ async function attachSenderProfiles(
       error,
     );
 
-    throw new Error(
-      "Unable to load message profiles.",
-    );
+    throw new Error("Unable to load message profiles.");
   }
 
-  const profileMap =
-    new Map(
-      (
-        (profiles ??
-          []) as ProfileRow[]
-      ).map((profile) => [
-        profile.id,
-        profile,
-      ]),
-    );
-
-  return messages.map(
-    (message) => ({
-      ...message,
-      sender:
-        message.sender_id
-          ? profileMap.get(
-              message.sender_id,
-            ) ?? null
-          : null,
-    }),
+  const profileMap = new Map(
+    ((profiles ?? []) as ProfileRow[]).map((profile) => [
+      profile.id,
+      profile,
+    ]),
   );
+
+  return messages.map((message) => ({
+    ...message,
+    sender: message.sender_id
+      ? profileMap.get(message.sender_id) ?? null
+      : null,
+  }));
 }
 
 async function attachMessageMedia(
@@ -240,43 +195,33 @@ async function attachMessageMedia(
   messages: MessageRow[],
 ) {
   if (messages.length === 0) {
-    return messages.map(
-      (message) => ({
-        ...message,
-        media: [],
-      }),
-    );
+    return messages.map((message) => ({
+      ...message,
+      media: [],
+    }));
   }
 
-  const messageIds =
-    messages.map(
-      (message) => message.id,
-    );
+  const messageIds = messages.map((message) => message.id);
 
   const {
     data: media,
     error,
   } = await admin
     .from("message_media")
-    .select(
-      `
-        id,
-        message_id,
-        media_type,
-        storage_path,
-        file_name,
-        mime_type,
-        size_bytes,
-        width,
-        height,
-        duration_ms,
-        created_at
-      `,
-    )
-    .in(
-      "message_id",
-      messageIds,
-    )
+    .select(`
+      id,
+      message_id,
+      media_type,
+      storage_path,
+      file_name,
+      mime_type,
+      size_bytes,
+      width,
+      height,
+      duration_ms,
+      created_at
+    `)
+    .in("message_id", messageIds)
     .order("created_at", {
       ascending: true,
     });
@@ -287,69 +232,40 @@ async function attachMessageMedia(
       error,
     );
 
-    throw new Error(
-      "Unable to load message media.",
-    );
+    throw new Error("Unable to load message media.");
   }
 
-  const mediaMap =
-    new Map<
-      string,
-      MessageMediaRow[]
-    >();
+  const mediaMap = new Map<string, MessageMediaRow[]>();
 
-  for (const item of (media ??
-    []) as MessageMediaRow[]) {
-    const existing =
-      mediaMap.get(
-        item.message_id,
-      );
+  for (const item of (media ?? []) as MessageMediaRow[]) {
+    const existing = mediaMap.get(item.message_id);
 
     if (existing) {
       existing.push(item);
     } else {
-      mediaMap.set(
-        item.message_id,
-        [item],
-      );
+      mediaMap.set(item.message_id, [item]);
     }
   }
 
-  return messages.map(
-    (message) => ({
-      ...message,
-      media:
-        mediaMap.get(
-          message.id,
-        ) ?? [],
-    }),
-  );
+  return messages.map((message) => ({
+    ...message,
+    media: mediaMap.get(message.id) ?? [],
+  }));
 }
 
 async function buildMessages(
   admin: ReturnType<typeof createAdminClient>,
   messages: MessageRow[],
 ) {
-  const withMedia =
-    await attachMessageMedia(
-      admin,
-      messages,
-    );
+  const withMedia = await attachMessageMedia(admin, messages);
 
-  const usableMessages =
-    withMedia.filter(
-      (message) =>
-        Boolean(
-          message.content?.trim(),
-        ) ||
-        message.media.length >
-          0,
-    );
-
-  return attachSenderProfiles(
-    admin,
-    usableMessages,
+  const usableMessages = withMedia.filter(
+    (message) =>
+      Boolean(message.content?.trim()) ||
+      message.media.length > 0,
   );
+
+  return attachSenderProfiles(admin, usableMessages);
 }
 
 async function notifyConversationMembers(
@@ -364,10 +280,7 @@ async function notifyConversationMembers(
   } = await admin
     .from("conversation_members")
     .select("user_id")
-    .eq(
-      "conversation_id",
-      conversationId,
-    )
+    .eq("conversation_id", conversationId)
     .is("left_at", null)
     .neq("user_id", senderId);
 
@@ -380,22 +293,17 @@ async function notifyConversationMembers(
     return;
   }
 
-  if (
-    !members ||
-    members.length === 0
-  ) {
+  if (!members || members.length === 0) {
     return;
   }
 
   await Promise.allSettled(
     members.map((member) =>
       createNotification({
-        recipientId:
-          member.user_id,
+        recipientId: member.user_id,
         actorId: senderId,
         type: "message",
-        entityId:
-          conversationId,
+        entityId: conversationId,
         data: {
           messageId,
         },
@@ -404,9 +312,7 @@ async function notifyConversationMembers(
   );
 }
 
-function escapeLikePattern(
-  value: string,
-) {
+function escapeLikePattern(value: string) {
   return value
     .replaceAll("\\", "\\\\")
     .replaceAll("%", "\\%")
@@ -423,68 +329,37 @@ export async function GET(
     }>;
   },
 ) {
-  const user =
-    await getAuthenticatedUser();
+  const user = await getAuthenticatedUser();
 
   if (!user) {
     return NextResponse.json(
-      {
-        error:
-          "Authentication required.",
-      },
+      { error: "Authentication required." },
       { status: 401 },
     );
   }
 
-  const parsedParams =
-    paramsSchema.safeParse(
-      await params,
-    );
+  const parsedParams = paramsSchema.safeParse(await params);
 
   if (!parsedParams.success) {
     return NextResponse.json(
-      {
-        error:
-          "Invalid conversation ID.",
-      },
+      { error: "Invalid conversation ID." },
       { status: 400 },
     );
   }
 
-  const conversationId =
-    parsedParams.data
-      .conversationId;
+  const conversationId = parsedParams.data.conversationId;
+  const url = new URL(request.url);
 
-  const url = new URL(
-    request.url,
-  );
-
-  const parsedQuery =
-    querySchema.safeParse({
-      limit:
-        url.searchParams.get(
-          "limit",
-        ) ?? undefined,
-      cursor:
-        url.searchParams.get(
-          "cursor",
-        ) ?? undefined,
-      before:
-        url.searchParams.get(
-          "before",
-        ) ?? undefined,
-      search:
-        url.searchParams.get(
-          "search",
-        ) ?? undefined,
-    });
+  const parsedQuery = querySchema.safeParse({
+    limit: url.searchParams.get("limit") ?? undefined,
+    cursor: url.searchParams.get("cursor") ?? undefined,
+    before: url.searchParams.get("before") ?? undefined,
+    search: url.searchParams.get("search") ?? undefined,
+  });
 
   if (!parsedQuery.success) {
     return NextResponse.json(
-      {
-        error:
-          "Invalid message parameters.",
-      },
+      { error: "Invalid message parameters." },
       { status: 400 },
     );
   }
@@ -496,100 +371,73 @@ export async function GET(
 
   if (cursorToken && !historyCursor) {
     return NextResponse.json(
-      {
-        error: "Invalid message cursor.",
-      },
+      { error: "Invalid message cursor." },
       { status: 400 },
     );
   }
 
-  const searchTerm =
-    parsedQuery.data.search?.trim() ??
-    "";
+  const searchTerm = parsedQuery.data.search?.trim() ?? "";
+  const isSearch = searchTerm.length > 0;
 
-  const isSearch =
-    searchTerm.length > 0;
+  const admin = createAdminClient();
 
-  const admin =
-    createAdminClient();
-
+  // Use the centralized messaging policy for active membership,
+  // conversation existence, and direct-message block restrictions.
   const {
     membership,
-    error:
-      membershipError,
-  } =
-    await verifyConversationMembership(
-      admin,
-      conversationId,
-      user.id,
-    );
+    error: membershipError,
+    status: membershipStatus,
+  } = await verifyConversationMembership(
+    conversationId,
+    user.id,
+  );
 
   if (!membership) {
     return NextResponse.json(
       {
-        error:
-          membershipError ??
-          "Conversation not found.",
+        error: membershipError ?? "Conversation not found.",
       },
       {
-        status:
-          membershipError ===
-          "Conversation not found."
-            ? 404
-            : 500,
+        status: membershipStatus ?? 500,
       },
     );
   }
 
   let query = admin
     .from("messages")
-    .select(
-      `
-        id,
-        conversation_id,
-        sender_id,
-        content,
-        reply_to_message_id,
-        forwarded_from_message_id,
-        created_at,
-        updated_at,
-        deleted_at
-      `,
-    )
-    .eq(
-      "conversation_id",
-      conversationId,
-    )
+    .select(`
+      id,
+      conversation_id,
+      sender_id,
+      content,
+      reply_to_message_id,
+      forwarded_from_message_id,
+      created_at,
+      updated_at,
+      deleted_at
+    `)
+    .eq("conversation_id", conversationId)
     .is("deleted_at", null)
-    // The ID tie-breaker keeps pagination stable for identical timestamps.
     .order("created_at", {
       ascending: false,
     })
     .order("id", {
       ascending: false,
     })
-    // Fetch one extra raw row to determine whether another page exists.
-    .limit(
-      parsedQuery.data.limit + 1,
-    );
+    .limit(parsedQuery.data.limit + 1);
 
   if (historyCursor) {
     query = query.or(
       `created_at.lt.${historyCursor.createdAt},and(created_at.eq.${historyCursor.createdAt},id.lt.${historyCursor.id})`,
     );
   } else if (parsedQuery.data.before) {
-    query = query.lt(
-      "created_at",
-      parsedQuery.data.before,
-    );
+    query = query.lt("created_at", parsedQuery.data.before);
   }
 
   if (isSearch) {
     query = query.ilike(
       "content",
-      `%${escapeLikePattern(
-        searchTerm,
-      )}%`,
+      `%${escapeLikePattern(searchTerm)}%`,
     );
   }
 
@@ -605,19 +453,13 @@ export async function GET(
     );
 
     return NextResponse.json(
-      {
-        error:
-          "Unable to load messages.",
-      },
+      { error: "Unable to load messages." },
       { status: 500 },
     );
   }
 
   const rawRows = (messages ?? []) as MessageRow[];
   const hasMore = rawRows.length > parsedQuery.data.limit;
-
-  // The query is newest-first. Return only the requested page;
-  // the extra row is used only to determine hasMore.
   const pageRows = rawRows.slice(0, parsedQuery.data.limit);
 
   const orderedMessages = isSearch
@@ -635,19 +477,14 @@ export async function GET(
       : null;
 
   try {
-    const messagesWithDetails =
-      await buildMessages(
-        admin,
-        orderedMessages,
-      );
+    const messagesWithDetails = await buildMessages(
+      admin,
+      orderedMessages,
+    );
 
     return NextResponse.json({
-      conversation_id:
-        conversationId,
-      messages:
-        messagesWithDetails,
-
-      // Retain the legacy field for any existing clients.
+      conversation_id: conversationId,
+      messages: messagesWithDetails,
       has_more: hasMore,
       hasMore,
       nextCursor,
@@ -659,10 +496,7 @@ export async function GET(
     );
 
     return NextResponse.json(
-      {
-        error:
-          "Unable to load messages.",
-      },
+      { error: "Unable to load messages." },
       { status: 500 },
     );
   }
@@ -678,37 +512,25 @@ export async function POST(
     }>;
   },
 ) {
-  const user =
-    await getAuthenticatedUser();
+  const user = await getAuthenticatedUser();
 
   if (!user) {
     return NextResponse.json(
-      {
-        error:
-          "Authentication required.",
-      },
+      { error: "Authentication required." },
       { status: 401 },
     );
   }
 
-  const parsedParams =
-    paramsSchema.safeParse(
-      await params,
-    );
+  const parsedParams = paramsSchema.safeParse(await params);
 
   if (!parsedParams.success) {
     return NextResponse.json(
-      {
-        error:
-          "Invalid conversation ID.",
-      },
+      { error: "Invalid conversation ID." },
       { status: 400 },
     );
   }
 
-  const conversationId =
-    parsedParams.data
-      .conversationId;
+  const conversationId = parsedParams.data.conversationId;
 
   let body: unknown;
 
@@ -716,66 +538,49 @@ export async function POST(
     body = await request.json();
   } catch {
     return NextResponse.json(
-      {
-        error:
-          "Invalid JSON body.",
-      },
+      { error: "Invalid JSON body." },
       { status: 400 },
     );
   }
 
-  const parsedBody =
-    createMessageSchema.safeParse(
-      body,
-    );
+  const parsedBody = createMessageSchema.safeParse(body);
 
   if (!parsedBody.success) {
     return NextResponse.json(
       {
         error:
-          parsedBody.error.issues[0]
-            ?.message ??
+          parsedBody.error.issues[0]?.message ??
           "Invalid message.",
       },
       { status: 400 },
     );
   }
 
-  const admin =
-    createAdminClient();
+  const admin = createAdminClient();
 
+  // Message creation uses the same access policy as message history.
   const {
     membership,
-    error:
-      membershipError,
-  } =
-    await verifyConversationMembership(
-      admin,
-      conversationId,
-      user.id,
-    );
+    error: membershipError,
+    status: membershipStatus,
+  } = await verifyConversationMembership(
+    conversationId,
+    user.id,
+  );
 
   if (!membership) {
     return NextResponse.json(
       {
-        error:
-          membershipError ??
-          "Conversation not found.",
+        error: membershipError ?? "Conversation not found.",
       },
       {
-        status:
-          membershipError ===
-          "Conversation not found."
-            ? 404
-            : 500,
+        status: membershipStatus ?? 500,
       },
     );
   }
 
   const replyToMessageId =
-    parsedBody.data
-      .reply_to_message_id ??
-    null;
+    parsedBody.data.reply_to_message_id ?? null;
 
   if (replyToMessageId) {
     const {
@@ -784,14 +589,8 @@ export async function POST(
     } = await admin
       .from("messages")
       .select("id")
-      .eq(
-        "id",
-        replyToMessageId,
-      )
-      .eq(
-        "conversation_id",
-        conversationId,
-      )
+      .eq("id", replyToMessageId)
+      .eq("conversation_id", conversationId)
       .is("deleted_at", null)
       .maybeSingle();
 
@@ -802,20 +601,14 @@ export async function POST(
       );
 
       return NextResponse.json(
-        {
-          error:
-            "Unable to validate the reply.",
-        },
+        { error: "Unable to validate the reply." },
         { status: 500 },
       );
     }
 
     if (!replyMessage) {
       return NextResponse.json(
-        {
-          error:
-            "Reply target not found.",
-        },
+        { error: "Reply target not found." },
         { status: 400 },
       );
     }
@@ -827,27 +620,22 @@ export async function POST(
   } = await admin
     .from("messages")
     .insert({
-      conversation_id:
-        conversationId,
+      conversation_id: conversationId,
       sender_id: user.id,
-      content:
-        parsedBody.data.content,
-      reply_to_message_id:
-        replyToMessageId,
+      content: parsedBody.data.content,
+      reply_to_message_id: replyToMessageId,
     })
-    .select(
-      `
-        id,
-        conversation_id,
-        sender_id,
-        content,
-        reply_to_message_id,
-        forwarded_from_message_id,
-        created_at,
-        updated_at,
-        deleted_at
-      `,
-    )
+    .select(`
+      id,
+      conversation_id,
+      sender_id,
+      content,
+      reply_to_message_id,
+      forwarded_from_message_id,
+      created_at,
+      updated_at,
+      deleted_at
+    `)
     .single();
 
   if (messageError) {
@@ -857,29 +645,20 @@ export async function POST(
     );
 
     return NextResponse.json(
-      {
-        error:
-          "Unable to send the message.",
-      },
+      { error: "Unable to send the message." },
       { status: 500 },
     );
   }
 
   const {
-    error:
-      conversationUpdateError,
+    error: conversationUpdateError,
   } = await admin
     .from("conversations")
     .update({
-      last_message_at:
-        message.created_at,
-      updated_at:
-        new Date().toISOString(),
+      last_message_at: message.created_at,
+      updated_at: new Date().toISOString(),
     })
-    .eq(
-      "id",
-      conversationId,
-    );
+    .eq("id", conversationId);
 
   if (conversationUpdateError) {
     console.error(
@@ -896,19 +675,15 @@ export async function POST(
   );
 
   try {
-    const [
-      messageWithDetails,
-    ] = await buildMessages(
+    const [messageWithDetails] = await buildMessages(
       admin,
       [message as MessageRow],
     );
 
     return NextResponse.json(
       {
-        conversation_id:
-          conversationId,
-        message:
-          messageWithDetails,
+        conversation_id: conversationId,
+        message: messageWithDetails,
       },
       { status: 201 },
     );
