@@ -168,9 +168,11 @@ function getMessagePreview(
   if (media.some((item) => item.media_type === "audio")) {
     return "Voice message";
   }
+
   if (media.some((item) => item.media_type === "image")) {
     return "Image";
   }
+
   if (media.some((item) => item.media_type === "file")) {
     return "Attachment";
   }
@@ -484,7 +486,11 @@ function MessageBubble({
                 {message.content}
               </p>
             ) : (
-              <p className={`text-sm ${isOwn ? "text-white/70" : "text-[var(--muted)]"}`}>
+              <p
+                className={`text-sm ${
+                  isOwn ? "text-white/70" : "text-[var(--muted)]"
+                }`}
+              >
                 Message unavailable
               </p>
             )}
@@ -645,6 +651,7 @@ export default function ConversationPage() {
         `/api/conversations/${encodeURIComponent(conversationId)}`,
         { cache: "no-store" },
       );
+
       const data = await response.json();
 
       if (response.status === 401) {
@@ -666,10 +673,10 @@ export default function ConversationPage() {
         return;
       }
 
-      setError("");
       setConversation(found);
       setGroupName(found.name ?? "");
       setGroupDescription(found.description ?? "");
+      setError("");
     } catch {
       setError("Unable to load this conversation.");
       setConversation(null);
@@ -702,6 +709,7 @@ export default function ConversationPage() {
           `/api/conversations?${params.toString()}`,
           { cache: "no-store" },
         );
+
         const data = await response.json();
 
         if (response.status === 401) {
@@ -760,10 +768,14 @@ export default function ConversationPage() {
       }
 
       if (!response.ok) {
-        console.warn("Agore conversation read state could not be updated.");
+        console.warn(
+          "Agoré conversation read state could not be updated.",
+        );
       }
     } catch {
-      console.warn("Agore conversation read state request failed.");
+      console.warn(
+        "Agoré conversation read state request failed.",
+      );
     }
   }, [conversationId, router]);
 
@@ -778,6 +790,7 @@ export default function ConversationPage() {
           `/api/conversations/${encodeURIComponent(conversationId)}/messages?limit=100`,
           { cache: "no-store" },
         );
+
         const data = await response.json();
 
         if (response.status === 401) {
@@ -794,8 +807,7 @@ export default function ConversationPage() {
           ? data.messages
           : [];
 
-        // Merge refresh/realtime results instead of replacing pages the user
-        // has already loaded from history.
+        // Merge by ID. Refreshes never erase older pages already loaded.
         setMessages((current) => {
           const byId = new Map<string, Message>();
 
@@ -816,8 +828,7 @@ export default function ConversationPage() {
           });
         });
 
-        // Background refreshes must not reset the cursor after the user has
-        // paged into older history.
+        // Preserve the history cursor once older messages have been loaded.
         if (!hasLoadedOlderHistoryRef.current) {
           setHistoryCursor(
             typeof data.nextCursor === "string" ? data.nextCursor : null,
@@ -870,6 +881,7 @@ export default function ConversationPage() {
         `/api/conversations/${encodeURIComponent(conversationId)}/messages?${params.toString()}`,
         { cache: "no-store" },
       );
+
       const data = await response.json();
 
       if (response.status === 401) {
@@ -921,12 +933,7 @@ export default function ConversationPage() {
       loadingOlderRef.current = false;
       setLoadingOlderMessages(false);
     }
-  }, [
-    conversationId,
-    hasOlderMessages,
-    historyCursor,
-    router,
-  ]);
+  }, [conversationId, hasOlderMessages, historyCursor, router]);
 
   const loadGroupMembers = useCallback(async () => {
     if (!conversationId || !conversation || conversation.type !== "group") {
@@ -941,6 +948,7 @@ export default function ConversationPage() {
         `/api/conversations/${encodeURIComponent(conversationId)}/members`,
         { cache: "no-store" },
       );
+
       const data = await response.json();
 
       if (response.status === 401) {
@@ -949,7 +957,9 @@ export default function ConversationPage() {
       }
 
       if (!response.ok) {
-        setGroupActionError(data.error ?? "Unable to load group members.");
+        setGroupActionError(
+          data.error ?? "Unable to load group members.",
+        );
         return;
       }
 
@@ -982,10 +992,13 @@ export default function ConversationPage() {
   }, []);
 
   useEffect(() => {
+    let active = true;
+
     async function initialize() {
       setLoading(true);
       setError("");
       initialScrollDoneRef.current = false;
+      nearBottomRef.current = true;
 
       pendingScrollRestoreRef.current = null;
       hasLoadedOlderHistoryRef.current = false;
@@ -997,17 +1010,50 @@ export default function ConversationPage() {
       setMessages([]);
 
       try {
-        await Promise.all([loadConversation(), loadMessages()]);
+        await Promise.all([
+          loadConversation(),
+          loadMessages(),
+        ]);
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     }
 
     void initialize();
+
+    return () => {
+      active = false;
+    };
   }, [loadConversation, loadMessages]);
 
+  /*
+   * Realtime recovery:
+   * - Refresh on message INSERT / UPDATE.
+   * - Reconcile server state after a successful subscription.
+   * - Refresh when the network returns or the tab becomes visible again.
+   * - Clean up listeners and the channel on unmount.
+   */
   useEffect(() => {
     if (!conversationId) return;
+
+    let active = true;
+    let wasVisible = document.visibilityState === "visible";
+
+    const refreshAfterRecovery = () => {
+      if (!active) return;
+
+      if (!navigator.onLine) {
+        setError(
+          "You appear to be offline. Messages will refresh when your connection returns.",
+        );
+        return;
+      }
+
+      if (document.visibilityState !== "visible") return;
+
+      void loadMessages();
+      void loadConversation();
+    };
 
     const channel = supabase
       .channel(`messages:${conversationId}`)
@@ -1020,7 +1066,9 @@ export default function ConversationPage() {
           filter: `conversation_id=eq.${conversationId}`,
         },
         () => {
+          if (!active) return;
           void loadMessages();
+          void loadConversation();
         },
       )
       .on(
@@ -1032,21 +1080,79 @@ export default function ConversationPage() {
           filter: `conversation_id=eq.${conversationId}`,
         },
         () => {
+          if (!active) return;
           void loadMessages();
+          void loadConversation();
         },
       )
-      .subscribe((status) => {
-        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+      .subscribe((status, subscriptionError) => {
+        if (!active) return;
+
+        if (status === "SUBSCRIBED") {
+          // Reconcile state instead of assuming no events were missed.
+          refreshAfterRecovery();
+          return;
+        }
+
+        if (
+          status === "CHANNEL_ERROR" ||
+          status === "TIMED_OUT" ||
+          status === "CLOSED"
+        ) {
+          console.warn(
+            "Agoré conversation Realtime status:",
+            status,
+            subscriptionError,
+          );
+
           setError(
-            "Realtime messaging is unavailable. Refresh to reconnect.",
+            "Live updates are reconnecting. Your messages will refresh when the connection returns.",
           );
         }
       });
 
+    const handleOnline = () => {
+      refreshAfterRecovery();
+    };
+
+    const handleOffline = () => {
+      if (active) {
+        setError(
+          "You appear to be offline. Messages will refresh when your connection returns.",
+        );
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      const isVisible = document.visibilityState === "visible";
+
+      if (isVisible && !wasVisible) {
+        refreshAfterRecovery();
+      }
+
+      wasVisible = isVisible;
+    };
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    document.addEventListener(
+      "visibilitychange",
+      handleVisibilityChange,
+    );
+
     return () => {
+      active = false;
+
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+      document.removeEventListener(
+        "visibilitychange",
+        handleVisibilityChange,
+      );
+
       void supabase.removeChannel(channel);
     };
-  }, [conversationId, loadMessages]);
+  }, [conversationId, loadConversation, loadMessages]);
 
   useEffect(() => {
     if (groupOpen && conversation?.type === "group") {
@@ -1061,13 +1167,12 @@ export default function ConversationPage() {
     const handleScroll = () => {
       const distanceFromBottom =
         viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+
       const nearBottom = distanceFromBottom <= 96;
 
       nearBottomRef.current = nearBottom;
       setShowJumpToLatest(!nearBottom);
 
-      // Automatically request the next older page when the user reaches the
-      // top of an already-open conversation. The initial mount is excluded.
       if (
         initialScrollDoneRef.current &&
         viewport.scrollTop <= 72 &&
@@ -1081,6 +1186,7 @@ export default function ConversationPage() {
     viewport.addEventListener("scroll", handleScroll, {
       passive: true,
     });
+
     handleScroll();
 
     return () => {
@@ -1094,9 +1200,9 @@ export default function ConversationPage() {
 
     if (!viewport || !pending) return;
 
-    // Keep the same visible message in place after a page is prepended.
     const heightDifference = viewport.scrollHeight - pending.scrollHeight;
     viewport.scrollTop = pending.scrollTop + heightDifference;
+
     pendingScrollRestoreRef.current = null;
   }, [messages]);
 
@@ -1148,9 +1254,14 @@ export default function ConversationPage() {
     const element = document.getElementById(
       `agore-message-${messageId}`,
     );
+
     if (!element) return;
 
-    element.scrollIntoView({ behavior: "smooth", block: "center" });
+    element.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+
     setHighlightedMessageId(messageId);
 
     if (highlightTimeoutRef.current !== null) {
@@ -1169,11 +1280,13 @@ export default function ConversationPage() {
         return current;
       }
 
-      return [...current, message as Message].sort(
-        (left, right) =>
+      return [...current, message as Message].sort((left, right) => {
+        const timeDifference =
           new Date(left.created_at).getTime() -
-          new Date(right.created_at).getTime(),
-      );
+          new Date(right.created_at).getTime();
+
+        return timeDifference || left.id.localeCompare(right.id);
+      });
     });
 
     window.requestAnimationFrame(() => {
@@ -1215,6 +1328,7 @@ export default function ConversationPage() {
           body: JSON.stringify({ targetConversationId }),
         },
       );
+
       const data = await response.json();
 
       if (response.status === 401) {
@@ -1287,6 +1401,7 @@ export default function ConversationPage() {
           body: JSON.stringify({ content }),
         },
       );
+
       const data = await response.json();
 
       if (response.status === 401) {
@@ -1333,6 +1448,7 @@ export default function ConversationPage() {
         `/api/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}`,
         { method: "DELETE" },
       );
+
       const data = await response.json();
 
       if (response.status === 401) {
@@ -1358,6 +1474,7 @@ export default function ConversationPage() {
           ? deleteError.message
           : "Unable to delete the message.",
       );
+
       throw deleteError;
     }
   }
@@ -1387,6 +1504,7 @@ export default function ConversationPage() {
           }),
         },
       );
+
       const data = await response.json();
 
       if (response.status === 401) {
@@ -1476,6 +1594,7 @@ export default function ConversationPage() {
         `/api/users/search?q=${encodeURIComponent(query)}&limit=20`,
         { cache: "no-store" },
       );
+
       const data = await response.json();
 
       if (response.status === 401) {
@@ -1524,6 +1643,7 @@ export default function ConversationPage() {
           body: JSON.stringify({ userId }),
         },
       );
+
       const data = await response.json();
 
       if (response.status === 401) {
@@ -1532,7 +1652,9 @@ export default function ConversationPage() {
       }
 
       if (!response.ok) {
-        setGroupActionError(data.error ?? "Unable to add the member.");
+        setGroupActionError(
+          data.error ?? "Unable to add the member.",
+        );
         return;
       }
 
@@ -1584,6 +1706,7 @@ export default function ConversationPage() {
           body: JSON.stringify({ userId, role: requestedRole }),
         },
       );
+
       const data = await response.json();
 
       if (response.status === 401) {
@@ -1609,10 +1732,7 @@ export default function ConversationPage() {
   async function removeMember(userId: string) {
     if (
       memberActionLoading ||
-      (
-        userId !== currentUserId &&
-        currentUserRole !== "admin"
-      )
+      (userId !== currentUserId && currentUserRole !== "admin")
     ) {
       return;
     }
@@ -1693,6 +1813,7 @@ export default function ConversationPage() {
           body: JSON.stringify({ name, description }),
         },
       );
+
       const data = await response.json();
 
       if (response.status === 401) {
