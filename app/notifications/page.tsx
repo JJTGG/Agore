@@ -39,6 +39,18 @@ type AgoreNotification = {
   actor: Actor;
 };
 
+type NotificationCategory = "all" | "social" | "messages" | "groups";
+
+const notificationCategories: Array<{
+  key: NotificationCategory;
+  label: string;
+}> = [
+  { key: "all", label: "All" },
+  { key: "social", label: "Social" },
+  { key: "messages", label: "Messages" },
+  { key: "groups", label: "Groups" },
+];
+
 type NotificationsResponse = {
   notifications: AgoreNotification[];
   unreadCount: number;
@@ -170,6 +182,8 @@ export default function NotificationsPage() {
   >([]);
 
   const [unreadCount, setUnreadCount] = useState(0);
+  const [categoryFilter, setCategoryFilter] =
+    useState<NotificationCategory>("all");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [markingAll, setMarkingAll] = useState(false);
@@ -692,6 +706,29 @@ export default function NotificationsPage() {
     }
   }
 
+  const filteredNotifications = useMemo(() => {
+    return notifications.filter((notification) => {
+      switch (categoryFilter) {
+        case "all":
+          return true;
+
+        case "social":
+          return [
+            "follow",
+            "reaction",
+            "comment",
+            "repost",
+          ].includes(notification.type);
+
+        case "messages":
+          return notification.type === "message";
+
+        case "groups":
+          return notification.type === "group_activity";
+      }
+    });
+  }, [notifications, categoryFilter]);
+
   const unreadLabel = useMemo(
     () =>
       `${unreadCount} unread notification${
@@ -836,6 +873,33 @@ export default function NotificationsPage() {
             </div>
           ) : null}
 
+          <div
+            className="flex gap-2 overflow-x-auto border-b border-[var(--border)] px-5 py-3 sm:px-6"
+            role="group"
+            aria-label="Filter notifications by category"
+          >
+            {notificationCategories.map((category) => {
+              const selected = categoryFilter === category.key;
+
+              return (
+                <button
+                  key={category.key}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => setCategoryFilter(category.key)}
+                  className={[
+                    "shrink-0 rounded-full border px-4 py-2 text-sm font-semibold transition",
+                    selected
+                      ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--foreground)]"
+                      : "border-[var(--border)] bg-[var(--surface)] text-[var(--muted)] hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)]",
+                  ].join(" ")}
+                >
+                  {category.label}
+                </button>
+              );
+            })}
+          </div>
+
           {error ? (
             <div className="border-b border-[var(--border)] bg-[var(--surface-muted)] px-5 py-4 text-sm font-medium text-[var(--danger)] sm:px-6">
               {error}
@@ -875,9 +939,23 @@ export default function NotificationsPage() {
                 reposts, messages, and group activity will appear here.
               </p>
             </div>
+          ) : filteredNotifications.length === 0 ? (
+            <div className="px-6 py-14 text-center">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]">
+                <Bell size={22} />
+              </div>
+
+              <h2 className="mt-5 text-lg font-semibold">
+                Nothing in this category
+              </h2>
+
+              <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[var(--muted)]">
+                Try another category to see more Agoré activity.
+              </p>
+            </div>
           ) : (
             <div className="space-y-1 p-2">
-              {notifications.map((notification) => {
+              {filteredNotifications.map((notification) => {
                 const href = getNotificationHref(notification);
                 const unread = !notification.read_at;
 
