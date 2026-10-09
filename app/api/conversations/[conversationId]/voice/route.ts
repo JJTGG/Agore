@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+
+import { getConversationMessagingAccess } from "@/lib/messaging/conversation-access";
 import { createNotification } from "@/lib/notifications";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -70,6 +72,8 @@ async function getAuthenticatedUser() {
   return user;
 }
 
+// Kept for cleanup: an interrupted upload must remain
+// cleanable even if a direct-message block is added later.
 async function getMembership(
   admin: ReturnType<typeof createAdminClient>,
   conversationId: string,
@@ -214,22 +218,17 @@ export async function POST(
 
   const admin = createAdminClient();
 
-  const { membership, error: membershipError } =
-    await getMembership(admin, conversationId, user.id);
+  // Share the messaging-access policy with text, media,
+  // read-state, and read-receipt endpoints.
+  const access = await getConversationMessagingAccess(
+    conversationId,
+    user.id,
+  );
 
-  if (!membership) {
+  if (!access.ok) {
     return NextResponse.json(
-      {
-        error:
-          membershipError ??
-          "Conversation not found.",
-      },
-      {
-        status:
-          membershipError === "Conversation not found."
-            ? 404
-            : 500,
-      },
+      { error: access.error },
+      { status: access.status },
     );
   }
 
@@ -589,6 +588,8 @@ export async function DELETE(
 
   const admin = createAdminClient();
 
+  // Cleanup uses active membership rather than the shared direct-message
+  // block policy, so interrupted uploads can still be removed after a block.
   const {
     membership,
     error: membershipError,
@@ -667,7 +668,6 @@ export async function DELETE(
   const expectedPrefix = `${messageFolder}/`;
   const storagePaths = new Set<string>();
 
-  // Accept only a single file directly inside this message's folder.
   if (media?.storage_path) {
     const storedPath = media.storage_path;
 
@@ -680,8 +680,6 @@ export async function DELETE(
     }
   }
 
-  // Also discover files whose metadata insert failed.
-  // Fail before deleting metadata/message so cleanup remains retryable.
   const {
     data: orphanedFiles,
     error: orphanedFilesError,
