@@ -6,7 +6,10 @@ type AccountType =
   | "organization"
   | "institution";
 
-type VerificationKind = "official" | "paid";
+type VerificationKind =
+  | "agore_official"
+  | "official"
+  | "paid";
 
 type VerificationBadgeProps = {
   accountType: AccountType;
@@ -56,19 +59,23 @@ export default function VerificationBadge({
     ACCOUNT_BADGES[accountType] ??
     ACCOUNT_BADGES.personal;
 
-  const isOfficial = kind === "official";
+  // "official" is temporary compatibility for existing database records.
+  // New Agoré-operated account grants must use "agore_official".
+  const isAgoreOfficial =
+    kind === "agore_official" ||
+    kind === "official";
 
-  const color = isOfficial
+  const color = isAgoreOfficial
     ? "#6D28D9"
     : account.color;
 
   const checkColor =
     accountType === "organization" &&
-    !isOfficial
+    !isAgoreOfficial
       ? "#201B0B"
       : "#FFFFFF";
 
-  const label = isOfficial
+  const label = isAgoreOfficial
     ? "Agoré Official"
     : `${account.label} verified`;
 
