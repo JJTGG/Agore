@@ -142,22 +142,21 @@ export async function GET(
     return conversationResponse;
   }
 
-  const { data: membership, error: membershipError } = await admin
-    .from("conversation_members")
-    .select(
-      `
+  const { data: membership, error: membershipError } =
+    await admin
+      .from("conversation_members")
+      .select(`
         conversation_id,
         user_id,
         role,
         joined_at,
         left_at,
         last_read_at
-      `,
-    )
-    .eq("conversation_id", conversationId)
-    .eq("user_id", user.id)
-    .is("left_at", null)
-    .maybeSingle();
+      `)
+      .eq("conversation_id", conversationId)
+      .eq("user_id", user.id)
+      .is("left_at", null)
+      .maybeSingle();
 
   if (membershipError) {
     console.error(
@@ -178,21 +177,20 @@ export async function GET(
     );
   }
 
-  const { data: members, error: membersError } = await admin
-    .from("conversation_members")
-    .select(
-      `
+  const { data: members, error: membersError } =
+    await admin
+      .from("conversation_members")
+      .select(`
         conversation_id,
         user_id,
         role,
         joined_at,
         left_at,
         last_read_at
-      `,
-    )
-    .eq("conversation_id", conversationId)
-    .is("left_at", null)
-    .order("joined_at", { ascending: true });
+      `)
+      .eq("conversation_id", conversationId)
+      .is("left_at", null)
+      .order("joined_at", { ascending: true });
 
   if (membersError) {
     console.error(
@@ -222,7 +220,10 @@ export async function GET(
   }> = [];
 
   if (userIds.length > 0) {
-    const { data: profileRows, error: profilesError } = await admin
+    const {
+      data: profileRows,
+      error: profilesError,
+    } = await admin
       .from("profiles")
       .select("id, display_name, username, avatar_path")
       .in("id", userIds)
@@ -244,15 +245,20 @@ export async function GET(
   }
 
   const profileMap = new Map(
-    profiles.map((profile) => [profile.id, profile]),
+    profiles.map((profile) => [
+      profile.id,
+      profile,
+    ]),
   );
 
-  const result = (members ?? []).map((member: Membership) => ({
-    userId: member.user_id,
-    role: member.role,
-    joinedAt: member.joined_at,
-    profile: profileMap.get(member.user_id) ?? null,
-  }));
+  const result = (members ?? []).map(
+    (member: Membership) => ({
+      userId: member.user_id,
+      role: member.role,
+      joinedAt: member.joined_at,
+      profile: profileMap.get(member.user_id) ?? null,
+    }),
+  );
 
   return NextResponse.json({
     conversation: {
@@ -307,20 +313,25 @@ export async function POST(
   const {
     conversation,
     response: conversationResponse,
-  } = await getGroupConversation(admin, conversationId);
+  } = await getGroupConversation(
+    admin,
+    conversationId,
+  );
 
   if (!conversation) {
     return conversationResponse;
   }
 
-  const { data: callerMembership, error: callerMembershipError } =
-    await admin
-      .from("conversation_members")
-      .select("role")
-      .eq("conversation_id", conversationId)
-      .eq("user_id", user.id)
-      .is("left_at", null)
-      .maybeSingle();
+  const {
+    data: callerMembership,
+    error: callerMembershipError,
+  } = await admin
+    .from("conversation_members")
+    .select("role")
+    .eq("conversation_id", conversationId)
+    .eq("user_id", user.id)
+    .is("left_at", null)
+    .maybeSingle();
 
   if (callerMembershipError) {
     console.error(
@@ -334,16 +345,24 @@ export async function POST(
     );
   }
 
-  if (!callerMembership || callerMembership.role !== "admin") {
+  if (
+    !callerMembership ||
+    callerMembership.role !== "admin"
+  ) {
     return NextResponse.json(
       { error: "Only group admins can add members." },
       { status: 403 },
     );
   }
 
-  const { data: targetProfile, error: targetProfileError } = await admin
+  const {
+    data: targetProfile,
+    error: targetProfileError,
+  } = await admin
     .from("profiles")
-    .select("id, display_name, username, avatar_path, account_status")
+    .select(
+      "id, display_name, username, avatar_path, account_status",
+    )
     .eq("id", targetUserId)
     .eq("account_status", "active")
     .maybeSingle();
@@ -367,17 +386,72 @@ export async function POST(
     );
   }
 
-  const { data: blockRelationship, error: blockError } = await admin
+  // Load every currently active member. A new member must
+  // be checked against the entire group, not just the admin
+  // who initiated the addition.
+  const {
+    data: activeMembers,
+    error: activeMembersError,
+  } = await admin
+    .from("conversation_members")
+    .select("user_id")
+    .eq("conversation_id", conversationId)
+    .is("left_at", null);
+
+  if (activeMembersError) {
+    console.error(
+      "Failed to load active Agore group members for block validation:",
+      activeMembersError,
+    );
+
+    return NextResponse.json(
+      { error: "Unable to add the member." },
+      { status: 500 },
+    );
+  }
+
+  const existingMemberIds = [
+    ...new Set(
+      (activeMembers ?? []).map(
+        (member) => member.user_id,
+      ),
+    ),
+  ];
+
+  if (existingMemberIds.length === 0) {
+    return NextResponse.json(
+      { error: "Unable to verify the current group members." },
+      { status: 500 },
+    );
+  }
+
+  // Include the proposed member and all active members.
+  // The additional OR filter limits the block check to
+  // relationships involving the proposed member, avoiding
+  // rejection because of unrelated pre-existing blocks.
+  const participantIds = [
+    ...new Set([
+      ...existingMemberIds,
+      targetUserId,
+    ]),
+  ];
+
+  const {
+    data: blockRelationships,
+    error: blockError,
+  } = await admin
     .from("blocks")
     .select("blocker_id, blocked_id")
+    .in("blocker_id", participantIds)
+    .in("blocked_id", participantIds)
     .or(
-      `and(blocker_id.eq.${user.id},blocked_id.eq.${targetUserId}),and(blocker_id.eq.${targetUserId},blocked_id.eq.${user.id})`,
+      `blocker_id.eq.${targetUserId},blocked_id.eq.${targetUserId}`,
     )
     .limit(1);
 
   if (blockError) {
     console.error(
-      "Failed to check Agore group member block relationship:",
+      "Failed to check Agore group participant block relationships:",
       blockError,
     );
 
@@ -387,20 +461,28 @@ export async function POST(
     );
   }
 
-  if (blockRelationship && blockRelationship.length > 0) {
+  if (
+    blockRelationships &&
+    blockRelationships.length > 0
+  ) {
     return NextResponse.json(
-      { error: "You cannot add this user because of an active block." },
+      {
+        error:
+          "You cannot add this user because an active block exists between them and a current group member.",
+      },
       { status: 403 },
     );
   }
 
-  const { data: existingMembership, error: existingMembershipError } =
-    await admin
-      .from("conversation_members")
-      .select("user_id, role, left_at")
-      .eq("conversation_id", conversationId)
-      .eq("user_id", targetUserId)
-      .maybeSingle();
+  const {
+    data: existingMembership,
+    error: existingMembershipError,
+  } = await admin
+    .from("conversation_members")
+    .select("user_id, role, left_at")
+    .eq("conversation_id", conversationId)
+    .eq("user_id", targetUserId)
+    .maybeSingle();
 
   if (existingMembershipError) {
     console.error(
@@ -414,7 +496,10 @@ export async function POST(
     );
   }
 
-  if (existingMembership && existingMembership.left_at === null) {
+  if (
+    existingMembership &&
+    existingMembership.left_at === null
+  ) {
     return NextResponse.json(
       {
         error: "That user is already a member of this group.",
@@ -423,7 +508,10 @@ export async function POST(
     );
   }
 
-  const { data: activeMembers, error: memberCountError } = await admin
+  const {
+    data: activeMemberCountRows,
+    error: memberCountError,
+  } = await admin
     .from("conversation_members")
     .select("user_id")
     .eq("conversation_id", conversationId)
@@ -441,7 +529,7 @@ export async function POST(
     );
   }
 
-  if ((activeMembers?.length ?? 0) >= 50) {
+  if ((activeMemberCountRows?.length ?? 0) >= 50) {
     return NextResponse.json(
       { error: "This group has reached its 50-member limit." },
       { status: 400 },
@@ -461,14 +549,17 @@ export async function POST(
       })
       .eq("conversation_id", conversationId)
       .eq("user_id", targetUserId)
-      .select(
-        "conversation_id, user_id, role, joined_at, left_at, last_read_at",
-      )
+      .select(`
+        conversation_id,
+        user_id,
+        role,
+        joined_at,
+        left_at,
+        last_read_at
+      `)
       .single();
 
-    membership = data;
-
-    if (error) {
+    if (error || !data) {
       console.error(
         "Failed to re-add Agore group member:",
         error,
@@ -479,6 +570,8 @@ export async function POST(
         { status: 500 },
       );
     }
+
+    membership = data;
   } else {
     const { data, error } = await admin
       .from("conversation_members")
@@ -487,14 +580,17 @@ export async function POST(
         user_id: targetUserId,
         role: "member",
       })
-      .select(
-        "conversation_id, user_id, role, joined_at, left_at, last_read_at",
-      )
+      .select(`
+        conversation_id,
+        user_id,
+        role,
+        joined_at,
+        left_at,
+        last_read_at
+      `)
       .single();
 
-    membership = data;
-
-    if (error) {
+    if (error || !data) {
       console.error(
         "Failed to add Agore group member:",
         error,
@@ -505,6 +601,8 @@ export async function POST(
         { status: 500 },
       );
     }
+
+    membership = data;
   }
 
   return NextResponse.json(
@@ -545,7 +643,8 @@ export async function PATCH(
     );
   }
 
-  const parsedBody = updateMemberRoleSchema.safeParse(body);
+  const parsedBody =
+    updateMemberRoleSchema.safeParse(body);
 
   if (!parsedBody.success) {
     return NextResponse.json(
@@ -558,8 +657,10 @@ export async function PATCH(
     );
   }
 
-  const { userId: targetUserId, role: requestedRole } =
-    parsedBody.data;
+  const {
+    userId: targetUserId,
+    role: requestedRole,
+  } = parsedBody.data;
 
   const admin = createAdminClient();
 
@@ -572,14 +673,16 @@ export async function PATCH(
     return conversationResponse;
   }
 
-  const { data: callerMembership, error: callerMembershipError } =
-    await admin
-      .from("conversation_members")
-      .select("role")
-      .eq("conversation_id", conversationId)
-      .eq("user_id", user.id)
-      .is("left_at", null)
-      .maybeSingle();
+  const {
+    data: callerMembership,
+    error: callerMembershipError,
+  } = await admin
+    .from("conversation_members")
+    .select("role")
+    .eq("conversation_id", conversationId)
+    .eq("user_id", user.id)
+    .is("left_at", null)
+    .maybeSingle();
 
   if (callerMembershipError) {
     console.error(
@@ -593,23 +696,33 @@ export async function PATCH(
     );
   }
 
-  if (!callerMembership || callerMembership.role !== "admin") {
+  if (
+    !callerMembership ||
+    callerMembership.role !== "admin"
+  ) {
     return NextResponse.json(
       { error: "Only group admins can change member roles." },
       { status: 403 },
     );
   }
 
-  const { data: targetMembership, error: targetMembershipError } =
-    await admin
-      .from("conversation_members")
-      .select(
-        "conversation_id, user_id, role, joined_at, left_at, last_read_at",
-      )
-      .eq("conversation_id", conversationId)
-      .eq("user_id", targetUserId)
-      .is("left_at", null)
-      .maybeSingle();
+  const {
+    data: targetMembership,
+    error: targetMembershipError,
+  } = await admin
+    .from("conversation_members")
+    .select(`
+      conversation_id,
+      user_id,
+      role,
+      joined_at,
+      left_at,
+      last_read_at
+    `)
+    .eq("conversation_id", conversationId)
+    .eq("user_id", targetUserId)
+    .is("left_at", null)
+    .maybeSingle();
 
   if (targetMembershipError) {
     console.error(
@@ -625,7 +738,10 @@ export async function PATCH(
 
   if (!targetMembership) {
     return NextResponse.json(
-      { error: "That user is not an active member of this group." },
+      {
+        error:
+          "That user is not an active member of this group.",
+      },
       { status: 404 },
     );
   }
@@ -641,7 +757,10 @@ export async function PATCH(
     requestedRole === "member" &&
     targetMembership.role === "admin"
   ) {
-    const { count: adminCount, error: adminCountError } = await admin
+    const {
+      count: adminCount,
+      error: adminCountError,
+    } = await admin
       .from("conversation_members")
       .select("user_id", {
         count: "exact",
@@ -674,7 +793,10 @@ export async function PATCH(
     }
   }
 
-  const { data: updatedMembership, error: updateError } = await admin
+  const {
+    data: updatedMembership,
+    error: updateError,
+  } = await admin
     .from("conversation_members")
     .update({
       role: requestedRole,
@@ -682,9 +804,14 @@ export async function PATCH(
     .eq("conversation_id", conversationId)
     .eq("user_id", targetUserId)
     .is("left_at", null)
-    .select(
-      "conversation_id, user_id, role, joined_at, left_at, last_read_at",
-    )
+    .select(`
+      conversation_id,
+      user_id,
+      role,
+      joined_at,
+      left_at,
+      last_read_at
+    `)
     .single();
 
   if (updateError || !updatedMembership) {
@@ -728,7 +855,9 @@ export async function DELETE(
     const requestedUserId = url.searchParams.get("userId");
 
     if (requestedUserId) {
-      if (!z.string().uuid().safeParse(requestedUserId).success) {
+      if (
+        !z.string().uuid().safeParse(requestedUserId).success
+      ) {
         return NextResponse.json(
           { error: "Invalid member user ID." },
           { status: 400 },
@@ -755,14 +884,16 @@ export async function DELETE(
     return conversationResponse;
   }
 
-  const { data: callerMembership, error: callerMembershipError } =
-    await admin
-      .from("conversation_members")
-      .select("role")
-      .eq("conversation_id", conversationId)
-      .eq("user_id", user.id)
-      .is("left_at", null)
-      .maybeSingle();
+  const {
+    data: callerMembership,
+    error: callerMembershipError,
+  } = await admin
+    .from("conversation_members")
+    .select("role")
+    .eq("conversation_id", conversationId)
+    .eq("user_id", user.id)
+    .is("left_at", null)
+    .maybeSingle();
 
   if (callerMembershipError) {
     console.error(
@@ -785,21 +916,26 @@ export async function DELETE(
 
   const removingSomeoneElse = targetUserId !== user.id;
 
-  if (removingSomeoneElse && callerMembership.role !== "admin") {
+  if (
+    removingSomeoneElse &&
+    callerMembership.role !== "admin"
+  ) {
     return NextResponse.json(
       { error: "Only group admins can remove other members." },
       { status: 403 },
     );
   }
 
-  const { data: targetMembership, error: targetMembershipError } =
-    await admin
-      .from("conversation_members")
-      .select("user_id, role, left_at")
-      .eq("conversation_id", conversationId)
-      .eq("user_id", targetUserId)
-      .is("left_at", null)
-      .maybeSingle();
+  const {
+    data: targetMembership,
+    error: targetMembershipError,
+  } = await admin
+    .from("conversation_members")
+    .select("user_id, role, left_at")
+    .eq("conversation_id", conversationId)
+    .eq("user_id", targetUserId)
+    .is("left_at", null)
+    .maybeSingle();
 
   if (targetMembershipError) {
     console.error(
@@ -815,13 +951,19 @@ export async function DELETE(
 
   if (!targetMembership) {
     return NextResponse.json(
-      { error: "That user is not an active member of this group." },
+      {
+        error:
+          "That user is not an active member of this group.",
+      },
       { status: 404 },
     );
   }
 
   if (targetMembership.role === "admin") {
-    const { count: adminCount, error: adminCountError } = await admin
+    const {
+      count: adminCount,
+      error: adminCountError,
+    } = await admin
       .from("conversation_members")
       .select("user_id", {
         count: "exact",
@@ -854,7 +996,10 @@ export async function DELETE(
     }
   }
 
-  const { data: updatedMembership, error: updateError } = await admin
+  const {
+    data: updatedMembership,
+    error: updateError,
+  } = await admin
     .from("conversation_members")
     .update({
       left_at: new Date().toISOString(),
@@ -863,9 +1008,14 @@ export async function DELETE(
     .eq("conversation_id", conversationId)
     .eq("user_id", targetUserId)
     .is("left_at", null)
-    .select(
-      "conversation_id, user_id, role, joined_at, left_at, last_read_at",
-    )
+    .select(`
+      conversation_id,
+      user_id,
+      role,
+      joined_at,
+      left_at,
+      last_read_at
+    `)
     .single();
 
   if (updateError || !updatedMembership) {
