@@ -18,26 +18,14 @@ const allowedAudioMimeTypes = [
 const prepareSchema = z.object({
   action: z.literal("prepare"),
   mime_type: z.enum(allowedAudioMimeTypes),
-  file_name: z
-    .string()
-    .trim()
-    .min(1)
-    .max(255),
+  file_name: z.string().trim().min(1).max(255),
 });
 
 const finalizeSchema = z.object({
   action: z.literal("finalize"),
   message_id: z.string().uuid(),
-  storage_path: z
-    .string()
-    .trim()
-    .min(1)
-    .max(500),
-  file_name: z
-    .string()
-    .trim()
-    .min(1)
-    .max(255),
+  storage_path: z.string().trim().min(1).max(500),
+  file_name: z.string().trim().min(1).max(255),
   mime_type: z.enum(allowedAudioMimeTypes),
   size_bytes: z.coerce
     .number()
@@ -227,11 +215,7 @@ export async function POST(
   const admin = createAdminClient();
 
   const { membership, error: membershipError } =
-    await getMembership(
-      admin,
-      conversationId,
-      user.id,
-    );
+    await getMembership(admin, conversationId, user.id);
 
   if (!membership) {
     return NextResponse.json(
@@ -242,8 +226,7 @@ export async function POST(
       },
       {
         status:
-          membershipError ===
-          "Conversation not found."
+          membershipError === "Conversation not found."
             ? 404
             : 500,
       },
@@ -263,18 +246,16 @@ export async function POST(
           sender_id: user.id,
           content: null,
         })
-        .select(
-          `
-            id,
-            conversation_id,
-            sender_id,
-            content,
-            reply_to_message_id,
-            created_at,
-            updated_at,
-            deleted_at
-          `,
-        )
+        .select(`
+          id,
+          conversation_id,
+          sender_id,
+          content,
+          reply_to_message_id,
+          created_at,
+          updated_at,
+          deleted_at
+        `)
         .single();
 
     if (messageError) {
@@ -289,7 +270,8 @@ export async function POST(
       );
     }
 
-    const storagePath = `${message.id}/${crypto.randomUUID()}.${extension}`;
+    const storagePath =
+      `${message.id}/${crypto.randomUUID()}.${extension}`;
 
     return NextResponse.json(
       {
@@ -332,9 +314,7 @@ export async function POST(
     );
   }
 
-  const expectedExtension = getAudioExtension(
-    mimeType,
-  );
+  const expectedExtension = getAudioExtension(mimeType);
 
   if (
     !storageSegments[1]
@@ -353,18 +333,16 @@ export async function POST(
   const { data: message, error: messageError } =
     await admin
       .from("messages")
-      .select(
-        `
-          id,
-          conversation_id,
-          sender_id,
-          content,
-          reply_to_message_id,
-          created_at,
-          updated_at,
-          deleted_at
-        `,
-      )
+      .select(`
+        id,
+        conversation_id,
+        sender_id,
+        content,
+        reply_to_message_id,
+        created_at,
+        updated_at,
+        deleted_at
+      `)
       .eq("id", messageId)
       .eq("conversation_id", conversationId)
       .eq("sender_id", user.id)
@@ -390,27 +368,27 @@ export async function POST(
     );
   }
 
-  const { data: existingMedia, error: existingMediaError } =
-    await admin
-      .from("message_media")
-      .select(
-        `
-          id,
-          message_id,
-          media_type,
-          storage_path,
-          file_name,
-          mime_type,
-          size_bytes,
-          width,
-          height,
-          duration_ms,
-          created_at
-        `,
-      )
-      .eq("message_id", messageId)
-      .eq("media_type", "audio")
-      .maybeSingle();
+  const {
+    data: existingMedia,
+    error: existingMediaError,
+  } = await admin
+    .from("message_media")
+    .select(`
+      id,
+      message_id,
+      media_type,
+      storage_path,
+      file_name,
+      mime_type,
+      size_bytes,
+      width,
+      height,
+      duration_ms,
+      created_at
+    `)
+    .eq("message_id", messageId)
+    .eq("media_type", "audio")
+    .maybeSingle();
 
   if (existingMediaError) {
     console.error(
@@ -456,12 +434,9 @@ export async function POST(
     );
   }
 
-  const fileNameInStorage =
-    storageSegments[1];
+  const fileNameInStorage = storageSegments[1];
 
-  const storedFile = (
-    storedFiles ?? []
-  ).find(
+  const storedFile = (storedFiles ?? []).find(
     (file) =>
       file.id !== null &&
       file.name === fileNameInStorage,
@@ -489,21 +464,19 @@ export async function POST(
         size_bytes: sizeBytes,
         duration_ms: durationMs,
       })
-      .select(
-        `
-          id,
-          message_id,
-          media_type,
-          storage_path,
-          file_name,
-          mime_type,
-          size_bytes,
-          width,
-          height,
-          duration_ms,
-          created_at
-        `,
-      )
+      .select(`
+        id,
+        message_id,
+        media_type,
+        storage_path,
+        file_name,
+        mime_type,
+        size_bytes,
+        width,
+        height,
+        duration_ms,
+        created_at
+      `)
       .single();
 
   if (mediaError) {
@@ -520,16 +493,15 @@ export async function POST(
 
   const finalizedAt = new Date().toISOString();
 
-  const { error: messageUpdateError } =
-    await admin
-      .from("messages")
-      .update({
-        updated_at: finalizedAt,
-      })
-      .eq("id", messageId)
-      .eq("conversation_id", conversationId)
-      .eq("sender_id", user.id)
-      .is("deleted_at", null);
+  const { error: messageUpdateError } = await admin
+    .from("messages")
+    .update({
+      updated_at: finalizedAt,
+    })
+    .eq("id", messageId)
+    .eq("conversation_id", conversationId)
+    .eq("sender_id", user.id)
+    .is("deleted_at", null);
 
   if (messageUpdateError) {
     console.error(
@@ -538,14 +510,13 @@ export async function POST(
     );
   }
 
-  const { error: conversationUpdateError } =
-    await admin
-      .from("conversations")
-      .update({
-        last_message_at: message.created_at,
-        updated_at: finalizedAt,
-      })
-      .eq("id", conversationId);
+  const { error: conversationUpdateError } = await admin
+    .from("conversations")
+    .update({
+      last_message_at: message.created_at,
+      updated_at: finalizedAt,
+    })
+    .eq("id", conversationId);
 
   if (conversationUpdateError) {
     console.error(
@@ -607,10 +578,7 @@ export async function DELETE(
     );
   }
 
-  const parsedMessageId = z
-    .string()
-    .uuid()
-    .safeParse(messageId);
+  const parsedMessageId = z.string().uuid().safeParse(messageId);
 
   if (!parsedMessageId.success) {
     return NextResponse.json(
@@ -621,12 +589,14 @@ export async function DELETE(
 
   const admin = createAdminClient();
 
-  const { membership, error: membershipError } =
-    await getMembership(
-      admin,
-      conversationId,
-      user.id,
-    );
+  const {
+    membership,
+    error: membershipError,
+  } = await getMembership(
+    admin,
+    conversationId,
+    user.id,
+  );
 
   if (!membership) {
     return NextResponse.json(
@@ -637,8 +607,7 @@ export async function DELETE(
       },
       {
         status:
-          membershipError ===
-          "Conversation not found."
+          membershipError === "Conversation not found."
             ? 404
             : 500,
       },
@@ -660,10 +629,7 @@ export async function DELETE(
     );
 
     return NextResponse.json(
-      {
-        error:
-          "Unable to clean up the voice message.",
-      },
+      { error: "Unable to clean up the voice message." },
       { status: 500 },
     );
   }
@@ -675,99 +641,132 @@ export async function DELETE(
     );
   }
 
-  const { data: media, error: mediaLookupError } =
-    await admin
-      .from("message_media")
-      .select("storage_path")
-      .eq("message_id", parsedMessageId.data)
-      .eq("media_type", "audio")
-      .maybeSingle();
+  const {
+    data: media,
+    error: mediaLookupError,
+  } = await admin
+    .from("message_media")
+    .select("storage_path")
+    .eq("message_id", parsedMessageId.data)
+    .eq("media_type", "audio")
+    .maybeSingle();
 
   if (mediaLookupError) {
     console.error(
       "Failed to load Agore voice cleanup media:",
       mediaLookupError,
     );
+
+    return NextResponse.json(
+      { error: "Unable to inspect voice message attachments." },
+      { status: 500 },
+    );
   }
 
+  const messageFolder = parsedMessageId.data;
+  const expectedPrefix = `${messageFolder}/`;
   const storagePaths = new Set<string>();
 
+  // Accept only a single file directly inside this message's folder.
   if (media?.storage_path) {
-    const expectedPrefix = `${parsedMessageId.data}/`;
+    const storedPath = media.storage_path;
 
-    if (media.storage_path.startsWith(expectedPrefix)) {
-      storagePaths.add(media.storage_path);
+    if (
+      storedPath.startsWith(expectedPrefix) &&
+      storedPath.length > expectedPrefix.length &&
+      !storedPath.slice(expectedPrefix.length).includes("/")
+    ) {
+      storagePaths.add(storedPath);
     }
   }
 
-  if (
-    storagePaths.size === 0 &&
-    message.content === null
-  ) {
-    const {
-      data: orphanedFiles,
-      error: orphanedFilesError,
-    } = await admin.storage
-      .from("message-media")
-      .list(parsedMessageId.data, {
-        limit: 20,
-      });
+  // Also discover files whose metadata insert failed.
+  // Fail before deleting metadata/message so cleanup remains retryable.
+  const {
+    data: orphanedFiles,
+    error: orphanedFilesError,
+  } = await admin.storage
+    .from("message-media")
+    .list(messageFolder, {
+      limit: 100,
+    });
 
-    if (orphanedFilesError) {
-      console.error(
-        "Failed to list abandoned Agore voice objects:",
-        orphanedFilesError,
-      );
-    } else {
-      for (const file of orphanedFiles ?? []) {
-        if (!file.name || file.id === null) {
-          continue;
-        }
+  if (orphanedFilesError) {
+    console.error(
+      "Failed to list abandoned Agore voice objects:",
+      orphanedFilesError,
+    );
 
-        storagePaths.add(
-          `${parsedMessageId.data}/${file.name}`,
-        );
-      }
+    return NextResponse.json(
+      { error: "Unable to inspect uploaded voice files." },
+      { status: 500 },
+    );
+  }
+
+  for (const file of orphanedFiles ?? []) {
+    if (
+      !file.name ||
+      file.id === null ||
+      file.id === undefined ||
+      file.name.includes("/")
+    ) {
+      continue;
     }
+
+    storagePaths.add(`${expectedPrefix}${file.name}`);
   }
 
   if (storagePaths.size > 0) {
-    const { error: storageRemoveError } =
-      await admin.storage
-        .from("message-media")
-        .remove([...storagePaths]);
+    const { error: storageRemoveError } = await admin.storage
+      .from("message-media")
+      .remove([...storagePaths]);
 
     if (storageRemoveError) {
       console.error(
         "Failed to remove abandoned Agore voice objects:",
         storageRemoveError,
       );
+
+      return NextResponse.json(
+        {
+          error:
+            "Unable to remove uploaded voice files. Cleanup can be retried.",
+        },
+        { status: 500 },
+      );
     }
   }
 
-  const { error: mediaDeleteError } =
-    await admin
-      .from("message_media")
-      .delete()
-      .eq("message_id", parsedMessageId.data)
-      .eq("media_type", "audio");
+  const { error: mediaDeleteError } = await admin
+    .from("message_media")
+    .delete()
+    .eq("message_id", parsedMessageId.data)
+    .eq("media_type", "audio");
 
   if (mediaDeleteError) {
     console.error(
       "Failed to remove abandoned Agore voice metadata:",
       mediaDeleteError,
     );
+
+    return NextResponse.json(
+      {
+        error:
+          "Voice files were removed, but their metadata cleanup failed. Retry cleanup.",
+      },
+      { status: 500 },
+    );
   }
 
-  const { error: messageDeleteError } =
-    await admin
-      .from("messages")
-      .update({
-        deleted_at: new Date().toISOString(),
-      })
-      .eq("id", parsedMessageId.data)
-      .eq("sender_id", user.id)
-      .is("deleted_at", null);
+  const { error: messageDeleteError } = await admin
+    .from("messages")
+    .update({
+      deleted_at: new Date().toISOString(),
+    })
+    .eq("id", parsedMessageId.data)
+    .eq("conversation_id", conversationId)
+    .eq("sender_id", user.id)
+    .is("deleted_at", null);
 
   if (messageDeleteError) {
     console.error(
@@ -778,7 +777,7 @@ export async function DELETE(
     return NextResponse.json(
       {
         error:
-          "Unable to clean up the voice message.",
+          "Voice attachment cleanup succeeded, but message cleanup failed. Retry cleanup.",
       },
       { status: 500 },
     );
