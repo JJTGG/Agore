@@ -22,6 +22,20 @@ const supportStatuses = [
   "closed",
 ] as const;
 
+type SupportCaseSummary = {
+  id: string;
+  category: (typeof supportCategories)[number];
+  subject: string;
+  description: string;
+  status: (typeof supportStatuses)[number];
+  priority: "low" | "normal" | "high" | "urgent";
+  created_at: string;
+  updated_at: string;
+  last_message_at: string;
+  resolved_at: string | null;
+  closed_at: string | null;
+};
+
 const createCaseSchema = z
   .object({
     category: z.enum(supportCategories),
@@ -74,8 +88,8 @@ export async function GET(request: Request) {
   }
 
   const url = new URL(request.url);
-
   const rawLimit = url.searchParams.get("limit");
+
   let limit = 20;
 
   if (rawLimit !== null) {
@@ -113,12 +127,10 @@ export async function GET(request: Request) {
 
   const beforeCreatedAt =
     url.searchParams.get("beforeCreatedAt");
-  const beforeId =
-    url.searchParams.get("beforeId");
+  const beforeId = url.searchParams.get("beforeId");
 
   if (
-    Boolean(beforeCreatedAt) !==
-    Boolean(beforeId)
+    Boolean(beforeCreatedAt) !== Boolean(beforeId)
   ) {
     return privateJson(
       {
@@ -204,7 +216,11 @@ export async function GET(request: Request) {
     );
   }
 
-  const rows = cases ?? [];
+  // The generated Supabase database types do not yet describe
+  // these newly introduced support tables. Keep an explicit,
+  // local response type until the database types are regenerated.
+  const rows = (cases ?? []) as unknown as SupportCaseSummary[];
+
   const hasMore = rows.length > limit;
   const visibleCases = rows.slice(0, limit);
   const lastCase =
@@ -268,8 +284,8 @@ export async function POST(request: Request) {
 
   const admin = createAdminClient();
 
-  // Check the authenticated user's actual profile status.
-  // Never accept requester_id from the request body.
+  // Derive ownership from the authenticated session.
+  // Never accept requester_id from client-supplied JSON.
   const {
     data: profile,
     error: profileError,
@@ -298,8 +314,8 @@ export async function POST(request: Request) {
     );
   }
 
-  // The database function creates the case, its opening message,
-  // and its audit events atomically.
+  // The database function atomically creates the case,
+  // opening customer message, and corresponding audit events.
   const {
     data: caseId,
     error: createError,
