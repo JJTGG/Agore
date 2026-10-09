@@ -11,7 +11,10 @@ const updateCommentSchema = z.object({
     .string()
     .trim()
     .min(1, "Comment content is required.")
-    .max(1000, "Comment content must be 1000 characters or fewer."),
+    .max(
+      1000,
+      "Comment content must be 1000 characters or fewer.",
+    ),
 });
 
 type RouteContext = {
@@ -35,6 +38,25 @@ const commentSelect = `
   )
 `;
 
+async function verifyActiveAccount(userId: string) {
+  const admin = createAdminClient();
+
+  const {
+    data: profile,
+    error,
+  } = await admin
+    .from("profiles")
+    .select("account_status")
+    .eq("id", userId)
+    .maybeSingle();
+
+  return {
+    admin,
+    error,
+    active: profile?.account_status === "active",
+  };
+}
+
 export async function PATCH(
   request: Request,
   context: RouteContext,
@@ -53,8 +75,28 @@ export async function PATCH(
     );
   }
 
-  const { commentId } = await context.params;
+  const account = await verifyActiveAccount(user.id);
 
+  if (account.error) {
+    console.error(
+      "Failed to verify Agore comment editor account:",
+      account.error,
+    );
+
+    return NextResponse.json(
+      { error: "Unable to update the comment." },
+      { status: 500 },
+    );
+  }
+
+  if (!account.active) {
+    return NextResponse.json(
+      { error: "An active Agoré account is required." },
+      { status: 403 },
+    );
+  }
+
+  const { commentId } = await context.params;
   const parsedCommentId = uuidSchema.safeParse(commentId);
 
   if (!parsedCommentId.success) {
@@ -93,9 +135,7 @@ export async function PATCH(
     error: existingCommentError,
   } = await supabase
     .from("comments")
-    .select(
-      "id, post_id, author_id, deleted_at",
-    )
+    .select("id, post_id, author_id, deleted_at")
     .eq("id", parsedCommentId.data)
     .maybeSingle();
 
@@ -147,10 +187,7 @@ export async function PATCH(
     .maybeSingle();
 
   if (updateError) {
-    console.error(
-      "Failed to update Agore comment:",
-      updateError,
-    );
+    console.error("Failed to update Agore comment:", updateError);
 
     return NextResponse.json(
       { error: "Unable to update the comment." },
@@ -186,8 +223,28 @@ export async function DELETE(
     );
   }
 
-  const { commentId } = await context.params;
+  const account = await verifyActiveAccount(user.id);
 
+  if (account.error) {
+    console.error(
+      "Failed to verify Agore comment deletion account:",
+      account.error,
+    );
+
+    return NextResponse.json(
+      { error: "Unable to delete the comment." },
+      { status: 500 },
+    );
+  }
+
+  if (!account.active) {
+    return NextResponse.json(
+      { error: "An active Agoré account is required." },
+      { status: 403 },
+    );
+  }
+
+  const { commentId } = await context.params;
   const parsedCommentId = uuidSchema.safeParse(commentId);
 
   if (!parsedCommentId.success) {
@@ -197,93 +254,21 @@ export async function DELETE(
     );
   }
 
-  const admin = createAdminClient();
+  const {
+    admin,
+  } = account;
 
   const {
-    data: existingComment,
-    error: existingCommentError,
-  } = await admin
-    .from("comments")
-    .select(
-      "id, post_id, author_id, parent_comment_id, deleted_at",
-    )
-    .eq("id", parsedCommentId.data)
-    .maybeSingle();
-
-  if (existingCommentError) {
-    console.error(
-      "Failed to find Agore comment for deletion:",
-      existingCommentError,
-    );
-
-    return NextResponse.json(
-      { error: "Unable to delete the comment." },
-      { status: 500 },
-    );
-  }
-
-  if (!existingComment) {
-    return NextResponse.json(
-      { error: "Comment not found." },
-      { status: 404 },
-    );
-  }
-
-  if (existingComment.author_id !== user.id) {
-    return NextResponse.json(
-      { error: "You can only delete your own comments." },
-      { status: 403 },
-    );
-  }
-
-  if (existingComment.deleted_at) {
-    return new NextResponse(null, {
-      status: 204,
-    });
-  }
-
-  const deletedAt = new Date().toISOString();
-
-  if (existingComment.parent_comment_id === null) {
-    const { error: replyDeleteError } = await admin
-      .from("comments")
-      .update({
-        deleted_at: deletedAt,
-      })
-      .eq(
-        "parent_comment_id",
-        parsedCommentId.data,
-      )
-      .is("deleted_at", null);
-
-    if (replyDeleteError) {
-      console.error(
-        "Failed to delete Agore comment replies:",
-        replyDeleteError,
-      );
-
-      return NextResponse.json(
-        {
-          error:
-            "Unable to complete comment deletion.",
-        },
-        { status: 500 },
-      );
-    }
-  }
-
-  const { error: deleteError } = await admin
-    .from("comments")
-    .update({
-      deleted_at: deletedAt,
-    })
-    .eq("id", parsedCommentId.data)
-    .eq("author_id", user.id)
-    .is("deleted_at", null);
+    data: deletion,
+    error: deleteError,
+  } = await admin.rpc("agore_delete_comment_tree_v0", {
+    p_comment_id: parsedCommentId.data,
+    p_actor_id: user.id,
+  });
 
   if (deleteError) {
     console.error(
-      "Failed to delete Agore comment:",
+      "Failed to delete Agore comment tree:",
       deleteError,
     );
 
@@ -293,7 +278,64 @@ export async function DELETE(
     );
   }
 
-  return new NextResponse(null, {
-    status: 204,
+  const result = deletion as {
+    status?: string;
+    postId?: string;
+    deletedCommentIds?: unknown;
+  } | null;
+
+  if (result?.status === "not_found") {
+    return NextResponse.json(
+      { error: "Comment not found." },
+      { status: 404 },
+    );
+  }
+
+  if (result?.status === "forbidden") {
+    return NextResponse.json(
+      { error: "You can only delete your own comments." },
+      { status: 403 },
+    );
+  }
+
+  if (
+    !result ||
+    result.status !== "deleted" ||
+    !result.postId
+  ) {
+    return NextResponse.json(
+      { error: "The comment could not be deleted." },
+      { status: 409 },
+    );
+  }
+
+  const deletedCommentIds = Array.isArray(
+    result.deletedCommentIds,
+  )
+    ? result.deletedCommentIds.filter(
+        (id): id is string => typeof id === "string",
+      )
+    : [parsedCommentId.data];
+
+  // Count only rows visible to this viewer. A count failure must not turn
+  // a successful database deletion into a reported deletion failure.
+  const {
+    count: commentCount,
+    error: countError,
+  } = await supabase
+    .from("comments")
+    .select("id", { count: "exact", head: true })
+    .eq("post_id", result.postId);
+
+  if (countError) {
+    console.error(
+      "Failed to recount Agore comments after deletion:",
+      countError,
+    );
+  }
+
+  return NextResponse.json({
+    deletedCommentIds,
+    commentCount: countError ? null : commentCount ?? 0,
   });
 }
