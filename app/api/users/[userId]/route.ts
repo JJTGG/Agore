@@ -24,11 +24,13 @@ type ConnectionFollowRow = {
 };
 
 type VerificationGrant = {
-  verification_kind: "official" | "paid";
+  verification_kind: "agore_official" | "official" | "paid";
   verified_at: string;
   expires_at: string | null;
   revoked_at: string | null;
 };
+
+type ActiveVerificationKind = "agore_official" | "paid" | null;
 
 function getBlockedConnectionIds(
   rows: BlockRow[],
@@ -73,16 +75,19 @@ function countVisibleConnections(
 
 function getActiveVerificationKind(
   grant: VerificationGrant | null,
-): "official" | "paid" | null {
+): ActiveVerificationKind {
   if (!grant || grant.revoked_at !== null) {
     return null;
   }
 
+  // Legacy "official" records are temporarily mapped to the
+  // explicit Agoré-only value during the database migration.
   if (
-    grant.verification_kind === "official" &&
+    (grant.verification_kind === "agore_official" ||
+      grant.verification_kind === "official") &&
     grant.expires_at === null
   ) {
-    return "official";
+    return "agore_official";
   }
 
   if (
@@ -125,7 +130,6 @@ export async function GET(
   }
 
   const { userId } = await context.params;
-
   const parsedUserId = userIdSchema.safeParse(userId);
 
   if (!parsedUserId.success) {
@@ -181,8 +185,7 @@ export async function GET(
 
     return NextResponse.json(
       {
-        error:
-          "Unable to load the profile relationships.",
+        error: "Unable to load the profile relationships.",
       },
       {
         status: 500,
@@ -223,18 +226,16 @@ export async function GET(
     error: profileError,
   } = await supabase
     .from("profiles")
-    .select(
-      `
-        id,
-        display_name,
-        username,
-        bio,
-        avatar_path,
-        account_type,
-        account_status,
-        created_at
-      `,
-    )
+    .select(`
+      id,
+      display_name,
+      username,
+      bio,
+      avatar_path,
+      account_type,
+      account_status,
+      created_at
+    `)
     .eq("id", targetUserId)
     .maybeSingle();
 
@@ -268,8 +269,8 @@ export async function GET(
     );
   }
 
-  // Verification grants are private to trusted server-side code.
-  // Never return internal_note or other administrative fields.
+  // Verification records and internal notes remain server-only.
+  // Never return internal_note or administrative fields.
   const {
     data: verificationGrantData,
     error: verificationError,
@@ -346,8 +347,7 @@ export async function GET(
 
       return NextResponse.json(
         {
-          error:
-            "Unable to load the profile relationships.",
+          error: "Unable to load the profile relationships.",
         },
         {
           status: 500,
