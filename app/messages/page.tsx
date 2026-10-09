@@ -175,6 +175,7 @@ export default function MessagesPage() {
 
       try {
         const params = new URLSearchParams({ limit: "30" });
+
         if (append && requestedCursor) {
           params.set("cursor", requestedCursor);
         }
@@ -183,6 +184,7 @@ export default function MessagesPage() {
           `/api/conversations?${params.toString()}`,
           { cache: "no-store" },
         );
+
         const data = await response.json();
 
         if (response.status === 401) {
@@ -199,6 +201,7 @@ export default function MessagesPage() {
           } else {
             setError(message);
           }
+
           return;
         }
 
@@ -213,10 +216,12 @@ export default function MessagesPage() {
           setConversations((current) =>
             mergeUniqueConversations([...current, ...incoming]),
           );
+
           setNextCursor(returnedCursor);
           setHasMoreConversations(Boolean(data.hasMore));
         } else if (background || manual) {
-          // Refresh the newest entries without deleting older pages already loaded.
+          // Refresh recent conversations without deleting older pages
+          // that the user has already loaded.
           setConversations((current) =>
             mergeUniqueConversations([...incoming, ...current]),
           );
@@ -257,7 +262,26 @@ export default function MessagesPage() {
     void loadConversations();
   }, [loadConversations]);
 
+  // Keep the inbox reconciled with the server across Realtime interruptions.
   useEffect(() => {
+    let active = true;
+    let wasVisible = document.visibilityState === "visible";
+
+    const refreshIfAvailable = () => {
+      if (!active) return;
+
+      if (!navigator.onLine) {
+        setRealtimeNotice(
+          "You're offline. Conversations will refresh when your connection returns.",
+        );
+        return;
+      }
+
+      if (document.visibilityState !== "visible") return;
+
+      void loadConversations(false, true);
+    };
+
     const channel = supabase
       .channel("messages-hub")
       .on(
@@ -268,7 +292,9 @@ export default function MessagesPage() {
           table: "messages",
         },
         () => {
-          void loadConversations(false, true);
+          if (active) {
+            void loadConversations(false, true);
+          }
         },
       )
       .on(
@@ -279,23 +305,69 @@ export default function MessagesPage() {
           table: "messages",
         },
         () => {
-          void loadConversations(false, true);
+          if (active) {
+            void loadConversations(false, true);
+          }
         },
       )
-      .subscribe((status) => {
+      .subscribe((status, subscriptionError) => {
+        if (!active) return;
+
         if (status === "SUBSCRIBED") {
           setRealtimeNotice("");
+
+          // Reconcile the inbox in case events were missed during a
+          // disconnect. Do not rely solely on future Realtime events.
+          refreshIfAvailable();
           return;
         }
 
-        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+        if (
+          status === "CHANNEL_ERROR" ||
+          status === "TIMED_OUT" ||
+          status === "CLOSED"
+        ) {
+          console.warn(
+            "Agoré inbox Realtime status:",
+            status,
+            subscriptionError,
+          );
+
           setRealtimeNotice(
-            "Live updates are paused. Refresh to reconnect.",
+            "Live updates are reconnecting. Your conversations will refresh when the connection returns.",
           );
         }
       });
 
+    const handleOnline = () => {
+      refreshIfAvailable();
+    };
+
+    const handleVisibilityChange = () => {
+      const isVisible = document.visibilityState === "visible";
+
+      if (isVisible && !wasVisible) {
+        refreshIfAvailable();
+      }
+
+      wasVisible = isVisible;
+    };
+
+    window.addEventListener("online", handleOnline);
+    document.addEventListener(
+      "visibilitychange",
+      handleVisibilityChange,
+    );
+
     return () => {
+      active = false;
+
+      window.removeEventListener("online", handleOnline);
+      document.removeEventListener(
+        "visibilitychange",
+        handleVisibilityChange,
+      );
+
       void supabase.removeChannel(channel);
     };
   }, [loadConversations]);
@@ -316,6 +388,7 @@ export default function MessagesPage() {
         `/api/users/search?q=${encodeURIComponent(query)}&limit=20`,
         { cache: "no-store" },
       );
+
       const data = await response.json();
 
       if (response.status === 401) {
@@ -356,6 +429,7 @@ export default function MessagesPage() {
         `/api/users/search?q=${encodeURIComponent(query)}&limit=20`,
         { cache: "no-store" },
       );
+
       const data = await response.json();
 
       if (response.status === 401) {
@@ -392,6 +466,7 @@ export default function MessagesPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: person.id }),
       });
+
       const data = await response.json();
 
       if (response.status === 401) {
@@ -504,6 +579,7 @@ export default function MessagesPage() {
           memberIds: selectedMembers.map((member) => member.id),
         }),
       });
+
       const data = await response.json();
 
       if (response.status === 401) {
@@ -625,6 +701,7 @@ export default function MessagesPage() {
               <p className="mt-1 max-w-xl text-sm leading-6 text-[var(--muted)]">
                 Continue a direct conversation or move a group conversation forward.
               </p>
+
               {realtimeNotice ? (
                 <p className="mt-2 text-xs font-medium text-[var(--muted)]">
                   {realtimeNotice}
