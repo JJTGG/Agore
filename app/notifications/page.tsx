@@ -61,28 +61,15 @@ function formatDate(value: string): string {
     return "";
   }
 
-  const now = new Date();
-  const difference = now.getTime() - date.getTime();
-
+  const difference = Date.now() - date.getTime();
   const minutes = Math.floor(difference / 60_000);
   const hours = Math.floor(difference / 3_600_000);
   const days = Math.floor(difference / 86_400_000);
 
-  if (minutes < 1) {
-    return "now";
-  }
-
-  if (minutes < 60) {
-    return `${minutes}m`;
-  }
-
-  if (hours < 24) {
-    return `${hours}h`;
-  }
-
-  if (days < 7) {
-    return `${days}d`;
-  }
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes}m`;
+  if (hours < 24) return `${hours}h`;
+  if (days < 7) return `${days}d`;
 
   return new Intl.DateTimeFormat("en-GB", {
     day: "numeric",
@@ -93,8 +80,7 @@ function formatDate(value: string): string {
 function getNotificationText(
   notification: AgoreNotification,
 ): string {
-  const actorName =
-    notification.actor?.display_name ?? "Someone";
+  const actorName = notification.actor?.display_name ?? "Someone";
 
   switch (notification.type) {
     case "follow":
@@ -155,7 +141,12 @@ function getInitials(value: string): string {
   );
 }
 
-function urlBase64ToUint8Array(value: string): Uint8Array {
+/*
+ * Return an actual ArrayBuffer rather than Uint8Array<ArrayBufferLike>.
+ * This matches the BufferSource type expected by PushManager.subscribe
+ * with the TypeScript 7 DOM declarations used by this project.
+ */
+function urlBase64ToArrayBuffer(value: string): ArrayBuffer {
   const padding = "=".repeat((4 - (value.length % 4)) % 4);
 
   const base64 = (value + padding)
@@ -163,10 +154,14 @@ function urlBase64ToUint8Array(value: string): Uint8Array {
     .replace(/_/g, "/");
 
   const raw = window.atob(base64);
+  const buffer = new ArrayBuffer(raw.length);
+  const bytes = new Uint8Array(buffer);
 
-  return Uint8Array.from(
-    [...raw].map((character) => character.charCodeAt(0)),
-  );
+  for (let index = 0; index < raw.length; index += 1) {
+    bytes[index] = raw.charCodeAt(index);
+  }
+
+  return buffer;
 }
 
 export default function NotificationsPage() {
@@ -187,18 +182,7 @@ export default function NotificationsPage() {
   const [pushBusy, setPushBusy] = useState(false);
   const [pushError, setPushError] = useState("");
 
-  /*
-   * Track notification IDs already seen through the initial load
-   * or realtime channel. This prevents duplicate INSERT deliveries
-   * from incrementing the unread count more than once.
-   */
   const seenNotificationIds = useRef(new Set<string>());
-
-  /*
-   * Realtime events can arrive more than once while a hydration
-   * request is still running. Track pending IDs to avoid duplicate
-   * requests for the same notification.
-   */
   const pendingNotificationIds = useRef(new Set<string>());
 
   const loadNotifications = useCallback(
@@ -214,12 +198,11 @@ export default function NotificationsPage() {
       try {
         const response = await fetch(
           "/api/notifications?limit=50",
-          {
-            cache: "no-store",
-          },
+          { cache: "no-store" },
         );
 
-        const data = (await response.json()) as NotificationsResponse;
+        const data =
+          (await response.json()) as NotificationsResponse;
 
         if (response.status === 401) {
           window.location.href = "/auth";
@@ -268,9 +251,7 @@ export default function NotificationsPage() {
           `/api/notifications?notificationId=${encodeURIComponent(
             notificationId,
           )}`,
-          {
-            cache: "no-store",
-          },
+          { cache: "no-store" },
         );
 
         if (!response.ok) {
@@ -286,25 +267,20 @@ export default function NotificationsPage() {
           return;
         }
 
-        /*
-         * Only a previously unseen notification should increment
-         * the unread counter. The ref is updated synchronously,
-         * before React processes the state updates.
-         */
-        const isNewNotification =
+        const isNew =
           !seenNotificationIds.current.has(incoming.id);
 
         seenNotificationIds.current.add(incoming.id);
 
         setNotifications((current) => {
-          const withoutExisting = current.filter(
+          const existing = current.filter(
             (notification) => notification.id !== incoming.id,
           );
 
-          return [incoming, ...withoutExisting].slice(0, 50);
+          return [incoming, ...existing].slice(0, 50);
         });
 
-        if (isNewNotification && !incoming.read_at) {
+        if (isNew && !incoming.read_at) {
           setUnreadCount((current) => current + 1);
         }
       } catch (realtimeError) {
@@ -321,14 +297,8 @@ export default function NotificationsPage() {
     void loadNotifications();
   }, [loadNotifications]);
 
-  /*
-   * Subscribe to the signed-in user's notification INSERT events.
-   * Cleanup removes the actual Supabase channel, including when
-   * authentication lookup is still resolving during unmount.
-   */
   useEffect(() => {
     let active = true;
-
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     async function initialiseRealtime() {
@@ -374,16 +344,10 @@ export default function NotificationsPage() {
             },
           )
           .subscribe((status, subscriptionError) => {
-            if (subscriptionError) {
+            if (subscriptionError || status === "CHANNEL_ERROR") {
               console.error(
-                "Agoré notification realtime subscription error:",
-                subscriptionError,
-              );
-            }
-
-            if (status === "CHANNEL_ERROR") {
-              console.error(
-                "Agoré notification realtime channel failed.",
+                "Agoré notification realtime subscription failed:",
+                subscriptionError ?? status,
               );
             }
           });
@@ -406,11 +370,6 @@ export default function NotificationsPage() {
     };
   }, [refreshRealtimeNotification]);
 
-  /*
-   * Detect Web Push support and determine whether VAPID is
-   * configured. This checks capability and configuration without
-   * requesting notification permission from the user.
-   */
   useEffect(() => {
     let active = true;
 
@@ -515,14 +474,14 @@ export default function NotificationsPage() {
       const registration =
         await navigator.serviceWorker.register("/sw.js");
 
-      const existingSubscription =
+      const existing =
         await registration.pushManager.getSubscription();
 
       const subscription =
-        existingSubscription ??
+        existing ??
         (await registration.pushManager.subscribe({
           userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(
+          applicationServerKey: urlBase64ToArrayBuffer(
             config.publicKey,
           ),
         }));
@@ -586,11 +545,11 @@ export default function NotificationsPage() {
           },
         );
 
-        if (!response.ok) {
-          const data = (await response.json().catch(() => ({}))) as {
-            error?: string;
-          };
+        const data = (await response.json().catch(() => ({}))) as {
+          error?: string;
+        };
 
+        if (!response.ok) {
           throw new Error(
             data.error ?? "Unable to disable push notifications.",
           );
@@ -616,15 +575,15 @@ export default function NotificationsPage() {
       return;
     }
 
-    const existingNotification = notifications.find(
+    const currentNotification = notifications.find(
       (notification) => notification.id === notificationId,
     );
 
     const wasUnread = Boolean(
-      existingNotification && !existingNotification.read_at,
+      currentNotification && !currentNotification.read_at,
     );
 
-    if (existingNotification && !wasUnread) {
+    if (currentNotification && !wasUnread) {
       return;
     }
 
@@ -637,9 +596,7 @@ export default function NotificationsPage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          notificationId,
-        }),
+        body: JSON.stringify({ notificationId }),
       });
 
       const data = (await response.json().catch(() => ({}))) as {
@@ -696,9 +653,7 @@ export default function NotificationsPage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          all: true,
-        }),
+        body: JSON.stringify({ all: true }),
       });
 
       const data = (await response.json().catch(() => ({}))) as {
@@ -876,11 +831,7 @@ export default function NotificationsPage() {
 
           {unreadCount > 0 && !loading ? (
             <div className="flex items-center gap-2 border-b border-[var(--border)] bg-[var(--accent-soft)] px-5 py-3 text-sm text-[var(--foreground)] sm:px-6">
-              <Bell
-                size={15}
-                className="text-[var(--accent)]"
-              />
-
+              <Bell size={15} className="text-[var(--accent)]" />
               <span>{unreadLabel}</span>
             </div>
           ) : null}
@@ -963,9 +914,7 @@ export default function NotificationsPage() {
                           <p
                             className={[
                               "text-sm leading-6",
-                              unread
-                                ? "font-semibold"
-                                : "font-medium",
+                              unread ? "font-semibold" : "font-medium",
                             ].join(" ")}
                           >
                             {getNotificationText(notification)}
@@ -991,7 +940,6 @@ export default function NotificationsPage() {
                         onClick={(event) => {
                           event.preventDefault();
                           event.stopPropagation();
-
                           void markAsRead(notification.id);
                         }}
                         disabled={isMarking}
