@@ -3,8 +3,7 @@ import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
-const MAX_GROUP_IMAGE_SIZE =
-  5 * 1024 * 1024;
+const MAX_GROUP_IMAGE_SIZE = 5 * 1024 * 1024;
 
 const ALLOWED_TYPES = new Set([
   "image/jpeg",
@@ -62,15 +61,28 @@ function hasValidSignature(
   return false;
 }
 
+function isSafeGroupImagePath(
+  path: string,
+  conversationId: string,
+) {
+  const prefix = `${conversationId}/`;
+
+  if (!path.startsWith(prefix)) {
+    return false;
+  }
+
+  const fileName = path.slice(prefix.length);
+
+  return fileName.length > 0 && !fileName.includes("/");
+}
+
 async function getAuthenticatedUser() {
-  const supabase =
-    await createClient();
+  const supabase = await createClient();
 
   const {
     data: { user },
     error,
-  } =
-    await supabase.auth.getUser();
+  } = await supabase.auth.getUser();
 
   if (error || !user) {
     return null;
@@ -83,25 +95,15 @@ async function getAdminGroupContext(
   conversationId: string,
   userId: string,
 ) {
-  const admin =
-    createAdminClient();
+  const admin = createAdminClient();
 
   const {
     data: conversation,
     error: conversationError,
   } = await admin
     .from("conversations")
-    .select(
-      `
-        id,
-        type,
-        image_path
-      `,
-    )
-    .eq(
-      "id",
-      conversationId,
-    )
+    .select("id, type, image_path")
+    .eq("id", conversationId)
     .maybeSingle();
 
   if (conversationError) {
@@ -113,14 +115,10 @@ async function getAdminGroupContext(
     return {
       admin,
       conversation: null,
-      response:
-        NextResponse.json(
-          {
-            error:
-              "Unable to access this group.",
-          },
-          { status: 500 },
-        ),
+      response: NextResponse.json(
+        { error: "Unable to access this group." },
+        { status: 500 },
+      ),
     };
   }
 
@@ -128,32 +126,24 @@ async function getAdminGroupContext(
     return {
       admin,
       conversation: null,
-      response:
-        NextResponse.json(
-          {
-            error:
-              "Conversation not found.",
-          },
-          { status: 404 },
-        ),
+      response: NextResponse.json(
+        { error: "Conversation not found." },
+        { status: 404 },
+      ),
     };
   }
 
-  if (
-    conversation.type !==
-    "group"
-  ) {
+  if (conversation.type !== "group") {
     return {
       admin,
       conversation: null,
-      response:
-        NextResponse.json(
-          {
-            error:
-              "Only group conversations can have a group image.",
-          },
-          { status: 400 },
-        ),
+      response: NextResponse.json(
+        {
+          error:
+            "Only group conversations can have a group image.",
+        },
+        { status: 400 },
+      ),
     };
   }
 
@@ -161,18 +151,10 @@ async function getAdminGroupContext(
     data: membership,
     error: membershipError,
   } = await admin
-    .from(
-      "conversation_members",
-    )
+    .from("conversation_members")
     .select("role")
-    .eq(
-      "conversation_id",
-      conversationId,
-    )
-    .eq(
-      "user_id",
-      userId,
-    )
+    .eq("conversation_id", conversationId)
+    .eq("user_id", userId)
     .is("left_at", null)
     .maybeSingle();
 
@@ -185,32 +167,27 @@ async function getAdminGroupContext(
     return {
       admin,
       conversation: null,
-      response:
-        NextResponse.json(
-          {
-            error:
-              "Unable to update the group image.",
-          },
-          { status: 500 },
-        ),
+      response: NextResponse.json(
+        {
+          error:
+            "Unable to update the group image.",
+        },
+        { status: 500 },
+      ),
     };
   }
 
-  if (
-    !membership ||
-    membership.role !== "admin"
-  ) {
+  if (!membership || membership.role !== "admin") {
     return {
       admin,
       conversation: null,
-      response:
-        NextResponse.json(
-          {
-            error:
-              "Only group admins can change the group image.",
-          },
-          { status: 403 },
-        ),
+      response: NextResponse.json(
+        {
+          error:
+            "Only group admins can change the group image.",
+        },
+        { status: 403 },
+      ),
     };
   }
 
@@ -225,29 +202,18 @@ export async function POST(
   request: Request,
   context: RouteContext,
 ) {
-  const user =
-    await getAuthenticatedUser();
+  const user = await getAuthenticatedUser();
 
   if (!user) {
     return NextResponse.json(
-      {
-        error:
-          "Authentication required.",
-      },
+      { error: "Authentication required." },
       { status: 401 },
     );
   }
 
-  const {
-    conversationId,
-  } =
-    await context.params;
+  const { conversationId } = await context.params;
 
-  if (
-    !z.string().uuid().safeParse(
-      conversationId,
-    ).success
-  ) {
+  if (!z.string().uuid().safeParse(conversationId).success) {
     return NextResponse.json(
       {
         error:
@@ -261,11 +227,10 @@ export async function POST(
     admin,
     conversation,
     response,
-  } =
-    await getAdminGroupContext(
-      conversationId,
-      user.id,
-    );
+  } = await getAdminGroupContext(
+    conversationId,
+    user.id,
+  );
 
   if (!conversation) {
     return response;
@@ -274,45 +239,31 @@ export async function POST(
   let formData: FormData;
 
   try {
-    formData =
-      await request.formData();
+    formData = await request.formData();
   } catch {
     return NextResponse.json(
-      {
-        error:
-          "Invalid image upload request.",
-      },
+      { error: "Invalid image upload request." },
       { status: 400 },
     );
   }
 
-  const fileValue =
-    formData.get("file");
+  const fileValue = formData.get("file");
 
   if (!(fileValue instanceof File)) {
     return NextResponse.json(
-      {
-        error:
-          "A group image is required.",
-      },
+      { error: "A group image is required." },
       { status: 400 },
     );
   }
 
   if (fileValue.size <= 0) {
     return NextResponse.json(
-      {
-        error:
-          "The selected image is empty.",
-      },
+      { error: "The selected image is empty." },
       { status: 400 },
     );
   }
 
-  if (
-    fileValue.size >
-    MAX_GROUP_IMAGE_SIZE
-  ) {
+  if (fileValue.size > MAX_GROUP_IMAGE_SIZE) {
     return NextResponse.json(
       {
         error:
@@ -322,11 +273,7 @@ export async function POST(
     );
   }
 
-  if (
-    !ALLOWED_TYPES.has(
-      fileValue.type,
-    )
-  ) {
+  if (!ALLOWED_TYPES.has(fileValue.type)) {
     return NextResponse.json(
       {
         error:
@@ -336,17 +283,11 @@ export async function POST(
     );
   }
 
-  const buffer =
-    new Uint8Array(
-      await fileValue.arrayBuffer(),
-    );
+  const buffer = new Uint8Array(
+    await fileValue.arrayBuffer(),
+  );
 
-  if (
-    !hasValidSignature(
-      buffer,
-      fileValue.type,
-    )
-  ) {
+  if (!hasValidSignature(buffer, fileValue.type)) {
     return NextResponse.json(
       {
         error:
@@ -356,23 +297,16 @@ export async function POST(
     );
   }
 
-  const imagePath =
-    `${conversationId}/avatar`;
+  const imagePath = `${conversationId}/avatar`;
+  const previousImagePath = conversation.image_path;
 
-  const {
-    error: uploadError,
-  } = await admin.storage
+  const { error: uploadError } = await admin.storage
     .from("group-media")
-    .upload(
-      imagePath,
-      fileValue,
-      {
-        cacheControl: "3600",
-        contentType:
-          fileValue.type,
-        upsert: true,
-      },
-    );
+    .upload(imagePath, fileValue, {
+      cacheControl: "3600",
+      contentType: fileValue.type,
+      upsert: true,
+    });
 
   if (uploadError) {
     console.error(
@@ -381,10 +315,7 @@ export async function POST(
     );
 
     return NextResponse.json(
-      {
-        error:
-          "Unable to upload the group image.",
-      },
+      { error: "Unable to upload the group image." },
       { status: 500 },
     );
   }
@@ -395,85 +326,77 @@ export async function POST(
   } = await admin
     .from("conversations")
     .update({
-      image_path:
-        imagePath,
-      updated_at:
-        new Date().toISOString(),
+      image_path: imagePath,
+      updated_at: new Date().toISOString(),
     })
-    .eq(
-      "id",
-      conversationId,
-    )
-    .select(
-      `
-        id,
-        type,
-        created_by,
-        name,
-        description,
-        image_path,
-        last_message_at,
-        created_at,
-        updated_at
-      `,
-    )
+    .eq("id", conversationId)
+    .select(`
+      id,
+      type,
+      created_by,
+      name,
+      description,
+      image_path,
+      last_message_at,
+      created_at,
+      updated_at
+    `)
     .single();
 
-  if (
-    updateError ||
-    !updatedConversation
-  ) {
+  if (updateError || !updatedConversation) {
     console.error(
       "Failed to save Agore group image path:",
       updateError,
     );
 
+    // Do not remove an object that was already referenced
+    // by the previous conversation record.
+    if (previousImagePath !== imagePath) {
+      const {
+        error: cleanupError,
+      } = await admin.storage
+        .from("group-media")
+        .remove([imagePath]);
+
+      if (cleanupError) {
+        console.error(
+          "Failed to clean up an unreferenced Agore group image:",
+          cleanupError,
+        );
+      }
+    }
+
     return NextResponse.json(
       {
         error:
-          "Image uploaded, but the group could not be updated.",
+          "Unable to save the group image. Please retry.",
       },
       { status: 500 },
     );
   }
 
   return NextResponse.json({
-    conversation:
-      updatedConversation,
-    image_path:
-      imagePath,
+    conversation: updatedConversation,
+    image_path: imagePath,
   });
 }
 
 export async function DELETE(
-  request: Request,
+  _request: Request,
   context: RouteContext,
 ) {
-  void request;
-
-  const user =
-    await getAuthenticatedUser();
+  const user = await getAuthenticatedUser();
 
   if (!user) {
     return NextResponse.json(
-      {
-        error:
-          "Authentication required.",
-      },
+      { error: "Authentication required." },
       { status: 401 },
     );
   }
 
-  const {
-    conversationId,
-  } =
-    await context.params;
+  const { conversationId } = await context.params;
 
-  if (
-    !z.string().uuid().safeParse(
-      conversationId,
-    ).success
-  ) {
+  if (!z.string().uuid().safeParse(conversationId).success) {
     return NextResponse.json(
       {
         error:
@@ -487,43 +410,17 @@ export async function DELETE(
     admin,
     conversation,
     response,
-  } =
-    await getAdminGroupContext(
-      conversationId,
-      user.id,
-    );
+  } = await getAdminGroupContext(
+    conversationId,
+    user.id,
+  );
 
   if (!conversation) {
     return response;
   }
 
-  const currentImagePath =
-    conversation.image_path;
-
-  if (currentImagePath) {
-    const {
-      error: removeError,
-    } = await admin.storage
-      .from("group-media")
-      .remove([
-        currentImagePath,
-      ]);
-
-    if (removeError) {
-      console.error(
-        "Failed to remove Agore group image:",
-        removeError,
-      );
-
-      return NextResponse.json(
-        {
-          error:
-            "Unable to remove the group image.",
-        },
-        { status: 500 },
-      );
-    }
-  }
+  const currentImagePath = conversation.image_path;
+  const canonicalImagePath = `${conversationId}/avatar`;
 
   const {
     data: updatedConversation,
@@ -532,49 +429,83 @@ export async function DELETE(
     .from("conversations")
     .update({
       image_path: null,
-      updated_at:
-        new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     })
-    .eq(
-      "id",
-      conversationId,
-    )
-    .select(
-      `
-        id,
-        type,
-        created_by,
-        name,
-        description,
-        image_path,
-        last_message_at,
-        created_at,
-        updated_at
-      `,
-    )
+    .eq("id", conversationId)
+    .select(`
+      id,
+      type,
+      created_by,
+      name,
+      description,
+      image_path,
+      last_message_at,
+      created_at,
+      updated_at
+    `)
     .single();
 
-  if (
-    updateError ||
-    !updatedConversation
-  ) {
+  if (updateError || !updatedConversation) {
     console.error(
       "Failed to clear Agore group image path:",
       updateError,
     );
 
+    // Keep the existing Storage object untouched when the
+    // database update fails, so the old image can still work.
+    return NextResponse.json(
+      { error: "Unable to remove the group image." },
+      { status: 500 },
+    );
+  }
+
+  // Always include the canonical path. This allows a retry
+  // to remove an abandoned upload even when image_path is
+  // already null from a previous removal attempt.
+  const pathsToRemove = new Set<string>([
+    canonicalImagePath,
+  ]);
+
+  if (
+    currentImagePath &&
+    isSafeGroupImagePath(
+      currentImagePath,
+      conversationId,
+    )
+  ) {
+    pathsToRemove.add(currentImagePath);
+  }
+
+  const {
+    error: removeError,
+  } = await admin.storage
+    .from("group-media")
+    .remove([...pathsToRemove]);
+
+  if (removeError) {
+    console.error(
+      "Failed to remove Agore group image object:",
+      removeError,
+    );
+
+    // The database no longer references the image. The
+    // canonical path is included on subsequent DELETE calls,
+    // so Storage cleanup can be retried.
     return NextResponse.json(
       {
+        conversation: updatedConversation,
+        image_path: null,
+        cleanup_pending: true,
         error:
-          "Group image removed, but the group could not be updated.",
+          "The group image was detached, but file cleanup failed. Retry the removal.",
       },
       { status: 500 },
     );
   }
 
   return NextResponse.json({
-    conversation:
-      updatedConversation,
+    conversation: updatedConversation,
     image_path: null,
+    cleanup_pending: false,
   });
 }
