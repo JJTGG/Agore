@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -62,6 +63,19 @@ type Comment = {
   profiles: CommentProfile;
 };
 
+type CommentCursor = {
+  createdAt: string;
+  id: string;
+};
+
+type CommentsResponse = {
+  comments?: Comment[];
+  commentCount?: number;
+  hasMore?: boolean;
+  nextCursor?: CommentCursor | null;
+  error?: string;
+};
+
 type PostInteractionsProps = {
   postId: string;
   initialContent: string;
@@ -91,9 +105,7 @@ const REACTIONS: Array<{
 const supabase = createClient();
 
 function getReaction(type: ReactionType) {
-  return REACTIONS.find(
-    (reaction) => reaction.type === type,
-  );
+  return REACTIONS.find((reaction) => reaction.type === type);
 }
 
 function getCommentProfile(comment: Comment) {
@@ -119,6 +131,33 @@ function isEdited(comment: Comment) {
   return comment.updated_at !== comment.created_at;
 }
 
+function sortComments(comments: Comment[]) {
+  return [...comments].sort((a, b) => {
+    const timeDifference =
+      new Date(a.created_at).getTime() -
+      new Date(b.created_at).getTime();
+
+    return timeDifference || a.id.localeCompare(b.id);
+  });
+}
+
+function mergeComments(
+  current: Comment[],
+  incoming: Comment[],
+) {
+  const byId = new Map<string, Comment>();
+
+  for (const comment of current) {
+    byId.set(comment.id, comment);
+  }
+
+  for (const comment of incoming) {
+    byId.set(comment.id, comment);
+  }
+
+  return sortComments(Array.from(byId.values()));
+}
+
 export default function PostInteractions({
   postId,
   initialContent,
@@ -127,8 +166,7 @@ export default function PostInteractions({
   onPostUpdated,
   onPostDeleted,
 }: PostInteractionsProps) {
-  const [viewerId, setViewerId] =
-    useState<string | null>(null);
+  const [viewerId, setViewerId] = useState<string | null>(null);
 
   const [reactionCounts, setReactionCounts] = useState<
     Record<ReactionType, number>
@@ -146,27 +184,29 @@ export default function PostInteractions({
     useState<ReactionType | null>(null);
 
   const [repostCount, setRepostCount] = useState(0);
-  const [hasReposted, setHasReposted] =
-    useState(false);
-  const [commentCount, setCommentCount] =
-    useState(0);
+  const [hasReposted, setHasReposted] = useState(false);
+  const [commentCount, setCommentCount] = useState(0);
 
   const [reactionPickerOpen, setReactionPickerOpen] =
     useState(false);
-  const [commentsOpen, setCommentsOpen] = useState(
-    commentsOpenByDefault,
-  );
 
-  const [comments, setComments] =
-    useState<Comment[]>([]);
-  const [commentsLoading, setCommentsLoading] =
+  const [commentsOpen, setCommentsOpen] =
+    useState(commentsOpenByDefault);
+
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentsLoadingMore, setCommentsLoadingMore] =
     useState(false);
+  const [hasMoreComments, setHasMoreComments] = useState(false);
+  const [commentCursor, setCommentCursor] =
+    useState<CommentCursor | null>(null);
+
+  const loadingMoreRef = useRef(false);
+
   const [commentPublishing, setCommentPublishing] =
     useState(false);
-  const [commentContent, setCommentContent] =
-    useState("");
-  const [replyingTo, setReplyingTo] =
-    useState<Comment | null>(null);
+  const [commentContent, setCommentContent] = useState("");
+  const [replyingTo, setReplyingTo] = useState<Comment | null>(null);
 
   const [commentEditingId, setCommentEditingId] =
     useState<string | null>(null);
@@ -179,18 +219,13 @@ export default function PostInteractions({
   const [commentMenuOpenId, setCommentMenuOpenId] =
     useState<string | null>(null);
 
-  const [reactionLoading, setReactionLoading] =
-    useState(false);
-  const [repostLoading, setRepostLoading] =
-    useState(false);
+  const [reactionLoading, setReactionLoading] = useState(false);
+  const [repostLoading, setRepostLoading] = useState(false);
 
   const [editing, setEditing] = useState(false);
-  const [editContent, setEditContent] =
-    useState(initialContent);
-  const [editLoading, setEditLoading] =
-    useState(false);
-  const [deleteLoading, setDeleteLoading] =
-    useState(false);
+  const [editContent, setEditContent] = useState(initialContent);
+  const [editLoading, setEditLoading] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const [error, setError] = useState("");
 
@@ -208,15 +243,13 @@ export default function PostInteractions({
     : null;
 
   const visibleReactionSummary = REACTIONS.filter(
-    (reaction) =>
-      reactionCounts[reaction.type] > 0,
+    (reaction) => reactionCounts[reaction.type] > 0,
   );
 
   const rootComments = useMemo(
     () =>
       comments.filter(
-        (comment) =>
-          comment.parent_comment_id === null,
+        (comment) => comment.parent_comment_id === null,
       ),
     [comments],
   );
@@ -233,79 +266,29 @@ export default function PostInteractions({
         grouped.get(comment.parent_comment_id) ?? [];
 
       existing.push(comment);
-      grouped.set(
-        comment.parent_comment_id,
-        existing,
-      );
+      grouped.set(comment.parent_comment_id, existing);
     }
 
     return grouped;
   }, [comments]);
 
-  const loadInteractionState = useCallback(
-    async () => {
-      setError("");
+  const loadInteractionState = useCallback(async () => {
+    setError("");
 
-      try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
+    try {
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
 
-        if (!user) {
-          return;
-        }
+      if (authError) {
+        throw authError;
+      }
 
-        setViewerId(user.id);
+      setViewerId(user?.id ?? null);
 
-        const [
-          reactionsResult,
-          repostsResult,
-          commentCountResponse,
-        ] = await Promise.all([
-          supabase
-            .from("post_reactions")
-            .select("reaction_type, user_id")
-            .eq("post_id", postId),
-
-          supabase
-            .from("reposts")
-            .select("id, user_id")
-            .eq("post_id", postId),
-
-          fetch(
-            `/api/posts/${encodeURIComponent(
-              postId,
-            )}/comments?limit=1`,
-            {
-              cache: "no-store",
-            },
-          ),
-        ]);
-
-        if (reactionsResult.error) {
-          throw reactionsResult.error;
-        }
-
-        if (repostsResult.error) {
-          throw repostsResult.error;
-        }
-
-        const commentCountData =
-          await commentCountResponse
-            .json()
-            .catch(() => null);
-
-        if (!commentCountResponse.ok) {
-          throw new Error(
-            commentCountData?.error ??
-              "Unable to load comment count.",
-          );
-        }
-
-        const nextCounts: Record<
-          ReactionType,
-          number
-        > = {
+      if (!user) {
+        setReactionCounts({
           like: 0,
           love: 0,
           laugh: 0,
@@ -313,54 +296,102 @@ export default function PostInteractions({
           wow: 0,
           sad: 0,
           angry: 0,
-        };
+        });
+        setMyReaction(null);
+        setRepostCount(0);
+        setHasReposted(false);
+        return;
+      }
 
-        let nextMyReaction: ReactionType | null =
-          null;
+      const [
+        reactionsResult,
+        repostsResult,
+        commentCountResponse,
+      ] = await Promise.all([
+        supabase
+          .from("post_reactions")
+          .select("reaction_type, user_id")
+          .eq("post_id", postId),
 
-        for (const reaction of (
-          reactionsResult.data ?? []
-        ) as ReactionRow[]) {
-          nextCounts[reaction.reaction_type] += 1;
+        supabase
+          .from("reposts")
+          .select("id, user_id")
+          .eq("post_id", postId),
 
-          if (reaction.user_id === user.id) {
-            nextMyReaction =
-              reaction.reaction_type;
-          }
-        }
+        fetch(
+          `/api/posts/${encodeURIComponent(postId)}/comments?limit=1`,
+          { cache: "no-store" },
+        ),
+      ]);
 
-        const repostRows =
-          repostsResult.data ?? [];
+      if (reactionsResult.error) {
+        throw reactionsResult.error;
+      }
 
-        setReactionCounts(nextCounts);
-        setMyReaction(nextMyReaction);
-        setRepostCount(repostRows.length);
-        setHasReposted(
-          repostRows.some(
-            (repost) =>
-              repost.user_id === user.id,
-          ),
-        );
-        setCommentCount(
-          Number.isFinite(
-            commentCountData?.commentCount,
-          )
-            ? commentCountData.commentCount
-            : 0,
-        );
-      } catch (requestError) {
-        console.error(
-          "Failed to load Agore post interactions:",
-          requestError,
-        );
+      if (repostsResult.error) {
+        throw repostsResult.error;
+      }
 
-        setError(
-          "Unable to load post interactions.",
+      const commentCountData =
+        (await commentCountResponse.json().catch(() => null)) as
+          | CommentsResponse
+          | null;
+
+      if (!commentCountResponse.ok) {
+        throw new Error(
+          commentCountData?.error ??
+            "Unable to load comment count.",
         );
       }
-    },
-    [postId],
-  );
+
+      const nextCounts: Record<ReactionType, number> = {
+        like: 0,
+        love: 0,
+        laugh: 0,
+        care: 0,
+        wow: 0,
+        sad: 0,
+        angry: 0,
+      };
+
+      let nextMyReaction: ReactionType | null = null;
+
+      for (const reaction of (
+        reactionsResult.data ?? []
+      ) as ReactionRow[]) {
+        nextCounts[reaction.reaction_type] += 1;
+
+        if (reaction.user_id === user.id) {
+          nextMyReaction = reaction.reaction_type;
+        }
+      }
+
+      const repostRows = repostsResult.data ?? [];
+
+      setReactionCounts(nextCounts);
+      setMyReaction(nextMyReaction);
+      setRepostCount(repostRows.length);
+      setHasReposted(
+        repostRows.some((repost) => repost.user_id === user.id),
+      );
+      setCommentCount(
+        typeof commentCountData?.commentCount === "number"
+          ? commentCountData.commentCount
+          : 0,
+      );
+    } catch (requestError) {
+      console.error(
+        "Failed to load Agore post interactions:",
+        requestError,
+      );
+
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Unable to load post interactions.",
+      );
+    }
+  }, [postId]);
 
   useEffect(() => {
     void loadInteractionState();
@@ -371,42 +402,59 @@ export default function PostInteractions({
   }, [initialContent]);
 
   const loadComments = useCallback(
-    async () => {
-      setCommentsLoading(true);
+    async ({ append = false }: { append?: boolean } = {}) => {
+      if (append && (!commentCursor || loadingMoreRef.current)) {
+        return;
+      }
+
+      if (append) {
+        loadingMoreRef.current = true;
+        setCommentsLoadingMore(true);
+      } else {
+        setCommentsLoading(true);
+      }
+
       setError("");
 
       try {
-        const response = await fetch(
-          `/api/posts/${encodeURIComponent(
-            postId,
-          )}/comments?limit=100`,
-          {
-            cache: "no-store",
-          },
-        );
+        const params = new URLSearchParams({
+          limit: "50",
+        });
 
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(
-            data.error ??
-              "Unable to load comments.",
-          );
+        if (append && commentCursor) {
+          params.set("afterCreatedAt", commentCursor.createdAt);
+          params.set("afterId", commentCursor.id);
         }
 
-        const nextComments = Array.isArray(
-          data.comments,
-        )
-          ? (data.comments as Comment[])
+        const response = await fetch(
+          `/api/posts/${encodeURIComponent(postId)}/comments?${params.toString()}`,
+          { cache: "no-store" },
+        );
+
+        const data = (await response.json()) as CommentsResponse;
+
+        if (!response.ok) {
+          throw new Error(data.error ?? "Unable to load comments.");
+        }
+
+        const nextComments = Array.isArray(data.comments)
+          ? data.comments
           : [];
 
-        setComments(nextComments);
+        setComments((current) =>
+          append
+            ? mergeComments(current, nextComments)
+            : mergeComments([], nextComments),
+        );
 
         setCommentCount(
-          Number.isFinite(data.commentCount)
+          typeof data.commentCount === "number"
             ? data.commentCount
             : nextComments.length,
         );
+
+        setCommentCursor(data.nextCursor ?? null);
+        setHasMoreComments(data.hasMore === true);
       } catch (requestError) {
         setError(
           requestError instanceof Error
@@ -414,28 +462,24 @@ export default function PostInteractions({
             : "Unable to load comments.",
         );
       } finally {
-        setCommentsLoading(false);
+        if (append) {
+          loadingMoreRef.current = false;
+          setCommentsLoadingMore(false);
+        } else {
+          setCommentsLoading(false);
+        }
       }
     },
-    [postId],
+    [commentCursor, postId],
   );
 
   useEffect(() => {
-    if (
-      commentsOpenByDefault &&
-      comments.length === 0
-    ) {
+    if (commentsOpenByDefault && comments.length === 0) {
       void loadComments();
     }
-  }, [
-    commentsOpenByDefault,
-    comments.length,
-    loadComments,
-  ]);
+  }, [commentsOpenByDefault, comments.length, loadComments]);
 
-  async function chooseReaction(
-    reactionType: ReactionType,
-  ) {
+  async function chooseReaction(reactionType: ReactionType) {
     if (reactionLoading) {
       return;
     }
@@ -444,33 +488,22 @@ export default function PostInteractions({
     setError("");
 
     const previousReaction = myReaction;
-    const previousCounts = {
-      ...reactionCounts,
-    };
+    const previousCounts = { ...reactionCounts };
 
     setReactionPickerOpen(false);
 
     try {
-      if (
-        previousReaction === reactionType
-      ) {
+      if (previousReaction === reactionType) {
         const response = await fetch(
-          `/api/posts/${encodeURIComponent(
-            postId,
-          )}/reaction`,
-          {
-            method: "DELETE",
-          },
+          `/api/posts/${encodeURIComponent(postId)}/reaction`,
+          { method: "DELETE" },
         );
 
-        const data = await response
-          .json()
-          .catch(() => null);
+        const data = await response.json().catch(() => null);
 
         if (!response.ok) {
           throw new Error(
-            data?.error ??
-              "Unable to remove your reaction.",
+            data?.error ?? "Unable to remove your reaction.",
           );
         }
 
@@ -483,33 +516,23 @@ export default function PostInteractions({
         }));
 
         setMyReaction(null);
-
         return;
       }
 
       const response = await fetch(
-        `/api/posts/${encodeURIComponent(
-          postId,
-        )}/reaction`,
+        `/api/posts/${encodeURIComponent(postId)}/reaction`,
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            reactionType,
-          }),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reactionType }),
         },
       );
 
-      const data = await response
-        .json()
-        .catch(() => null);
+      const data = await response.json().catch(() => null);
 
       if (!response.ok) {
         throw new Error(
-          data?.error ??
-            "Unable to save your reaction.",
+          data?.error ?? "Unable to save your reaction.",
         );
       }
 
@@ -517,15 +540,13 @@ export default function PostInteractions({
         const next = { ...current };
 
         if (previousReaction) {
-          next[previousReaction] =
-            Math.max(
-              0,
-              next[previousReaction] - 1,
-            );
+          next[previousReaction] = Math.max(
+            0,
+            next[previousReaction] - 1,
+          );
         }
 
         next[reactionType] += 1;
-
         return next;
       });
 
@@ -553,22 +574,14 @@ export default function PostInteractions({
     setError("");
 
     try {
-      const method = hasReposted
-        ? "DELETE"
-        : "POST";
+      const method = hasReposted ? "DELETE" : "POST";
 
       const response = await fetch(
-        `/api/posts/${encodeURIComponent(
-          postId,
-        )}/repost`,
-        {
-          method,
-        },
+        `/api/posts/${encodeURIComponent(postId)}/repost`,
+        { method },
       );
 
-      const data = await response
-        .json()
-        .catch(() => null);
+      const data = await response.json().catch(() => null);
 
       if (!response.ok) {
         throw new Error(
@@ -580,7 +593,6 @@ export default function PostInteractions({
       }
 
       setHasReposted((current) => !current);
-
       setRepostCount((current) =>
         hasReposted
           ? Math.max(0, current - 1)
@@ -597,16 +609,12 @@ export default function PostInteractions({
     }
   }
 
-  async function toggleComments() {
+  function toggleComments() {
     const nextOpen = !commentsOpen;
-
     setCommentsOpen(nextOpen);
 
-    if (
-      nextOpen &&
-      comments.length === 0
-    ) {
-      await loadComments();
+    if (nextOpen && comments.length === 0) {
+      void loadComments();
     }
   }
 
@@ -615,13 +623,9 @@ export default function PostInteractions({
   ) {
     event.preventDefault();
 
-    const trimmedContent =
-      commentContent.trim();
+    const trimmedContent = commentContent.trim();
 
-    if (
-      !trimmedContent ||
-      commentPublishing
-    ) {
+    if (!trimmedContent || commentPublishing) {
       return;
     }
 
@@ -630,18 +634,13 @@ export default function PostInteractions({
 
     try {
       const response = await fetch(
-        `/api/posts/${encodeURIComponent(
-          postId,
-        )}/comments`,
+        `/api/posts/${encodeURIComponent(postId)}/comments`,
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             content: trimmedContent,
-            parentCommentId:
-              replyingTo?.id ?? null,
+            parentCommentId: replyingTo?.id ?? null,
           }),
         },
       );
@@ -650,21 +649,17 @@ export default function PostInteractions({
 
       if (!response.ok) {
         throw new Error(
-          data.error ??
-            "Unable to add your comment.",
+          data.error ?? "Unable to add your comment.",
         );
       }
 
       if (!data.comment) {
-        throw new Error(
-          "The comment response was invalid.",
-        );
+        throw new Error("The comment response was invalid.");
       }
 
-      setComments((current) => [
-        ...current,
-        data.comment as Comment,
-      ]);
+      setComments((current) =>
+        mergeComments(current, [data.comment as Comment]),
+      );
 
       setCommentContent("");
       setReplyingTo(null);
@@ -681,9 +676,7 @@ export default function PostInteractions({
     }
   }
 
-  function startCommentEdit(
-    comment: Comment,
-  ) {
+  function startCommentEdit(comment: Comment) {
     setCommentMenuOpenId(null);
     setCommentEditingId(comment.id);
     setCommentEditContent(comment.content);
@@ -696,8 +689,7 @@ export default function PostInteractions({
   }
 
   async function saveCommentEdit() {
-    const trimmedContent =
-      commentEditContent.trim();
+    const trimmedContent = commentEditContent.trim();
 
     if (
       !trimmedContent ||
@@ -712,17 +704,11 @@ export default function PostInteractions({
 
     try {
       const response = await fetch(
-        `/api/comments/${encodeURIComponent(
-          commentEditingId,
-        )}`,
+        `/api/comments/${encodeURIComponent(commentEditingId)}`,
         {
           method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            content: trimmedContent,
-          }),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: trimmedContent }),
         },
       );
 
@@ -730,22 +716,18 @@ export default function PostInteractions({
 
       if (!response.ok) {
         throw new Error(
-          data.error ??
-            "Unable to update the comment.",
+          data.error ?? "Unable to update the comment.",
         );
       }
 
       if (!data.comment) {
-        throw new Error(
-          "The comment response was invalid.",
-        );
+        throw new Error("The comment response was invalid.");
       }
 
       setComments((current) =>
-        current.map((comment) =>
-          comment.id === commentEditingId
-            ? (data.comment as Comment)
-            : comment,
+        mergeComments(
+          current.filter((comment) => comment.id !== commentEditingId),
+          [data.comment as Comment],
         ),
       );
 
@@ -762,9 +744,7 @@ export default function PostInteractions({
     }
   }
 
-  async function deleteComment(
-    comment: Comment,
-  ) {
+  async function deleteComment(comment: Comment) {
     if (
       commentDeleteLoadingId ||
       comment.author_id !== viewerId
@@ -772,24 +752,12 @@ export default function PostInteractions({
       return;
     }
 
-    const replies =
-      comment.parent_comment_id === null
-        ? comments.filter(
-            (item) =>
-              item.parent_comment_id ===
-              comment.id,
-          )
-        : [];
-
     const confirmationMessage =
-      replies.length > 0
-        ? "Delete this comment? Its replies will also be removed from the conversation."
-        : "Delete this comment? This cannot be undone.";
+      comment.parent_comment_id === null
+        ? "Delete this comment and all replies to it? This cannot be undone."
+        : "Delete this reply? This cannot be undone.";
 
-    const confirmed =
-      window.confirm(confirmationMessage);
-
-    if (!confirmed) {
+    if (!window.confirm(confirmationMessage)) {
       return;
     }
 
@@ -799,60 +767,75 @@ export default function PostInteractions({
 
     try {
       const response = await fetch(
-        `/api/comments/${encodeURIComponent(
-          comment.id,
-        )}`,
-        {
-          method: "DELETE",
-        },
+        `/api/comments/${encodeURIComponent(comment.id)}`,
+        { method: "DELETE" },
       );
 
-      if (!response.ok) {
-        const data = await response
-          .json()
-          .catch(() => null);
+      const data = (await response.json().catch(() => null)) as
+        | {
+            error?: string;
+            deletedCommentIds?: unknown;
+            commentCount?: number | null;
+          }
+        | null;
 
+      if (!response.ok) {
         throw new Error(
-          data?.error ??
-            "Unable to delete the comment.",
+          data?.error ?? "Unable to delete the comment.",
         );
       }
 
-      const removedIds = new Set<string>([
-        comment.id,
-      ]);
+      const removedIds = new Set<string>(
+        Array.isArray(data?.deletedCommentIds)
+          ? data.deletedCommentIds.filter(
+              (id): id is string => typeof id === "string",
+            )
+          : [],
+      );
 
-      if (
-        comment.parent_comment_id === null
-      ) {
-        for (const reply of replies) {
-          removedIds.add(reply.id);
-        }
+      removedIds.add(comment.id);
+
+      const remainingComments = comments.filter(
+        (item) => !removedIds.has(item.id),
+      );
+
+      setComments(remainingComments);
+
+      if (typeof data?.commentCount === "number") {
+        setCommentCount(data.commentCount);
+      } else {
+        setCommentCount((current) =>
+          Math.max(0, current - removedIds.size),
+        );
       }
 
-      setComments((current) =>
-        current.filter(
-          (item) => !removedIds.has(item.id),
-        ),
-      );
-
-      setCommentCount((current) =>
-        Math.max(
-          0,
-          current - removedIds.size,
-        ),
-      );
-
-      if (
-        replyingTo?.id === comment.id
-      ) {
+      if (replyingTo && removedIds.has(replyingTo.id)) {
         setReplyingTo(null);
       }
 
       if (
-        commentEditingId === comment.id
+        commentEditingId &&
+        removedIds.has(commentEditingId)
       ) {
         cancelCommentEdit();
+      }
+
+      if (
+        commentMenuOpenId &&
+        removedIds.has(commentMenuOpenId)
+      ) {
+        setCommentMenuOpenId(null);
+      }
+
+      // If deletion empties the currently loaded page but later pages
+      // still exist, fetch the next page rather than showing a false-empty
+      // thread.
+      if (
+        remainingComments.length === 0 &&
+        hasMoreComments &&
+        commentCursor
+      ) {
+        await loadComments({ append: true });
       }
     } catch (requestError) {
       setError(
@@ -866,14 +849,9 @@ export default function PostInteractions({
   }
 
   async function savePostEdit() {
-    const trimmedContent =
-      editContent.trim();
+    const trimmedContent = editContent.trim();
 
-    if (
-      !trimmedContent ||
-      editLoading ||
-      !isOwner
-    ) {
+    if (!trimmedContent || editLoading || !isOwner) {
       return;
     }
 
@@ -882,17 +860,11 @@ export default function PostInteractions({
 
     try {
       const response = await fetch(
-        `/api/posts/${encodeURIComponent(
-          postId,
-        )}`,
+        `/api/posts/${encodeURIComponent(postId)}`,
         {
           method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            content: trimmedContent,
-          }),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: trimmedContent }),
         },
       );
 
@@ -900,18 +872,13 @@ export default function PostInteractions({
 
       if (!response.ok) {
         throw new Error(
-          data.error ??
-            "Unable to update the post.",
+          data.error ?? "Unable to update the post.",
         );
       }
 
       setEditing(false);
       setEditContent(trimmedContent);
-
-      onPostUpdated?.(
-        postId,
-        trimmedContent,
-      );
+      onPostUpdated?.(postId, trimmedContent);
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -928,11 +895,11 @@ export default function PostInteractions({
       return;
     }
 
-    const confirmed = window.confirm(
-      "Delete this post? This cannot be undone.",
-    );
-
-    if (!confirmed) {
+    if (
+      !window.confirm(
+        "Delete this post? This cannot be undone.",
+      )
+    ) {
       return;
     }
 
@@ -941,22 +908,15 @@ export default function PostInteractions({
 
     try {
       const response = await fetch(
-        `/api/posts/${encodeURIComponent(
-          postId,
-        )}`,
-        {
-          method: "DELETE",
-        },
+        `/api/posts/${encodeURIComponent(postId)}`,
+        { method: "DELETE" },
       );
 
-      const data = await response
-        .json()
-        .catch(() => null);
+      const data = await response.json().catch(() => null);
 
       if (!response.ok) {
         throw new Error(
-          data?.error ??
-            "Unable to delete the post.",
+          data?.error ?? "Unable to delete the post.",
         );
       }
 
@@ -972,6 +932,191 @@ export default function PostInteractions({
     }
   }
 
+  function renderComment(
+    comment: Comment,
+    isReply = false,
+    replyCount = 0,
+  ) {
+    const profile = getCommentProfile(comment);
+    const isCommentOwner = comment.author_id === viewerId;
+    const isCommentEditing = commentEditingId === comment.id;
+
+    return (
+      <article
+        key={comment.id}
+        className={`rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-3.5 ${
+          isReply ? "ml-5 sm:ml-8" : ""
+        }`}
+      >
+        <div className="flex items-start gap-3">
+          <AgoreAvatar
+            avatarPath={profile?.avatar_path ?? null}
+            name={profile?.display_name ?? "Agoré user"}
+            className="h-9 w-9 shrink-0"
+            textClassName="text-xs"
+          />
+
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold">
+                  {profile?.display_name ?? "Agoré user"}
+                </p>
+
+                <p className="mt-0.5 truncate text-[11px] text-[var(--muted)]">
+                  @{profile?.username ?? "unknown"} ·{" "}
+                  {formatCommentDate(comment.created_at)}
+                  {isEdited(comment) ? " · Edited" : ""}
+                </p>
+              </div>
+
+              <div className="relative shrink-0">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setCommentMenuOpenId((current) =>
+                      current === comment.id ? null : comment.id,
+                    )
+                  }
+                  aria-label={isReply ? "Reply actions" : "Comment actions"}
+                  className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--muted)] transition hover:bg-[var(--background)] hover:text-[var(--foreground)]"
+                >
+                  <MoreHorizontal size={16} />
+                </button>
+
+                {commentMenuOpenId === comment.id ? (
+                  <>
+                    <button
+                      type="button"
+                      aria-label="Close comment actions"
+                      className="fixed inset-0 z-10 cursor-default"
+                      onClick={() => setCommentMenuOpenId(null)}
+                    />
+
+                    <div className="absolute right-0 top-full z-20 mt-1 w-44 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-1.5 shadow-[0_12px_35px_rgba(0,0,0,0.12)]">
+                      {isCommentOwner ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => startCommentEdit(comment)}
+                            className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm transition hover:bg-[var(--background)]"
+                          >
+                            <Edit3 size={15} />
+                            Edit comment
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => void deleteComment(comment)}
+                            disabled={commentDeleteLoadingId === comment.id}
+                            className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-[var(--danger)] transition hover:bg-[var(--danger-soft)] disabled:opacity-50"
+                          >
+                            {commentDeleteLoadingId === comment.id ? (
+                              <Loader2 size={15} className="animate-spin" />
+                            ) : (
+                              <Trash2 size={15} />
+                            )}
+                            Delete comment
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setCommentMenuOpenId(null)}
+                          className="flex w-full items-center rounded-xl px-3 py-2.5 text-left text-sm text-[var(--muted)]"
+                        >
+                          Comment actions
+                        </button>
+                      )}
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            </div>
+
+            {isCommentEditing ? (
+              <div className="mt-3">
+                <textarea
+                  value={commentEditContent}
+                  onChange={(event) =>
+                    setCommentEditContent(event.target.value)
+                  }
+                  maxLength={1000}
+                  rows={4}
+                  className="w-full resize-none rounded-2xl border border-[var(--border)] bg-[var(--background)] px-4 py-3 text-sm leading-6 outline-none transition focus:border-[var(--accent)]"
+                />
+
+                <div className="mt-2 flex items-center justify-between gap-3">
+                  <span className="text-[11px] tabular-nums text-[var(--muted)]">
+                    {commentEditContent.length}/1000
+                  </span>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={cancelCommentEdit}
+                      disabled={commentEditLoading}
+                      className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold text-[var(--muted)] transition hover:bg-[var(--background)] disabled:opacity-50"
+                    >
+                      <X size={14} />
+                      Cancel
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => void saveCommentEdit()}
+                      disabled={
+                        commentEditLoading ||
+                        !commentEditContent.trim()
+                      }
+                      className="inline-flex items-center gap-1.5 rounded-full bg-[var(--accent)] px-3 py-2 text-xs font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {commentEditLoading ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <Check size={14} />
+                      )}
+                      Save
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <>
+                <p className="mt-3 whitespace-pre-wrap text-sm leading-6">
+                  {comment.content}
+                </p>
+
+                {!isReply ? (
+                  <div className="mt-3 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReplyingTo(comment);
+                        setCommentsOpen(true);
+                        setError("");
+                      }}
+                      className="rounded-full px-2.5 py-1.5 text-xs font-semibold text-[var(--accent)] transition hover:bg-[var(--background)]"
+                    >
+                      Reply
+                    </button>
+
+                    {replyCount > 0 ? (
+                      <span className="text-[11px] text-[var(--muted)]">
+                        {replyCount}
+                        {hasMoreComments ? " loaded replies" : " replies"}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
+              </>
+            )}
+          </div>
+        </div>
+      </article>
+    );
+  }
+
   return (
     <div className="mt-5">
       {totalReactionCount > 0 ||
@@ -982,18 +1127,16 @@ export default function PostInteractions({
             {totalReactionCount > 0 ? (
               <div className="flex items-center gap-1.5">
                 <div className="flex -space-x-1">
-                  {visibleReactionSummary
-                    .slice(0, 3)
-                    .map((reaction) => (
-                      <span
-                        key={reaction.type}
-                        title={reaction.label}
-                        aria-label={`${reaction.label}: ${reactionCounts[reaction.type]}`}
-                        className="flex h-5 w-5 items-center justify-center rounded-full border border-[var(--surface)] bg-[var(--background)] text-[11px]"
-                      >
-                        {reaction.emoji}
-                      </span>
-                    ))}
+                  {visibleReactionSummary.slice(0, 3).map((reaction) => (
+                    <span
+                      key={reaction.type}
+                      title={reaction.label}
+                      aria-label={`${reaction.label}: ${reactionCounts[reaction.type]}`}
+                      className="flex h-5 w-5 items-center justify-center rounded-full border border-[var(--surface)] bg-[var(--background)] text-[11px]"
+                    >
+                      {reaction.emoji}
+                    </span>
+                  ))}
                 </div>
 
                 <span className="text-xs text-[var(--muted)]">
@@ -1005,13 +1148,10 @@ export default function PostInteractions({
             {repostCount > 0 ? (
               <button
                 type="button"
-                onClick={toggleRepost}
+                onClick={() => void toggleRepost()}
                 className="text-xs text-[var(--muted)] transition hover:text-[var(--foreground)]"
               >
-                {repostCount}{" "}
-                {repostCount === 1
-                  ? "repost"
-                  : "reposts"}
+                {repostCount} {repostCount === 1 ? "repost" : "reposts"}
               </button>
             ) : null}
           </div>
@@ -1019,13 +1159,10 @@ export default function PostInteractions({
           {commentCount > 0 ? (
             <button
               type="button"
-              onClick={() => void toggleComments()}
+              onClick={toggleComments}
               className="shrink-0 text-xs text-[var(--muted)] transition hover:text-[var(--foreground)]"
             >
-              {commentCount}{" "}
-              {commentCount === 1
-                ? "comment"
-                : "comments"}
+              {commentCount} {commentCount === 1 ? "comment" : "comments"}
             </button>
           ) : null}
         </div>
@@ -1036,9 +1173,7 @@ export default function PostInteractions({
           <button
             type="button"
             onClick={() =>
-              setReactionPickerOpen(
-                (current) => !current,
-              )
+              setReactionPickerOpen((current) => !current)
             }
             disabled={reactionLoading}
             className={`inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-sm font-medium transition ${
@@ -1048,21 +1183,15 @@ export default function PostInteractions({
             } disabled:cursor-not-allowed disabled:opacity-50`}
           >
             {reactionLoading ? (
-              <Loader2
-                size={15}
-                className="animate-spin"
-              />
+              <Loader2 size={15} className="animate-spin" />
             ) : selectedReaction ? (
-              <span>
-                {selectedReaction.emoji}
-              </span>
+              <span>{selectedReaction.emoji}</span>
             ) : (
               <Heart size={15} />
             )}
 
             <span className="hidden xs:inline">
-              {selectedReaction?.label ??
-                "React"}
+              {selectedReaction?.label ?? "React"}
             </span>
 
             <ChevronDown size={13} />
@@ -1074,9 +1203,7 @@ export default function PostInteractions({
                 type="button"
                 aria-label="Close reaction picker"
                 className="fixed inset-0 z-10 cursor-default"
-                onClick={() =>
-                  setReactionPickerOpen(false)
-                }
+                onClick={() => setReactionPickerOpen(false)}
               />
 
               <div className="absolute bottom-full left-0 z-20 mb-2 flex flex-wrap gap-1 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-2 shadow-[0_12px_35px_rgba(0,0,0,0.12)]">
@@ -1084,16 +1211,11 @@ export default function PostInteractions({
                   <button
                     key={reaction.type}
                     type="button"
-                    onClick={() =>
-                      void chooseReaction(
-                        reaction.type,
-                      )
-                    }
+                    onClick={() => void chooseReaction(reaction.type)}
                     title={reaction.label}
                     aria-label={reaction.label}
                     className={`flex h-9 w-9 items-center justify-center rounded-xl text-lg transition hover:scale-110 hover:bg-[var(--background)] ${
-                      myReaction ===
-                      reaction.type
+                      myReaction === reaction.type
                         ? "bg-[var(--accent)]/10"
                         : ""
                     }`}
@@ -1108,7 +1230,7 @@ export default function PostInteractions({
 
         <button
           type="button"
-          onClick={() => void toggleComments()}
+          onClick={toggleComments}
           className={`inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-sm font-medium transition ${
             commentsOpen
               ? "bg-[var(--background)] text-[var(--foreground)]"
@@ -1130,18 +1252,13 @@ export default function PostInteractions({
           } disabled:cursor-not-allowed disabled:opacity-50`}
         >
           {repostLoading ? (
-            <Loader2
-              size={15}
-              className="animate-spin"
-            />
+            <Loader2 size={15} className="animate-spin" />
           ) : (
             <Repeat2 size={15} />
           )}
 
           <span className="hidden sm:inline">
-            {hasReposted
-              ? "Reposted"
-              : "Repost"}
+            {hasReposted ? "Reposted" : "Repost"}
           </span>
         </button>
 
@@ -1154,9 +1271,7 @@ export default function PostInteractions({
             <div className="absolute right-0 top-full z-30 mt-2 w-44 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-1.5 shadow-[0_12px_35px_rgba(0,0,0,0.12)]">
               <button
                 type="button"
-                onClick={() =>
-                  setEditing(true)
-                }
+                onClick={() => setEditing(true)}
                 className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm transition hover:bg-[var(--background)]"
               >
                 <Edit3 size={15} />
@@ -1165,21 +1280,15 @@ export default function PostInteractions({
 
               <button
                 type="button"
-                onClick={() =>
-                  void deletePost()
-                }
+                onClick={() => void deletePost()}
                 disabled={deleteLoading}
                 className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-[var(--danger)] transition hover:bg-[var(--danger-soft)] disabled:opacity-50"
               >
                 {deleteLoading ? (
-                  <Loader2
-                    size={15}
-                    className="animate-spin"
-                  />
+                  <Loader2 size={15} className="animate-spin" />
                 ) : (
                   <Trash2 size={15} />
                 )}
-
                 Delete post
               </button>
             </div>
@@ -1191,10 +1300,7 @@ export default function PostInteractions({
         <div className="mt-4 rounded-2xl border border-[var(--border)] bg-[var(--background)] p-4">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-semibold">
-                Edit post
-              </p>
-
+              <p className="text-sm font-semibold">Edit post</p>
               <p className="mt-1 text-xs text-[var(--muted)]">
                 Update what you shared.
               </p>
@@ -1207,11 +1313,7 @@ export default function PostInteractions({
 
           <textarea
             value={editContent}
-            onChange={(event) =>
-              setEditContent(
-                event.target.value,
-              )
-            }
+            onChange={(event) => setEditContent(event.target.value)}
             maxLength={2000}
             rows={5}
             className="w-full resize-none rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm leading-6 outline-none transition focus:border-[var(--accent)]"
@@ -1222,9 +1324,7 @@ export default function PostInteractions({
               type="button"
               onClick={() => {
                 setEditing(false);
-                setEditContent(
-                  initialContent,
-                );
+                setEditContent(initialContent);
               }}
               disabled={editLoading}
               className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-sm font-medium text-[var(--muted)] transition hover:bg-[var(--surface)]"
@@ -1235,24 +1335,15 @@ export default function PostInteractions({
 
             <button
               type="button"
-              onClick={() =>
-                void savePostEdit()
-              }
-              disabled={
-                editLoading ||
-                !editContent.trim()
-              }
+              onClick={() => void savePostEdit()}
+              disabled={editLoading || !editContent.trim()}
               className="inline-flex items-center gap-1.5 rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {editLoading ? (
-                <Loader2
-                  size={15}
-                  className="animate-spin"
-                />
+                <Loader2 size={15} className="animate-spin" />
               ) : (
                 <Check size={15} />
               )}
-
               Save
             </button>
           </div>
@@ -1263,10 +1354,7 @@ export default function PostInteractions({
         <section className="mt-4 rounded-2xl border border-[var(--border)] bg-[var(--background)] p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-semibold">
-                Conversation
-              </p>
-
+              <p className="text-sm font-semibold">Conversation</p>
               <p className="mt-1 text-xs text-[var(--muted)]">
                 Reply to the post or continue an existing thread.
               </p>
@@ -1274,9 +1362,7 @@ export default function PostInteractions({
 
             <button
               type="button"
-              onClick={() =>
-                void loadComments()
-              }
+              onClick={() => void loadComments()}
               disabled={commentsLoading}
               className="rounded-full px-2.5 py-1.5 text-xs font-semibold text-[var(--accent)] transition hover:bg-[var(--surface)] disabled:opacity-50"
             >
@@ -1286,569 +1372,72 @@ export default function PostInteractions({
 
           {commentsLoading ? (
             <div className="mt-4 flex items-center gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-4 text-sm text-[var(--muted)]">
-              <Loader2
-                size={15}
-                className="animate-spin"
-              />
-
+              <Loader2 size={15} className="animate-spin" />
               Loading conversation…
             </div>
           ) : comments.length === 0 ? (
             <div className="mt-4 rounded-2xl border border-dashed border-[var(--border)] bg-[var(--surface)] px-4 py-5">
-              <p className="text-sm font-medium">
-                No comments yet.
-              </p>
-
+              <p className="text-sm font-medium">No comments yet.</p>
               <p className="mt-1 text-xs leading-5 text-[var(--muted)]">
                 Start the conversation with your own response.
               </p>
             </div>
           ) : (
             <div className="mt-4 space-y-3">
-              {rootComments.map(
-                (comment) => {
-                  const profile =
-                    getCommentProfile(
+              {rootComments.map((comment) => {
+                const replies =
+                  repliesByParent.get(comment.id) ?? [];
+
+                return (
+                  <div key={comment.id} className="space-y-2">
+                    {renderComment(
                       comment,
-                    );
+                      false,
+                      replies.length,
+                    )}
 
-                  const isOwnerComment =
-                    comment.author_id ===
-                    viewerId;
-
-                  const replies =
-                    repliesByParent.get(
-                      comment.id,
-                    ) ?? [];
-
-                  const isCommentEditing =
-                    commentEditingId ===
-                    comment.id;
-
-                  return (
-                    <div
-                      key={comment.id}
-                      className="space-y-2"
-                    >
-                      <article className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-3.5">
-                        <div className="flex items-start gap-3">
-                          <AgoreAvatar
-                            avatarPath={
-                              profile?.avatar_path ??
-                              null
-                            }
-                            name={
-                              profile?.display_name ??
-                              "Agoré user"
-                            }
-                            className="h-9 w-9 shrink-0"
-                            textClassName="text-xs"
-                          />
-
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-semibold">
-                                  {profile?.display_name ??
-                                    "Agoré user"}
-                                </p>
-
-                                <p className="mt-0.5 truncate text-[11px] text-[var(--muted)]">
-                                  @
-                                  {profile?.username ??
-                                    "unknown"}{" "}
-                                  ·{" "}
-                                  {formatCommentDate(
-                                    comment.created_at,
-                                  )}
-                                  {isEdited(
-                                    comment,
-                                  )
-                                    ? " · Edited"
-                                    : ""}
-                                </p>
-                              </div>
-
-                              <div className="relative shrink-0">
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setCommentMenuOpenId(
-                                      (
-                                        current,
-                                      ) =>
-                                        current ===
-                                        comment.id
-                                          ? null
-                                          : comment.id,
-                                    )
-                                  }
-                                  aria-label="Comment actions"
-                                  className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--muted)] transition hover:bg-[var(--background)] hover:text-[var(--foreground)]"
-                                >
-                                  <MoreHorizontal
-                                    size={16}
-                                  />
-                                </button>
-
-                                {commentMenuOpenId ===
-                                comment.id ? (
-                                  <>
-                                    <button
-                                      type="button"
-                                      aria-label="Close comment actions"
-                                      className="fixed inset-0 z-10 cursor-default"
-                                      onClick={() =>
-                                        setCommentMenuOpenId(
-                                          null,
-                                        )
-                                      }
-                                    />
-
-                                    <div className="absolute right-0 top-full z-20 mt-1 w-40 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-1.5 shadow-[0_12px_35px_rgba(0,0,0,0.12)]">
-                                      {isOwnerComment ? (
-                                        <>
-                                          <button
-                                            type="button"
-                                            onClick={() =>
-                                              startCommentEdit(
-                                                comment,
-                                              )
-                                            }
-                                            className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm transition hover:bg-[var(--background)]"
-                                          >
-                                            <Edit3
-                                              size={15}
-                                            />
-                                            Edit comment
-                                          </button>
-
-                                          <button
-                                            type="button"
-                                            onClick={() =>
-                                              void deleteComment(
-                                                comment,
-                                              )
-                                            }
-                                            disabled={
-                                              commentDeleteLoadingId ===
-                                              comment.id
-                                            }
-                                            className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-[var(--danger)] transition hover:bg-[var(--danger-soft)] disabled:opacity-50"
-                                          >
-                                            {commentDeleteLoadingId ===
-                                            comment.id ? (
-                                              <Loader2
-                                                size={15}
-                                                className="animate-spin"
-                                              />
-                                            ) : (
-                                              <Trash2
-                                                size={15}
-                                              />
-                                            )}
-
-                                            Delete comment
-                                          </button>
-                                        </>
-                                      ) : (
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            setCommentMenuOpenId(
-                                              null,
-                                            )
-                                          }
-                                          className="flex w-full items-center rounded-xl px-3 py-2.5 text-left text-sm text-[var(--muted)]"
-                                        >
-                                          Comment actions
-                                        </button>
-                                      )}
-                                    </div>
-                                  </>
-                                ) : null}
-                              </div>
-                            </div>
-
-                            {isCommentEditing ? (
-                              <div className="mt-3">
-                                <textarea
-                                  value={
-                                    commentEditContent
-                                  }
-                                  onChange={(
-                                    event,
-                                  ) =>
-                                    setCommentEditContent(
-                                      event.target
-                                        .value,
-                                    )
-                                  }
-                                  maxLength={1000}
-                                  rows={4}
-                                  className="w-full resize-none rounded-2xl border border-[var(--border)] bg-[var(--background)] px-4 py-3 text-sm leading-6 outline-none transition focus:border-[var(--accent)]"
-                                />
-
-                                <div className="mt-2 flex items-center justify-between gap-3">
-                                  <span className="text-[11px] tabular-nums text-[var(--muted)]">
-                                    {
-                                      commentEditContent.length
-                                    }
-                                    /1000
-                                  </span>
-
-                                  <div className="flex items-center gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={
-                                        cancelCommentEdit
-                                      }
-                                      disabled={
-                                        commentEditLoading
-                                      }
-                                      className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold text-[var(--muted)] transition hover:bg-[var(--background)] disabled:opacity-50"
-                                    >
-                                      <X
-                                        size={14}
-                                      />
-                                      Cancel
-                                    </button>
-
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        void saveCommentEdit()
-                                      }
-                                      disabled={
-                                        commentEditLoading ||
-                                        !commentEditContent.trim()
-                                      }
-                                      className="inline-flex items-center gap-1.5 rounded-full bg-[var(--accent)] px-3 py-2 text-xs font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                                    >
-                                      {commentEditLoading ? (
-                                        <Loader2
-                                          size={14}
-                                          className="animate-spin"
-                                        />
-                                      ) : (
-                                        <Check
-                                          size={14}
-                                        />
-                                      )}
-                                      Save
-                                    </button>
-                                  </div>
-                                </div>
-                              </div>
-                            ) : (
-                              <>
-                                <p className="mt-3 whitespace-pre-wrap text-sm leading-6">
-                                  {comment.content}
-                                </p>
-
-                                <div className="mt-3 flex items-center gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setReplyingTo(
-                                        comment,
-                                      );
-                                      setCommentsOpen(
-                                        true,
-                                      );
-                                      setError("");
-                                    }}
-                                    className="rounded-full px-2.5 py-1.5 text-xs font-semibold text-[var(--accent)] transition hover:bg-[var(--background)]"
-                                  >
-                                    Reply
-                                  </button>
-
-                                  {replies.length >
-                                  0 ? (
-                                    <span className="text-[11px] text-[var(--muted)]">
-                                      {replies.length}{" "}
-                                      {replies.length ===
-                                      1
-                                        ? "reply"
-                                        : "replies"}
-                                    </span>
-                                  ) : null}
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      </article>
-
-                      {replies.map(
-                        (reply) => {
-                          const replyProfile =
-                            getCommentProfile(
-                              reply,
-                            );
-
-                          const isReplyOwner =
-                            reply.author_id ===
-                            viewerId;
-
-                          const isReplyEditing =
-                            commentEditingId ===
-                            reply.id;
-
-                          return (
-                            <article
-                              key={reply.id}
-                              className="ml-5 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-3.5 sm:ml-8"
-                            >
-                              <div className="flex items-start gap-3">
-                                <AgoreAvatar
-                                  avatarPath={
-                                    replyProfile?.avatar_path ??
-                                    null
-                                  }
-                                  name={
-                                    replyProfile?.display_name ??
-                                    "Agoré user"
-                                  }
-                                  className="h-8 w-8 shrink-0"
-                                  textClassName="text-[11px]"
-                                />
-
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0">
-                                      <p className="truncate text-sm font-semibold">
-                                        {replyProfile?.display_name ??
-                                          "Agoré user"}
-                                      </p>
-
-                                      <p className="mt-0.5 truncate text-[11px] text-[var(--muted)]">
-                                        @
-                                        {replyProfile?.username ??
-                                          "unknown"}{" "}
-                                        ·{" "}
-                                        {formatCommentDate(
-                                          reply.created_at,
-                                        )}
-                                        {isEdited(
-                                          reply,
-                                        )
-                                          ? " · Edited"
-                                          : ""}
-                                      </p>
-                                    </div>
-
-                                    <div className="relative shrink-0">
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          setCommentMenuOpenId(
-                                            (
-                                              current,
-                                            ) =>
-                                              current ===
-                                              reply.id
-                                                ? null
-                                                : reply.id,
-                                          )
-                                        }
-                                        aria-label="Reply actions"
-                                        className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--muted)] transition hover:bg-[var(--background)] hover:text-[var(--foreground)]"
-                                      >
-                                        <MoreHorizontal
-                                          size={16}
-                                        />
-                                      </button>
-
-                                      {commentMenuOpenId ===
-                                      reply.id ? (
-                                        <>
-                                          <button
-                                            type="button"
-                                            aria-label="Close reply actions"
-                                            className="fixed inset-0 z-10 cursor-default"
-                                            onClick={() =>
-                                              setCommentMenuOpenId(
-                                                null,
-                                              )
-                                            }
-                                          />
-
-                                          <div className="absolute right-0 top-full z-20 mt-1 w-40 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-1.5 shadow-[0_12px_35px_rgba(0,0,0,0.12)]">
-                                            {isReplyOwner ? (
-                                              <>
-                                                <button
-                                                  type="button"
-                                                  onClick={() =>
-                                                    startCommentEdit(
-                                                      reply,
-                                                    )
-                                                  }
-                                                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm transition hover:bg-[var(--background)]"
-                                                >
-                                                  <Edit3
-                                                    size={15}
-                                                  />
-                                                  Edit comment
-                                                </button>
-
-                                                <button
-                                                  type="button"
-                                                  onClick={() =>
-                                                    void deleteComment(
-                                                      reply,
-                                                    )
-                                                  }
-                                                  disabled={
-                                                    commentDeleteLoadingId ===
-                                                    reply.id
-                                                  }
-                                                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-[var(--danger)] transition hover:bg-[var(--danger-soft)] disabled:opacity-50"
-                                                >
-                                                  {commentDeleteLoadingId ===
-                                                  reply.id ? (
-                                                    <Loader2
-                                                      size={15}
-                                                      className="animate-spin"
-                                                    />
-                                                  ) : (
-                                                    <Trash2
-                                                      size={15}
-                                                    />
-                                                  )}
-
-                                                  Delete comment
-                                                </button>
-                                              </>
-                                            ) : (
-                                              <button
-                                                type="button"
-                                                onClick={() =>
-                                                  setCommentMenuOpenId(
-                                                    null,
-                                                  )
-                                                }
-                                                className="flex w-full items-center rounded-xl px-3 py-2.5 text-left text-sm text-[var(--muted)]"
-                                              >
-                                                Comment actions
-                                              </button>
-                                            )}
-                                          </div>
-                                        </>
-                                      ) : null}
-                                    </div>
-                                  </div>
-
-                                  {isReplyEditing ? (
-                                    <div className="mt-3">
-                                      <textarea
-                                        value={
-                                          commentEditContent
-                                        }
-                                        onChange={(
-                                          event,
-                                        ) =>
-                                          setCommentEditContent(
-                                            event
-                                              .target
-                                              .value,
-                                          )
-                                        }
-                                        maxLength={1000}
-                                        rows={4}
-                                        className="w-full resize-none rounded-2xl border border-[var(--border)] bg-[var(--background)] px-4 py-3 text-sm leading-6 outline-none transition focus:border-[var(--accent)]"
-                                      />
-
-                                      <div className="mt-2 flex items-center justify-between gap-3">
-                                        <span className="text-[11px] tabular-nums text-[var(--muted)]">
-                                          {
-                                            commentEditContent.length
-                                          }
-                                          /1000
-                                        </span>
-
-                                        <div className="flex items-center gap-2">
-                                          <button
-                                            type="button"
-                                            onClick={
-                                              cancelCommentEdit
-                                            }
-                                            disabled={
-                                              commentEditLoading
-                                            }
-                                            className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold text-[var(--muted)] transition hover:bg-[var(--background)] disabled:opacity-50"
-                                          >
-                                            <X
-                                              size={14}
-                                            />
-                                            Cancel
-                                          </button>
-
-                                          <button
-                                            type="button"
-                                            onClick={() =>
-                                              void saveCommentEdit()
-                                            }
-                                            disabled={
-                                              commentEditLoading ||
-                                              !commentEditContent.trim()
-                                            }
-                                            className="inline-flex items-center gap-1.5 rounded-full bg-[var(--accent)] px-3 py-2 text-xs font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                                          >
-                                            {commentEditLoading ? (
-                                              <Loader2
-                                                size={14}
-                                                className="animate-spin"
-                                              />
-                                            ) : (
-                                              <Check
-                                                size={14}
-                                              />
-                                            )}
-                                            Save
-                                          </button>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <p className="mt-3 whitespace-pre-wrap text-sm leading-6">
-                                      {reply.content}
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-                            </article>
-                          );
-                        },
-                      )}
-                    </div>
-                  );
-                },
-              )}
+                    {replies.map((reply) =>
+                      renderComment(reply, true),
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
 
-          <form
-            onSubmit={handleCommentSubmit}
-            className="mt-4"
-          >
+          {hasMoreComments ? (
+            <div className="mt-4 flex justify-center">
+              <button
+                type="button"
+                onClick={() => void loadComments({ append: true })}
+                disabled={commentsLoadingMore}
+                className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-xs font-semibold text-[var(--foreground)] transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {commentsLoadingMore ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" />
+                    Loading more…
+                  </>
+                ) : (
+                  "Load more comments"
+                )}
+              </button>
+            </div>
+          ) : null}
+
+          <form onSubmit={handleCommentSubmit} className="mt-4">
             {replyingTo ? (
               <div className="mb-2 flex items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2">
                 <p className="truncate text-xs text-[var(--muted)]">
                   Replying to{" "}
                   <span className="font-semibold text-[var(--foreground)]">
-                    @
-                    {getCommentProfile(
-                      replyingTo,
-                    )?.username ?? "user"}
+                    @{getCommentProfile(replyingTo)?.username ?? "user"}
                   </span>
                 </p>
 
                 <button
                   type="button"
-                  onClick={() =>
-                    setReplyingTo(null)
-                  }
+                  onClick={() => setReplyingTo(null)}
                   className="shrink-0 text-[var(--muted)] transition hover:text-[var(--foreground)]"
                   aria-label="Cancel reply"
                 >
@@ -1861,16 +1450,12 @@ export default function PostInteractions({
               <textarea
                 value={commentContent}
                 onChange={(event) =>
-                  setCommentContent(
-                    event.target.value,
-                  )
+                  setCommentContent(event.target.value)
                 }
                 maxLength={1000}
                 rows={2}
                 placeholder={
-                  replyingTo
-                    ? "Write a reply…"
-                    : "Write a comment…"
+                  replyingTo ? "Write a reply…" : "Write a comment…"
                 }
                 className="min-w-0 flex-1 resize-none rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm leading-6 outline-none transition focus:border-[var(--accent)]"
               />
@@ -1882,17 +1467,10 @@ export default function PostInteractions({
                   !commentContent.trim()
                 }
                 className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                aria-label={
-                  replyingTo
-                    ? "Send reply"
-                    : "Send comment"
-                }
+                aria-label={replyingTo ? "Send reply" : "Send comment"}
               >
                 {commentPublishing ? (
-                  <Loader2
-                    size={16}
-                    className="animate-spin"
-                  />
+                  <Loader2 size={16} className="animate-spin" />
                 ) : (
                   <Send size={16} />
                 )}
