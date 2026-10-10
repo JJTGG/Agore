@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 
 import AgoreAvatar from "@/components/agore-avatar";
+import UserIdentity from "@/components/user-identity";
 import { createClient } from "@/lib/supabase/browser";
 
 const supabase = createClient();
@@ -845,15 +846,30 @@ export default function MessagesPage() {
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-3">
-                        <p
-                          className={`truncate text-sm ${
-                            conversation.has_unread_messages
-                              ? "font-bold"
-                              : "font-semibold"
-                          }`}
-                        >
-                          {title}
-                        </p>
+                        {conversation.type === "direct" &&
+                        conversation.participant ? (
+                          <UserIdentity
+                            userId={conversation.participant.id}
+                            displayName={title}
+                            className="min-w-0 flex-1"
+                            nameClassName={`min-w-0 truncate text-sm ${
+                              conversation.has_unread_messages
+                                ? "font-bold"
+                                : "font-semibold"
+                            }`}
+                            badgeSize={15}
+                          />
+                        ) : (
+                          <p
+                            className={`truncate text-sm ${
+                              conversation.has_unread_messages
+                                ? "font-bold"
+                                : "font-semibold"
+                            }`}
+                          >
+                            {title}
+                          </p>
+                        )}
 
                         <div className="flex shrink-0 items-center gap-2">
                           {conversation.has_unread_messages ? (
@@ -1020,9 +1036,13 @@ export default function MessagesPage() {
                         textClassName="text-xs"
                       />
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold">
-                          {person.display_name}
-                        </p>
+                        <UserIdentity
+                          userId={person.id}
+                          displayName={person.display_name}
+                          className="w-full"
+                          nameClassName="min-w-0 truncate text-sm font-semibold"
+                          badgeSize={15}
+                        />
                         <p className="mt-0.5 truncate text-xs text-[var(--muted)]">
                           @{person.username}
                         </p>
@@ -1229,9 +1249,13 @@ export default function MessagesPage() {
                               textClassName="text-xs"
                             />
                             <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-semibold">
-                                {person.display_name}
-                              </p>
+                              <UserIdentity
+                                userId={person.id}
+                                displayName={person.display_name}
+                                className="w-full"
+                                nameClassName="min-w-0 truncate text-sm font-semibold"
+                                badgeSize={15}
+                              />
                               <p className="mt-0.5 truncate text-xs text-[var(--muted)]">
                                 @{person.username}
                               </p>
