@@ -311,6 +311,17 @@ export default function SettingsPage() {
     } as UserSettings;
 
     setUserSettings(nextSettings);
+
+    // Apply theme changes immediately; the database save continues below.
+    if (
+      key === "theme" &&
+      (value === "system" ||
+        value === "light" ||
+        value === "dark")
+    ) {
+      document.documentElement.dataset.theme = value;
+    }
+
     setSavingKey(key);
     setError("");
     setSuccess("");
@@ -335,6 +346,12 @@ export default function SettingsPage() {
       );
 
       setUserSettings(userSettings);
+
+      // If persistence fails, restore the last saved theme.
+      if (key === "theme") {
+        document.documentElement.dataset.theme =
+          userSettings.theme;
+      }
 
       setError(
         "Unable to save that setting.",
