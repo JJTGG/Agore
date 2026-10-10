@@ -31,7 +31,6 @@ import VerificationBadge from "@/components/verification-badge";
 import ProfilePosts from "./profile-posts";
 import ProfileConnections from "./profile-connections";
 import ProfileReportDialog from "./profile-report-dialog";
-import ActivityTimeline from "./activity-timeline";
 
 type AccountType =
   | "personal"
@@ -962,12 +961,6 @@ export default function ProfilePage() {
                   userId={
                     profile.id
                   }
-                />
-
-                <ActivityTimeline
-                  key={`activity-${profile.id}`}
-                  userId={profile.id}
-                  isOwner={isOwner}
                 />
 
                 <ProfileConnections
