@@ -3,45 +3,39 @@ import { z } from "zod";
 
 import { createClient } from "@/lib/supabase/server";
 
+const postIdSchema = z.uuid();
+
 const reportSchema = z.object({
-  reason: z
-    .string()
-    .trim()
-    .min(1)
-    .max(100),
-  details: z
-    .string()
-    .trim()
-    .max(2000)
-    .nullable()
-    .optional(),
+  reason: z.string().trim().min(1).max(100),
+  details: z.string().trim().max(2000).nullable().optional(),
 });
+
+type RouteContext = {
+  params: Promise<{
+    postId: string;
+  }>;
+};
 
 export async function POST(
   request: Request,
-  {
-    params,
-  }: {
-    params: Promise<{ postId: string }>;
-  },
+  context: RouteContext,
 ) {
   const supabase = await createClient();
 
   const {
     data: { user },
-    error: userError,
+    error: authError,
   } = await supabase.auth.getUser();
 
-  if (userError || !user) {
+  if (authError || !user) {
     return NextResponse.json(
       { error: "Authentication required." },
       { status: 401 },
     );
   }
 
-  const { postId } = await params;
-
-  const parsedPostId = z.uuid().safeParse(postId);
+  const { postId } = await context.params;
+  const parsedPostId = postIdSchema.safeParse(postId);
 
   if (!parsedPostId.success) {
     return NextResponse.json(
@@ -65,29 +59,26 @@ export async function POST(
 
   if (!parsedBody.success) {
     return NextResponse.json(
-      {
-        error:
-          "A valid report reason is required.",
-      },
+      { error: "A valid report reason is required." },
       { status: 400 },
     );
   }
 
-  const { reason, details = null } =
-    parsedBody.data;
+  const { reason, details = null } = parsedBody.data;
 
-  const { data: post, error: postError } =
-    await supabase
-      .from("posts")
-      .select("id, author_id, deleted_at")
-      .eq("id", parsedPostId.data)
-      .maybeSingle();
+  // Respect normal post visibility and block restrictions.
+  const {
+    data: post,
+    error: postError,
+  } = await supabase
+    .from("posts")
+    .select("id, author_id")
+    .eq("id", parsedPostId.data)
+    .is("deleted_at", null)
+    .maybeSingle();
 
   if (postError) {
-    console.error(
-      "Failed to load Agore post for report:",
-      postError,
-    );
+    console.error("Failed to load Agore post for report:", postError);
 
     return NextResponse.json(
       { error: "Unable to report this post." },
@@ -95,9 +86,9 @@ export async function POST(
     );
   }
 
-  if (!post || post.deleted_at) {
+  if (!post) {
     return NextResponse.json(
-      { error: "Post not found." },
+      { error: "Post not found or unavailable." },
       { status: 404 },
     );
   }
@@ -118,11 +109,7 @@ export async function POST(
     .eq("reporter_id", user.id)
     .eq("target_type", "post")
     .eq("target_id", post.id)
-    .in("status", [
-      "pending",
-      "reviewed",
-      "actioned",
-    ])
+    .in("status", ["pending", "reviewed", "actioned"])
     .limit(1)
     .maybeSingle();
 
@@ -140,34 +127,28 @@ export async function POST(
 
   if (existingReport) {
     return NextResponse.json(
-      {
-        error:
-          "You have already reported this post.",
-      },
+      { error: "You have already reported this post." },
       { status: 409 },
     );
   }
 
-  const { data: report, error: reportError } =
-    await supabase
-      .from("reports")
-      .insert({
-        reporter_id: user.id,
-        target_type: "post",
-        target_id: post.id,
-        reason,
-        details,
-      })
-      .select(
-        "id, target_type, target_id, reason, status, created_at",
-      )
-      .single();
+  const {
+    data: report,
+    error: reportError,
+  } = await supabase
+    .from("reports")
+    .insert({
+      reporter_id: user.id,
+      target_type: "post",
+      target_id: post.id,
+      reason,
+      details,
+    })
+    .select("id, target_type, target_id, reason, status, created_at")
+    .single();
 
   if (reportError) {
-    console.error(
-      "Failed to create Agore post report:",
-      reportError,
-    );
+    console.error("Failed to create Agore post report:", reportError);
 
     return NextResponse.json(
       { error: "Unable to submit the report." },
@@ -175,8 +156,5 @@ export async function POST(
     );
   }
 
-  return NextResponse.json(
-    { report },
-    { status: 201 },
-  );
+  return NextResponse.json({ report }, { status: 201 });
 }
