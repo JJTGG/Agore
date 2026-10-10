@@ -1,3 +1,4 @@
+
 export type Theme =
   | "system"
   | "light"
@@ -22,6 +23,7 @@ export type UserSettings = {
   theme: Theme;
   allow_messages_from: MessageAudience;
   show_activity_status: boolean;
+  activity_visibility: ActivityVisibility;
 };
 
 export type NotificationPreferences = {
