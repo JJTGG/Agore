@@ -48,6 +48,8 @@ type ActivityItem = {
 type ActivityResponse = {
   profile?: PublicProfile;
   activity?: ActivityItem[];
+  activityHidden?: boolean;
+  activityHiddenReason?: string;
   pagination?: {
     limit: number;
     hasMore: boolean;
@@ -250,6 +252,7 @@ export default function ActivityTimeline({
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [activityHidden, setActivityHidden] = useState(false);
   const [error, setError] = useState("");
 
   const requestGeneration = useRef(0);
@@ -265,6 +268,7 @@ export default function ActivityTimeline({
         setLoadingMore(true);
       } else {
         setLoading(true);
+        setActivityHidden(false);
       }
 
       setError("");
@@ -301,24 +305,32 @@ export default function ActivityTimeline({
           );
         }
 
-        const receivedItems = Array.isArray(data.activity)
-          ? data.activity
-          : [];
+        const hidden = data.activityHidden === true;
 
-        setItems((current) =>
-          append
-            ? [
-                ...current,
-                ...receivedItems.filter(
-                  (item) =>
-                    !current.some(
-                      (existing) =>
-                        existing.id === item.id,
-                    ),
-                ),
-              ]
-            : receivedItems,
-        );
+        setActivityHidden(hidden);
+
+        if (hidden) {
+          setItems([]);
+        } else {
+          const receivedItems = Array.isArray(data.activity)
+            ? data.activity
+            : [];
+
+          setItems((current) =>
+            append
+              ? [
+                  ...current,
+                  ...receivedItems.filter(
+                    (item) =>
+                      !current.some(
+                        (existing) =>
+                          existing.id === item.id,
+                      ),
+                  ),
+                ]
+              : receivedItems,
+          );
+        }
 
         if (data.pagination) {
           setNextCursor(data.pagination.nextCursor);
@@ -358,6 +370,7 @@ export default function ActivityTimeline({
     setHasMore(false);
     setLoading(true);
     setLoadingMore(false);
+    setActivityHidden(false);
     setError("");
 
     void loadPage(null, false);
@@ -371,6 +384,7 @@ export default function ActivityTimeline({
     setItems([]);
     setNextCursor(null);
     setHasMore(false);
+    setActivityHidden(false);
     void loadPage(null, false);
   }
 
@@ -425,6 +439,22 @@ export default function ActivityTimeline({
             <RefreshCw size={15} />
             Try again
           </button>
+        </div>
+      ) : activityHidden ? (
+        <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-6 py-12 text-center">
+          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]">
+            <Clock3 size={20} />
+          </span>
+
+          <p className="mt-4 text-sm font-semibold text-[var(--foreground)]">
+            Activity timeline is hidden
+          </p>
+
+          <p className="mx-auto mt-1 max-w-sm text-sm leading-6 text-[var(--muted)]">
+            {isOwner
+              ? "Your current Activity privacy setting hides this timeline from ordinary views."
+              : "This activity timeline is not available to view."}
+          </p>
         </div>
       ) : items.length === 0 ? (
         <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-6 py-12 text-center">
