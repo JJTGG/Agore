@@ -426,6 +426,20 @@ export default function ProfilePage() {
     await copyProfileUrl(url);
   }
 
+  function handleOwnPostDeleted() {
+    setProfile((current) =>
+      current
+        ? {
+            ...current,
+            post_count: Math.max(
+              0,
+              current.post_count - 1,
+            ),
+          }
+        : current,
+    );
+  }
+
   const safeLinks = normalizeProfileLinks(
     profile?.profile_links,
   );
@@ -866,6 +880,7 @@ export default function ProfilePage() {
                   <ProfilePosts
                     key={profile.id}
                     userId={profile.id}
+                    onOwnPostDeleted={handleOwnPostDeleted}
                   />
 
                   <ProfileConnections
