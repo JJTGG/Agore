@@ -1,3 +1,4 @@
+
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -7,12 +8,7 @@ import { createClient } from "@/lib/supabase/server";
 const userIdSchema = z.uuid();
 
 const querySchema = z.object({
-  limit: z.coerce
-    .number()
-    .int()
-    .min(1)
-    .max(100)
-    .default(50),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 
 type RouteContext = {
@@ -26,6 +22,8 @@ type BlockRow = {
   blocked_id: string;
 };
 
+type Relation<T> = T | T[] | null;
+
 type MediaProfile = {
   account_status: string;
 };
@@ -36,9 +34,7 @@ type MediaPost = {
   content: string;
   created_at: string;
   deleted_at: string | null;
-  profiles:
-    | MediaProfile[]
-    | null;
+  profiles: Relation<MediaProfile>;
 };
 
 type MediaRow = {
@@ -51,186 +47,150 @@ type MediaRow = {
   height: number | null;
   sort_order: number;
   created_at: string;
-  posts:
-    | MediaPost[]
-    | null;
+  posts: Relation<MediaPost>;
 };
+
+type ProfileMediaItem = {
+  id: string;
+  storage_path: string;
+  mime_type: string;
+  size_bytes: number;
+  width: number | null;
+  height: number | null;
+  sort_order: number;
+  created_at: string;
+};
+
+type GroupedMediaPost = {
+  id: string;
+  content: string;
+  created_at: string;
+  post_media: ProfileMediaItem[];
+};
+
+/**
+ * Supabase joins can represent a relationship as either a single
+ * object or an array. Normalize both shapes without dropping records.
+ */
+function firstRelation<T>(
+  value: Relation<T> | undefined,
+): T | null {
+  if (Array.isArray(value)) {
+    return (value[0] as T | undefined) ?? null;
+  }
+
+  return (value as T | null | undefined) ?? null;
+}
 
 export async function GET(
   request: Request,
   context: RouteContext,
 ) {
-  const supabase =
-    await createClient();
+  const supabase = await createClient();
 
   const {
     data: { user },
     error: userError,
-  } =
-    await supabase.auth.getUser();
+  } = await supabase.auth.getUser();
 
   if (userError || !user) {
     return NextResponse.json(
-      {
-        error:
-          "Authentication required.",
-      },
-      {
-        status: 401,
-      },
+      { error: "Authentication required." },
+      { status: 401 },
     );
   }
 
-  const { userId } =
-    await context.params;
-
-  const parsedUserId =
-    userIdSchema.safeParse(
-      userId,
-    );
+  const { userId } = await context.params;
+  const parsedUserId = userIdSchema.safeParse(userId);
 
   if (!parsedUserId.success) {
     return NextResponse.json(
-      {
-        error:
-          "Invalid user ID.",
-      },
-      {
-        status: 400,
-      },
+      { error: "Invalid user ID." },
+      { status: 400 },
     );
   }
 
-  const targetUserId =
-    parsedUserId.data;
+  const targetUserId = parsedUserId.data;
 
-  const searchParams =
-    new URL(request.url)
-      .searchParams;
-
-  const parsedQuery =
-    querySchema.safeParse({
-      limit:
-        searchParams.get(
-          "limit",
-        ) ??
-        undefined,
-    });
+  const searchParams = new URL(request.url).searchParams;
+  const parsedQuery = querySchema.safeParse({
+    limit: searchParams.get("limit") ?? undefined,
+  });
 
   if (!parsedQuery.success) {
     return NextResponse.json(
-      {
-        error:
-          "Invalid profile media parameters.",
-      },
-      {
-        status: 400,
-      },
+      { error: "Invalid profile media parameters." },
+      { status: 400 },
     );
   }
 
-  const admin =
-    createAdminClient();
+  const admin = createAdminClient();
 
-  const [
-    profileResult,
-    blockResult,
-  ] = await Promise.all([
+  const [profileResult, blockResult] = await Promise.all([
     admin
       .from("profiles")
-      .select(
-        "id, account_status",
-      )
-      .eq(
-        "id",
-        targetUserId,
-      )
+      .select("id, account_status")
+      .eq("id", targetUserId)
       .maybeSingle(),
 
     admin
       .from("blocks")
-      .select(
-        "blocker_id, blocked_id",
-      )
+      .select("blocker_id, blocked_id")
       .or(
         `and(blocker_id.eq.${user.id},blocked_id.eq.${targetUserId}),and(blocker_id.eq.${targetUserId},blocked_id.eq.${user.id})`,
       )
       .limit(1),
   ]);
 
-  if (
-    profileResult.error ||
-    blockResult.error
-  ) {
+  if (profileResult.error || blockResult.error) {
     console.error(
       "Failed to load Agore profile media access state:",
       {
-        profileError:
-          profileResult.error,
-        blockError:
-          blockResult.error,
+        profileError: profileResult.error,
+        blockError: blockResult.error,
       },
     );
 
     return NextResponse.json(
-      {
-        error:
-          "Unable to load profile media.",
-      },
-      {
-        status: 500,
-      },
+      { error: "Unable to load profile media." },
+      { status: 500 },
     );
   }
 
   if (
     !profileResult.data ||
-    profileResult.data
-      .account_status !==
-      "active"
+    profileResult.data.account_status !== "active"
   ) {
     return NextResponse.json(
-      {
-        error:
-          "Profile not found.",
-      },
-      {
-        status: 404,
-      },
+      { error: "Profile not found." },
+      { status: 404 },
     );
   }
 
   const blockRelationships =
-    (blockResult.data ??
-      []) as BlockRow[];
+    (blockResult.data ?? []) as BlockRow[];
 
+  // Preserve the existing privacy behavior: if the target user
+  // has blocked the viewer, their profile should not be discoverable.
   if (
     blockRelationships.some(
       (relationship) =>
-        relationship.blocker_id ===
-          targetUserId &&
-        relationship.blocked_id ===
-          user.id,
+        relationship.blocker_id === targetUserId &&
+        relationship.blocked_id === user.id,
     )
   ) {
     return NextResponse.json(
-      {
-        error:
-          "Profile not found.",
-      },
-      {
-        status: 404,
-      },
+      { error: "Profile not found." },
+      { status: 404 },
     );
   }
 
+  // If the viewer blocked the target user, show no profile media.
   if (
     blockRelationships.some(
       (relationship) =>
-        relationship.blocker_id ===
-          user.id &&
-        relationship.blocked_id ===
-          targetUserId,
+        relationship.blocker_id === user.id &&
+        relationship.blocked_id === targetUserId,
     )
   ) {
     return NextResponse.json({
@@ -243,57 +203,37 @@ export async function GET(
     data: mediaRows,
     error: mediaError,
     count,
-  } =
-    await admin
-      .from("post_media")
-      .select(
-        `
+  } = await admin
+    .from("post_media")
+    .select(
+      `
+        id,
+        post_id,
+        storage_path,
+        mime_type,
+        size_bytes,
+        width,
+        height,
+        sort_order,
+        created_at,
+        posts!post_media_post_id_fkey!inner (
           id,
-          post_id,
-          storage_path,
-          mime_type,
-          size_bytes,
-          width,
-          height,
-          sort_order,
+          author_id,
+          content,
           created_at,
-          posts!post_media_post_id_fkey!inner (
-            id,
-            author_id,
-            content,
-            created_at,
-            deleted_at,
-            profiles!posts_author_id_fkey!inner (
-              account_status
-            )
+          deleted_at,
+          profiles!posts_author_id_fkey!inner (
+            account_status
           )
-        `,
-        {
-          count: "exact",
-        },
-      )
-      .eq(
-        "posts.author_id",
-        targetUserId,
-      )
-      .is(
-        "posts.deleted_at",
-        null,
-      )
-      .eq(
-        "posts.profiles.account_status",
-        "active",
-      )
-      .order(
-        "created_at",
-        {
-          ascending: false,
-        },
-      )
-      .range(
-        0,
-        parsedQuery.data.limit - 1,
-      );
+        )
+      `,
+      { count: "exact" },
+    )
+    .eq("posts.author_id", targetUserId)
+    .is("posts.deleted_at", null)
+    .eq("posts.profiles.account_status", "active")
+    .order("created_at", { ascending: false })
+    .range(0, parsedQuery.data.limit - 1);
 
   if (mediaError) {
     console.error(
@@ -302,131 +242,71 @@ export async function GET(
     );
 
     return NextResponse.json(
-      {
-        error:
-          "Unable to load profile media.",
-      },
-      {
-        status: 500,
-      },
+      { error: "Unable to load profile media." },
+      { status: 500 },
     );
   }
 
-  const rows =
-    (mediaRows ?? []) as MediaRow[];
+  const rows = (mediaRows ?? []) as unknown as MediaRow[];
 
-  const posts = new Map<
-    string,
-    {
-      id: string;
-      content: string;
-      created_at: string;
-      post_media: Array<{
-        id: string;
-        storage_path: string;
-        mime_type: string;
-        size_bytes: number;
-        width: number | null;
-        height: number | null;
-        sort_order: number;
-        created_at: string;
-      }>;
-    }
-  >();
+  const groupedPosts = new Map<string, GroupedMediaPost>();
 
   for (const row of rows) {
-    const post =
-      Array.isArray(row.posts)
-        ? row.posts[0] ?? null
-        : null;
+    // Handle either object-shaped or array-shaped joins.
+    const post = firstRelation(row.posts);
 
-    if (!post) {
+    if (!post || post.deleted_at !== null) {
       continue;
     }
 
-    const profile =
-      Array.isArray(
-        post.profiles,
-      )
-        ? post.profiles[0] ?? null
-        : null;
+    const authorProfile = firstRelation(post.profiles);
 
-    if (
-      profile?.account_status !==
-      "active"
-    ) {
+    if (authorProfile?.account_status !== "active") {
       continue;
     }
 
-    let entry =
-      posts.get(post.id);
+    let groupedPost = groupedPosts.get(post.id);
 
-    if (!entry) {
-      entry = {
+    if (!groupedPost) {
+      groupedPost = {
         id: post.id,
-        content:
-          post.content,
-        created_at:
-          post.created_at,
+        content: post.content,
+        created_at: post.created_at,
         post_media: [],
       };
 
-      posts.set(
-        post.id,
-        entry,
-      );
+      groupedPosts.set(post.id, groupedPost);
     }
 
-    entry.post_media.push({
+    groupedPost.post_media.push({
       id: row.id,
-      storage_path:
-        row.storage_path,
-      mime_type:
-        row.mime_type,
-      size_bytes:
-        row.size_bytes,
-      width:
-        row.width,
-      height:
-        row.height,
-      sort_order:
-        row.sort_order,
-      created_at:
-        row.created_at,
+      storage_path: row.storage_path,
+      mime_type: row.mime_type,
+      size_bytes: row.size_bytes,
+      width: row.width,
+      height: row.height,
+      sort_order: row.sort_order,
+      created_at: row.created_at,
     });
   }
 
-  for (const post of posts.values()) {
-    post.post_media.sort(
-      (a, b) => {
-        if (
-          a.sort_order !==
-          b.sort_order
-        ) {
-          return (
-            a.sort_order -
-            b.sort_order
-          );
-        }
+  for (const post of groupedPosts.values()) {
+    post.post_media.sort((a, b) => {
+      if (a.sort_order !== b.sort_order) {
+        return a.sort_order - b.sort_order;
+      }
 
-        return (
-          new Date(
-            a.created_at,
-          ).getTime() -
-          new Date(
-            b.created_at,
-          ).getTime()
-        );
-      },
-    );
+      return (
+        new Date(a.created_at).getTime() -
+        new Date(b.created_at).getTime()
+      );
+    });
   }
 
   return NextResponse.json({
-    media: Array.from(
-      posts.values(),
-    ),
-    total:
-      count ??
-      rows.length,
+    media: Array.from(groupedPosts.values()),
+    // This is the total number of matching media attachments,
+    // including rows beyond the response page's limit.
+    total: count ?? rows.length,
   });
 }
