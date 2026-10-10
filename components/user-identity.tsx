@@ -206,14 +206,24 @@ export default function UserIdentity({
     verificationKind,
   ]);
 
-  const status: BadgeStatus | null = hasInitialStatus
-    ? {
-        accountType,
-        kind: verificationKind,
-      }
-    : remoteStatus?.userId === userId
-      ? remoteStatus.badge
-      : null;
+  let status: BadgeStatus | null = null;
+
+  if (
+    hasInitialStatus &&
+    accountType !== undefined &&
+    verificationKind !== undefined
+  ) {
+    status = {
+      accountType,
+      kind: verificationKind,
+    };
+  } else if (
+    userId &&
+    remoteStatus !== null &&
+    remoteStatus.userId === userId
+  ) {
+    status = remoteStatus.badge;
+  }
 
   return (
     <span
