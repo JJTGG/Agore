@@ -2,7 +2,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
   ArrowUpRight,
-  Bell,
   Compass,
   MessageCircle,
   Plus,
@@ -14,6 +13,7 @@ import {
 import AgoreAvatar from "@/components/agore-avatar";
 import AgoreDesktopNav from "@/components/agore-desktop-nav";
 import AgoreMobileNav from "@/components/agore-mobile-nav";
+import NotificationBellLink from "@/components/notification-bell-link";
 import PostFeed from "./post-feed";
 import { createClient } from "@/lib/supabase/server";
 
@@ -61,9 +61,7 @@ export default async function HomePage() {
               aria-label="Agoré home"
             >
               <span className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-2xl bg-[var(--foreground)] text-sm font-black tracking-[-0.04em] text-[var(--background)] transition duration-200 group-hover:bg-[var(--accent)] group-hover:text-white">
-                <span className="relative z-10">
-                  A
-                </span>
+                <span className="relative z-10">A</span>
 
                 <span className="absolute -right-3 -top-3 h-7 w-7 rounded-full bg-[var(--accent)] opacity-70 transition duration-200 group-hover:scale-150" />
               </span>
@@ -89,14 +87,7 @@ export default async function HomePage() {
                 <Search size={19} />
               </Link>
 
-              <Link
-                href="/notifications"
-                aria-label="Notifications"
-                title="Notifications"
-                className="flex h-10 w-10 items-center justify-center rounded-full text-[var(--muted)] transition hover:bg-[var(--surface)] hover:text-[var(--foreground)]"
-              >
-                <Bell size={19} />
-              </Link>
+              <NotificationBellLink />
 
               <Link
                 href="/settings"
