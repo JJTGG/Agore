@@ -1,20 +1,11 @@
+
 "use client";
 
 import Link from "next/link";
 import {
   ArrowLeft,
-  Bell,
   Check,
-  ChevronRight,
-  LogOut,
-  Lock,
-  Monitor,
-  Moon,
-  Palette,
   Settings2,
-  Shield,
-  Sun,
-  UserRound,
 } from "lucide-react";
 import {
   useEffect,
@@ -24,45 +15,24 @@ import {
 import { useRouter } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/browser";
-import ActivityVisibilitySetting from "./activity-visibility-setting";
 
-type Theme =
-  | "system"
-  | "light"
-  | "dark";
+import AccountProfileSection from "./sections/account-profile-section";
+import AppearanceSection from "./sections/appearance-section";
+import LoginSecuritySection from "./sections/login-security-section";
+import NotificationsSection from "./sections/notifications-section";
+import PrivacySafetySection from "./sections/privacy-safety-section";
+import SessionAboutSection from "./sections/session-about-section";
 
-type MessageAudience =
-  | "everyone"
-  | "followers";
-
-type UserSettings = {
-  user_id: string;
-  theme: Theme;
-  allow_messages_from: MessageAudience;
-  show_activity_status: boolean;
-};
-
-type NotificationPreferences = {
-  user_id: string;
-  follows: boolean;
-  reactions: boolean;
-  comments: boolean;
-  reposts: boolean;
-  messages: boolean;
-  group_activity: boolean;
-};
-
-type Profile = {
-  display_name: string;
-  username: string;
-};
-
-type ToggleProps = {
-  checked: boolean;
-  onChange: (value: boolean) => void;
-  disabled?: boolean;
-  label: string;
-};
+import type {
+  ActivityVisibility,
+  MessageAudience,
+  NotificationPreferenceKey,
+  NotificationPreferences,
+  ProfileSummary,
+  Theme,
+  UserSettingKey,
+  UserSettings,
+} from "./sections/types";
 
 const DEFAULT_USER_SETTINGS: Omit<
   UserSettings,
@@ -71,6 +41,7 @@ const DEFAULT_USER_SETTINGS: Omit<
   theme: "system",
   allow_messages_from: "everyone",
   show_activity_status: true,
+  activity_visibility: "public",
 };
 
 const DEFAULT_NOTIFICATION_PREFERENCES: Omit<
@@ -87,66 +58,30 @@ const DEFAULT_NOTIFICATION_PREFERENCES: Omit<
 
 const supabase = createClient();
 
-function Toggle({
-  checked,
-  onChange,
-  disabled = false,
-  label,
-}: ToggleProps) {
+function isTheme(value: unknown): value is Theme {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className={`relative h-7 w-12 shrink-0 rounded-full p-1 transition ${
-        checked
-          ? "bg-[var(--accent)]"
-          : "bg-[var(--surface-muted)]"
-      } disabled:cursor-not-allowed disabled:opacity-50`}
-    >
-      <span
-        className={`block h-5 w-5 rounded-full bg-white shadow-sm transition ${
-          checked ? "translate-x-5" : "translate-x-0"
-        }`}
-      />
-    </button>
+    value === "system" ||
+    value === "light" ||
+    value === "dark"
   );
 }
 
-function SectionHeading({
-  eyebrow,
-  title,
-  description,
-  icon,
-}: {
-  eyebrow: string;
-  title: string;
-  description: string;
-  icon: React.ReactNode;
-}) {
+function isMessageAudience(
+  value: unknown,
+): value is MessageAudience {
   return (
-    <div className="flex items-start gap-3">
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]">
-        {icon}
-      </span>
+    value === "everyone" ||
+    value === "followers"
+  );
+}
 
-      <div>
-        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--accent)]">
-          {eyebrow}
-        </p>
-
-        <h2 className="mt-1.5 text-lg font-semibold tracking-[-0.025em]">
-          {title}
-        </h2>
-
-        <p className="mt-1 text-sm leading-6 text-[var(--muted)]">
-          {description}
-        </p>
-      </div>
-    </div>
+function isActivityVisibility(
+  value: unknown,
+): value is ActivityVisibility {
+  return (
+    value === "public" ||
+    value === "private" ||
+    value === "confidential"
   );
 }
 
@@ -154,7 +89,13 @@ export default function SettingsPage() {
   const router = useRouter();
 
   const [profile, setProfile] =
-    useState<Profile | null>(null);
+    useState<ProfileSummary | null>(null);
+
+  const [accountEmail, setAccountEmail] =
+    useState<string | null>(null);
+
+  const [emailVerified, setEmailVerified] =
+    useState(false);
 
   const [userSettings, setUserSettings] =
     useState<UserSettings | null>(null);
@@ -162,14 +103,15 @@ export default function SettingsPage() {
   const [
     notificationPreferences,
     setNotificationPreferences,
-  ] =
-    useState<NotificationPreferences | null>(
-      null,
-    );
+  ] = useState<NotificationPreferences | null>(
+    null,
+  );
 
   const [loading, setLoading] = useState(true);
+
   const [savingKey, setSavingKey] =
     useState<string | null>(null);
+
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -183,8 +125,7 @@ export default function SettingsPage() {
         .filter(Boolean)
         .slice(0, 2)
         .map(
-          (part: string) =>
-            part[0]?.toUpperCase() ?? "",
+          (part) => part[0]?.toUpperCase() ?? "",
         )
         .join("") || "A"
     );
@@ -197,16 +138,23 @@ export default function SettingsPage() {
       setLoading(true);
       setError("");
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        router.replace("/auth");
-        return;
-      }
-
       try {
+        const {
+          data: { user },
+          error: authError,
+        } = await supabase.auth.getUser();
+
+        if (authError) {
+          throw authError;
+        }
+
+        if (!user) {
+          if (active) {
+            router.replace("/auth");
+          }
+          return;
+        }
+
         const [
           profileResult,
           settingsResult,
@@ -221,7 +169,13 @@ export default function SettingsPage() {
           supabase
             .from("user_settings")
             .select(
-              "user_id, theme, allow_messages_from, show_activity_status",
+              [
+                "user_id",
+                "theme",
+                "allow_messages_from",
+                "show_activity_status",
+                "activity_visibility",
+              ].join(", "),
             )
             .eq("user_id", user.id)
             .maybeSingle(),
@@ -229,7 +183,15 @@ export default function SettingsPage() {
           supabase
             .from("notification_preferences")
             .select(
-              "user_id, follows, reactions, comments, reposts, messages, group_activity",
+              [
+                "user_id",
+                "follows",
+                "reactions",
+                "comments",
+                "reposts",
+                "messages",
+                "group_activity",
+              ].join(", "),
             )
             .eq("user_id", user.id)
             .maybeSingle(),
@@ -251,36 +213,108 @@ export default function SettingsPage() {
           return;
         }
 
+        const storedSettings =
+          settingsResult.data as
+            | Partial<UserSettings>
+            | null;
+
+        const loadedSettings: UserSettings = {
+          user_id: user.id,
+
+          theme: isTheme(storedSettings?.theme)
+            ? storedSettings.theme
+            : DEFAULT_USER_SETTINGS.theme,
+
+          allow_messages_from: isMessageAudience(
+            storedSettings?.allow_messages_from,
+          )
+            ? storedSettings.allow_messages_from
+            : DEFAULT_USER_SETTINGS.allow_messages_from,
+
+          show_activity_status:
+            typeof storedSettings?.show_activity_status ===
+            "boolean"
+              ? storedSettings.show_activity_status
+              : DEFAULT_USER_SETTINGS.show_activity_status,
+
+          activity_visibility: isActivityVisibility(
+            storedSettings?.activity_visibility,
+          )
+            ? storedSettings.activity_visibility
+            : DEFAULT_USER_SETTINGS.activity_visibility,
+        };
+
+        const storedNotifications =
+          notificationResult.data as
+            | Partial<NotificationPreferences>
+            | null;
+
+        const loadedNotifications: NotificationPreferences = {
+          user_id: user.id,
+
+          follows:
+            typeof storedNotifications?.follows ===
+            "boolean"
+              ? storedNotifications.follows
+              : DEFAULT_NOTIFICATION_PREFERENCES.follows,
+
+          reactions:
+            typeof storedNotifications?.reactions ===
+            "boolean"
+              ? storedNotifications.reactions
+              : DEFAULT_NOTIFICATION_PREFERENCES.reactions,
+
+          comments:
+            typeof storedNotifications?.comments ===
+            "boolean"
+              ? storedNotifications.comments
+              : DEFAULT_NOTIFICATION_PREFERENCES.comments,
+
+          reposts:
+            typeof storedNotifications?.reposts ===
+            "boolean"
+              ? storedNotifications.reposts
+              : DEFAULT_NOTIFICATION_PREFERENCES.reposts,
+
+          messages:
+            typeof storedNotifications?.messages ===
+            "boolean"
+              ? storedNotifications.messages
+              : DEFAULT_NOTIFICATION_PREFERENCES.messages,
+
+          group_activity:
+            typeof storedNotifications?.group_activity ===
+            "boolean"
+              ? storedNotifications.group_activity
+              : DEFAULT_NOTIFICATION_PREFERENCES.group_activity,
+        };
+
         setProfile(
-          profileResult.data ?? null,
+          (profileResult.data as ProfileSummary | null) ??
+            null,
         );
 
-        setUserSettings(
-          settingsResult.data
-            ? (settingsResult.data as UserSettings)
-            : {
-                user_id: user.id,
-                ...DEFAULT_USER_SETTINGS,
-              },
+        setAccountEmail(user.email ?? null);
+        setEmailVerified(
+          Boolean(user.email_confirmed_at),
         );
 
+        setUserSettings(loadedSettings);
         setNotificationPreferences(
-          notificationResult.data
-            ? (notificationResult.data as NotificationPreferences)
-            : {
-                user_id: user.id,
-                ...DEFAULT_NOTIFICATION_PREFERENCES,
-              },
+          loadedNotifications,
         );
+
+        document.documentElement.dataset.theme =
+          loadedSettings.theme;
       } catch (loadError) {
         console.error(
-          "Failed to load Agore settings:",
+          "Failed to load Agoré settings:",
           loadError,
         );
 
         if (active) {
           setError(
-            "Unable to load your settings.",
+            "Unable to load your settings. Please try again.",
           );
         }
       } finally {
@@ -297,29 +331,60 @@ export default function SettingsPage() {
     };
   }, [router]);
 
-  async function updateUserSetting(
-    key: keyof Omit<UserSettings, "user_id">,
-    value: string | boolean,
-  ) {
-    if (!userSettings) {
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const status =
+      url.searchParams.get("email_change");
+
+    if (!status) {
       return;
     }
 
+    if (status === "confirmation-received") {
+      setSuccess(
+        "The email confirmation link was processed. Check the account email shown below to confirm the current address.",
+      );
+    } else if (status === "invalid-link") {
+      setError(
+        "That email confirmation link is invalid or expired. Request a new email change and use the latest link.",
+      );
+    } else if (status === "error") {
+      setError(
+        "The email change could not be completed. Check your email instructions and try again.",
+      );
+    }
+
+    // Remove the one-time callback status from the URL.
+    url.searchParams.delete("email_change");
+
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+  }, []);
+
+  async function updateUserSetting(
+    key: UserSettingKey,
+    value: UserSettings[UserSettingKey],
+  ): Promise<boolean> {
+    if (!userSettings) {
+      return false;
+    }
+
+    const previousSettings = userSettings;
+
     const nextSettings = {
-      ...userSettings,
+      ...previousSettings,
       [key]: value,
     } as UserSettings;
 
     setUserSettings(nextSettings);
 
-    // Apply theme changes immediately; the database save continues below.
-    if (
-      key === "theme" &&
-      (value === "system" ||
-        value === "light" ||
-        value === "dark")
-    ) {
-      document.documentElement.dataset.theme = value;
+    // Apply theme changes before waiting for persistence.
+    if (key === "theme") {
+      document.documentElement.dataset.theme =
+        value as Theme;
     }
 
     setSavingKey(key);
@@ -338,49 +403,84 @@ export default function SettingsPage() {
         throw updateError;
       }
 
-      setSuccess("Settings saved.");
+      setSuccess(
+        key === "theme"
+          ? "Appearance saved."
+          : "Settings saved.",
+      );
+
+      return true;
     } catch (updateError) {
       console.error(
-        "Failed to update Agore user setting:",
+        "Failed to update Agoré user setting:",
         updateError,
       );
 
-      setUserSettings(userSettings);
+      setUserSettings(previousSettings);
 
-      // If persistence fails, restore the last saved theme.
       if (key === "theme") {
         document.documentElement.dataset.theme =
-          userSettings.theme;
+          previousSettings.theme;
+      } else {
+        setError(
+          "Unable to save that setting. Your previous preference has been restored.",
+        );
       }
 
-      setError(
-        "Unable to save that setting.",
-      );
+      return false;
     } finally {
       setSavingKey(null);
     }
   }
 
+  function updatePrivacySetting(
+    key:
+      | "allow_messages_from"
+      | "show_activity_status",
+    value: MessageAudience | boolean,
+  ) {
+    if (
+      key === "allow_messages_from" &&
+      isMessageAudience(value)
+    ) {
+      void updateUserSetting(key, value);
+      return;
+    }
+
+    if (
+      key === "show_activity_status" &&
+      typeof value === "boolean"
+    ) {
+      void updateUserSetting(key, value);
+    }
+  }
+
+  function updateActivityVisibility(
+    value: ActivityVisibility,
+  ) {
+    void updateUserSetting(
+      "activity_visibility",
+      value,
+    );
+  }
+
   async function updateNotification(
-    key: keyof Omit<
-      NotificationPreferences,
-      "user_id"
-    >,
+    key: NotificationPreferenceKey,
     value: boolean,
   ) {
     if (!notificationPreferences) {
       return;
     }
 
+    const previousPreferences =
+      notificationPreferences;
+
     const nextPreferences = {
-      ...notificationPreferences,
+      ...previousPreferences,
       [key]: value,
-    } as NotificationPreferences;
+    };
 
-    setNotificationPreferences(
-      nextPreferences,
-    );
-
+    setNotificationPreferences(nextPreferences);
     setSavingKey(`notification:${key}`);
     setError("");
     setSuccess("");
@@ -397,19 +497,21 @@ export default function SettingsPage() {
         throw updateError;
       }
 
-      setSuccess("Notification preference saved.");
+      setSuccess(
+        "Notification preference saved.",
+      );
     } catch (updateError) {
       console.error(
-        "Failed to update Agore notification preference:",
+        "Failed to update Agoré notification preference:",
         updateError,
       );
 
       setNotificationPreferences(
-        notificationPreferences,
+        previousPreferences,
       );
 
       setError(
-        "Unable to save that preference.",
+        "Unable to save that notification preference. Your previous choice has been restored.",
       );
     } finally {
       setSavingKey(null);
@@ -417,26 +519,20 @@ export default function SettingsPage() {
   }
 
   async function signOut() {
-    setSavingKey("signout");
-    setError("");
-
     const { error: signOutError } =
       await supabase.auth.signOut();
 
     if (signOutError) {
-      setSavingKey(null);
-      setError(
-        "Unable to sign out. Please try again.",
-      );
-      return;
+      throw signOutError;
     }
 
     router.replace("/auth");
+    router.refresh();
   }
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-[var(--background)] px-4 py-6 sm:px-6 lg:px-8">
+      <main className="min-h-screen bg-[var(--background)] px-4 py-6 text-[var(--foreground)] sm:px-6 lg:px-8">
         <div className="mx-auto max-w-4xl">
           <div className="animate-pulse space-y-6">
             <div className="h-10 w-24 rounded-full bg-[var(--surface-muted)]" />
@@ -444,13 +540,13 @@ export default function SettingsPage() {
             <div className="space-y-3">
               <div className="h-3 w-20 rounded-full bg-[var(--surface-muted)]" />
               <div className="h-10 w-56 rounded bg-[var(--surface-muted)]" />
-              <div className="h-4 w-80 rounded bg-[var(--surface-muted)]" />
+              <div className="h-4 w-80 max-w-full rounded bg-[var(--surface-muted)]" />
             </div>
 
             {[0, 1, 2].map((item) => (
               <div
                 key={item}
-                className="h-52 rounded-[2rem] border border-[var(--border)] bg-[var(--surface)]"
+                className="h-44 rounded-3xl border border-[var(--border)] bg-[var(--surface)]"
               />
             ))}
           </div>
@@ -465,7 +561,7 @@ export default function SettingsPage() {
       !notificationPreferences)
   ) {
     return (
-      <main className="min-h-screen bg-[var(--background)] px-4 py-6 sm:px-6">
+      <main className="min-h-screen bg-[var(--background)] px-4 py-6 text-[var(--foreground)] sm:px-6">
         <div className="mx-auto max-w-2xl">
           <Link
             href="/home"
@@ -475,16 +571,21 @@ export default function SettingsPage() {
             Back to home
           </Link>
 
-          <section className="mt-8 rounded-[2rem] border border-[var(--border)] bg-[var(--surface)] p-6 sm:p-8">
-            <p className="text-sm font-medium text-[#8d2f2f]">
+          <section className="mt-8 rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-6 sm:p-8">
+            <h1 className="text-xl font-semibold">
+              Settings unavailable
+            </h1>
+
+            <p
+              role="alert"
+              className="mt-3 text-sm leading-6 text-[var(--danger)]"
+            >
               {error}
             </p>
 
             <button
               type="button"
-              onClick={() =>
-                window.location.reload()
-              }
+              onClick={() => window.location.reload()}
               className="mt-5 rounded-full bg-[var(--accent)] px-5 py-2.5 text-sm font-semibold text-white"
             >
               Retry
@@ -494,6 +595,15 @@ export default function SettingsPage() {
       </main>
     );
   }
+
+  if (!userSettings || !notificationPreferences) {
+    return null;
+  }
+
+  const notificationSavingKey =
+    savingKey?.startsWith("notification:")
+      ? savingKey.slice("notification:".length)
+      : savingKey;
 
   return (
     <main className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
@@ -508,7 +618,11 @@ export default function SettingsPage() {
               Home
             </Link>
 
-            <div className="flex items-center gap-2">
+            <Link
+              href="/settings"
+              aria-label="Agoré settings"
+              className="flex items-center gap-2"
+            >
               <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--foreground)] text-xs font-black text-[var(--background)]">
                 A
               </span>
@@ -516,7 +630,7 @@ export default function SettingsPage() {
               <span className="hidden text-sm font-bold sm:block">
                 Agoré
               </span>
-            </div>
+            </Link>
           </div>
         </header>
 
@@ -532,8 +646,9 @@ export default function SettingsPage() {
               </h1>
 
               <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--muted)] sm:text-base sm:leading-7">
-                Shape how Agoré looks, how people can reach you, and what
-                deserves your attention.
+                Manage your account, protect your privacy,
+                choose your appearance, and decide which
+                supported activities deserve your attention.
               </p>
             </div>
 
@@ -542,426 +657,83 @@ export default function SettingsPage() {
                 {initials}
               </span>
 
-              <div>
-                <p className="text-sm font-semibold">
-                  {profile?.display_name ??
-                    "Agoré user"}
+              <div className="min-w-0">
+                <p className="max-w-44 truncate text-sm font-semibold">
+                  {profile?.display_name ?? "Agoré user"}
                 </p>
 
-                <p className="mt-0.5 text-xs text-[var(--muted)]">
-                  @{profile?.username ??
-                    "unknown"}
+                <p className="mt-0.5 max-w-44 truncate text-xs text-[var(--muted)]">
+                  @{profile?.username ?? "unknown"}
                 </p>
               </div>
             </div>
           </div>
 
           {error ? (
-            <div className="mt-6 rounded-2xl border border-[#ead1d1] bg-[#fff7f7] px-4 py-3">
-              <p className="text-sm font-medium text-[#8d2f2f]">
+            <div
+              role="alert"
+              className="mt-6 rounded-2xl border border-[var(--danger)]/30 bg-[var(--danger-soft)] px-4 py-3"
+            >
+              <p className="text-sm leading-6 text-[var(--danger)]">
                 {error}
               </p>
             </div>
           ) : null}
 
           {success ? (
-            <div className="mt-6 flex items-center gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm">
+            <div
+              role="status"
+              className="mt-6 flex items-start gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm leading-6"
+            >
               <Check
                 size={16}
-                className="text-[var(--accent)]"
+                className="mt-0.5 shrink-0 text-[var(--accent)]"
               />
               <p>{success}</p>
             </div>
           ) : null}
         </section>
 
-        <div className="space-y-6">
-          <section className="rounded-[2rem] border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-7">
-            <SectionHeading
-              eyebrow="Account"
-              title="Your identity"
-              description="Manage the profile information people see across Agoré."
-              icon={<UserRound size={18} />}
-            />
+        <div className="space-y-5 sm:space-y-6">
+          <AccountProfileSection
+            profile={profile}
+            accountEmail={accountEmail}
+            emailVerified={emailVerified}
+          />
 
-            <div className="mt-6 divide-y divide-[var(--border)]">
-              <Link
-                href="/profile/edit"
-                className="group flex items-center justify-between gap-4 py-4 first:pt-0"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold">
-                    Edit profile
-                  </p>
+          <LoginSecuritySection
+            accountEmail={accountEmail}
+          />
 
-                  <p className="mt-1 text-sm text-[var(--muted)]">
-                    Display name, username, bio, and profile photo.
-                  </p>
-                </div>
+          <PrivacySafetySection
+            userSettings={userSettings}
+            activityVisibility={
+              userSettings.activity_visibility
+            }
+            onUpdateSetting={updatePrivacySetting}
+            onUpdateActivityVisibility={
+              updateActivityVisibility
+            }
+            savingKey={savingKey}
+          />
 
-                <ChevronRight
-                  size={18}
-                  className="shrink-0 text-[var(--muted)] transition group-hover:translate-x-0.5 group-hover:text-[var(--accent)]"
-                />
-              </Link>
+          <NotificationsSection
+            preferences={notificationPreferences}
+            onUpdatePreference={updateNotification}
+            savingKey={notificationSavingKey}
+          />
 
-              <div className="flex items-center justify-between gap-4 py-4 last:pb-0">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold">
-                    Username
-                  </p>
+          <AppearanceSection
+            theme={userSettings.theme}
+            onUpdateTheme={(value) =>
+              updateUserSetting("theme", value)
+            }
+          />
 
-                  <p className="mt-1 truncate text-sm text-[var(--muted)]">
-                    @{profile?.username ??
-                      "unknown"}
-                  </p>
-                </div>
-
-                <span className="rounded-full bg-[var(--background)] px-3 py-1.5 text-xs font-medium text-[var(--muted)]">
-                  Public
-                </span>
-              </div>
-            </div>
-          </section>
-
-          <section className="rounded-[2rem] border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-7">
-            <SectionHeading
-              eyebrow="Privacy & safety"
-              title="Control access"
-              description="Choose who can start conversations with you and whether your presence is visible."
-              icon={<Shield size={18} />}
-            />
-
-            <div className="mt-6 divide-y divide-[var(--border)]">
-              <div className="py-4 first:pt-0">
-                <p className="text-sm font-semibold">
-                  Who can message you
-                </p>
-
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  <button
-                    type="button"
-                    disabled={
-                      savingKey ===
-                      "allow_messages_from"
-                    }
-                    onClick={() =>
-                      void updateUserSetting(
-                        "allow_messages_from",
-                        "everyone",
-                      )
-                    }
-                    className={`rounded-2xl border p-4 text-left transition ${
-                      userSettings
-                        ?.allow_messages_from ===
-                      "everyone"
-                        ? "border-[var(--accent)] bg-[var(--accent-soft)]"
-                        : "border-[var(--border)] bg-[var(--background)] hover:border-[var(--accent)]/40"
-                    }`}
-                  >
-                    <p className="text-sm font-semibold">
-                      Everyone
-                    </p>
-
-                    <p className="mt-1 text-xs leading-5 text-[var(--muted)]">
-                      Any Agoré user can start a conversation.
-                    </p>
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={
-                      savingKey ===
-                      "allow_messages_from"
-                    }
-                    onClick={() =>
-                      void updateUserSetting(
-                        "allow_messages_from",
-                        "followers",
-                      )
-                    }
-                    className={`rounded-2xl border p-4 text-left transition ${
-                      userSettings
-                        ?.allow_messages_from ===
-                      "followers"
-                        ? "border-[var(--accent)] bg-[var(--accent-soft)]"
-                        : "border-[var(--border)] bg-[var(--background)] hover:border-[var(--accent)]/40"
-                    }`}
-                  >
-                    <p className="text-sm font-semibold">
-                      Followers
-                    </p>
-
-                    <p className="mt-1 text-xs leading-5 text-[var(--muted)]">
-                      Only people following you can start one.
-                    </p>
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between gap-4 py-4 last:pb-0">
-                <div className="flex min-w-0 items-start gap-3">
-                  <span className="mt-0.5 text-[var(--muted)]">
-                    <Lock size={17} />
-                  </span>
-
-                  <div>
-                    <p className="text-sm font-semibold">
-                      Activity status
-                    </p>
-
-                    <p className="mt-1 text-sm leading-6 text-[var(--muted)]">
-                      Let people see when you are active.
-                    </p>
-                  </div>
-                </div>
-
-                <Toggle
-                  checked={
-                    userSettings
-                      ?.show_activity_status ?? true
-                  }
-                  onChange={(value) =>
-                    void updateUserSetting(
-                      "show_activity_status",
-                      value,
-                    )
-                  }
-                  disabled={
-                    savingKey ===
-                    "show_activity_status"
-                  }
-                  label="Activity status"
-                />
-              </div>
-            </div>
-          </section>
-
-          <ActivityVisibilitySetting />
-
-          <section className="rounded-[2rem] border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-7">
-            <SectionHeading
-              eyebrow="Notifications"
-              title="Choose what reaches you"
-              description="Keep important activity close without making every interaction noisy."
-              icon={<Bell size={18} />}
-            />
-
-            <div className="mt-6 divide-y divide-[var(--border)]">
-              {[
-                {
-                  key: "follows" as const,
-                  title: "New followers",
-                  description:
-                    "When someone follows you.",
-                },
-                {
-                  key: "reactions" as const,
-                  title: "Post reactions",
-                  description:
-                    "When someone reacts to your post.",
-                },
-                {
-                  key: "comments" as const,
-                  title: "Comments",
-                  description:
-                    "When someone comments on your post.",
-                },
-                {
-                  key: "reposts" as const,
-                  title: "Reposts",
-                  description:
-                    "When someone reposts your post.",
-                },
-                {
-                  key: "messages" as const,
-                  title: "Messages",
-                  description:
-                    "When you receive a new message.",
-                },
-                {
-                  key: "group_activity" as const,
-                  title: "Group activity",
-                  description:
-                    "When something important happens in a group conversation.",
-                },
-              ].map((item) => (
-                <div
-                  key={item.key}
-                  className="flex items-center justify-between gap-4 py-4 first:pt-0 last:pb-0"
-                >
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold">
-                      {item.title}
-                    </p>
-
-                    <p className="mt-1 text-sm leading-6 text-[var(--muted)]">
-                      {item.description}
-                    </p>
-                  </div>
-
-                  <Toggle
-                    checked={
-                      notificationPreferences?.[
-                        item.key
-                      ] ?? true
-                    }
-                    onChange={(value) =>
-                      void updateNotification(
-                        item.key,
-                        value,
-                      )
-                    }
-                    disabled={
-                      savingKey ===
-                      `notification:${item.key}`
-                    }
-                    label={item.title}
-                  />
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="rounded-[2rem] border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-7">
-            <SectionHeading
-              eyebrow="Appearance"
-              title="Make Agoré yours"
-              description="Choose the visual mode you prefer for the app."
-              icon={<Palette size={18} />}
-            />
-
-            <div className="mt-6 grid gap-2 sm:grid-cols-3">
-              {[
-                {
-                  value: "system" as const,
-                  label: "System",
-                  description:
-                    "Follow your device.",
-                  icon: <Monitor size={18} />,
-                },
-                {
-                  value: "light" as const,
-                  label: "Light",
-                  description:
-                    "Bright and airy.",
-                  icon: <Sun size={18} />,
-                },
-                {
-                  value: "dark" as const,
-                  label: "Dark",
-                  description:
-                    "Lower-light interface.",
-                  icon: <Moon size={18} />,
-                },
-              ].map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  disabled={
-                    savingKey === "theme"
-                  }
-                  onClick={() =>
-                    void updateUserSetting(
-                      "theme",
-                      option.value,
-                    )
-                  }
-                  className={`rounded-2xl border p-4 text-left transition ${
-                    userSettings?.theme ===
-                    option.value
-                      ? "border-[var(--accent)] bg-[var(--accent-soft)]"
-                      : "border-[var(--border)] bg-[var(--background)] hover:border-[var(--accent)]/40"
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-[var(--accent)]">
-                      {option.icon}
-                    </span>
-
-                    <span className="text-sm font-semibold">
-                      {option.label}
-                    </span>
-                  </div>
-
-                  <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
-                    {option.description}
-                  </p>
-                </button>
-              ))}
-            </div>
-          </section>
-
-          <section className="rounded-[2rem] border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-7">
-            <SectionHeading
-              eyebrow="Agoré"
-              title="About your space"
-              description="A few useful details about this version of Agoré."
-              icon={<Settings2 size={18} />}
-            />
-
-            <div className="mt-6 divide-y divide-[var(--border)]">
-              <div className="flex items-center justify-between gap-4 py-4 first:pt-0">
-                <div>
-                  <p className="text-sm font-semibold">
-                    Product
-                  </p>
-
-                  <p className="mt-1 text-sm text-[var(--muted)]">
-                    Agoré
-                  </p>
-                </div>
-
-                <span className="text-xs font-medium text-[var(--muted)]">
-                  V0
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between gap-4 py-4 last:pb-0">
-                <div>
-                  <p className="text-sm font-semibold">
-                    Built around
-                  </p>
-
-                  <p className="mt-1 text-sm text-[var(--muted)]">
-                    People, posts, and conversations.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section className="overflow-hidden rounded-[2rem] border border-[#ead1d1] bg-[#fff8f8]">
-            <div className="p-5 sm:p-7">
-              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#8d2f2f]">
-                Session
-              </p>
-
-              <h2 className="mt-2 text-lg font-semibold tracking-[-0.025em]">
-                Leave Agoré
-              </h2>
-
-              <p className="mt-2 max-w-xl text-sm leading-6 text-[#755f5f]">
-                Sign out of this device. Your profile, posts, conversations,
-                and settings remain stored securely.
-              </p>
-
-              <button
-                type="button"
-                onClick={() => void signOut()}
-                disabled={
-                  savingKey === "signout"
-                }
-                className="mt-5 inline-flex items-center gap-2 rounded-full border border-[#dcaeae] bg-white px-5 py-2.5 text-sm font-semibold text-[#8d2f2f] transition hover:bg-[#fff1f1] disabled:opacity-50"
-              >
-                <LogOut size={16} />
-
-                {savingKey === "signout"
-                  ? "Signing out…"
-                  : "Sign out"}
-              </button>
-            </div>
-          </section>
+          <SessionAboutSection
+            accountEmail={accountEmail}
+            onSignOut={signOut}
+          />
         </div>
 
         <footer className="mt-10 flex flex-col gap-2 border-t border-[var(--border)] py-6 text-xs text-[var(--muted)] sm:flex-row sm:items-center sm:justify-between">
