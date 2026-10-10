@@ -3,15 +3,18 @@ import Link from "next/link";
 const pillars = [
   {
     title: "People",
-    description: "Find people, build connections, and shape your own social graph.",
+    description:
+      "Find people, build connections, and shape your own social graph.",
   },
   {
     title: "Content",
-    description: "Share thoughts, images, and conversations without fighting an algorithm.",
+    description:
+      "Share thoughts, images, and conversations without fighting an algorithm.",
   },
   {
     title: "Communication",
-    description: "Move naturally from public conversation into private messages and groups.",
+    description:
+      "Move naturally from public conversation into private messages and groups.",
   },
 ];
 
@@ -62,7 +65,7 @@ export default function Home() {
               </Link>
 
               <p className="flex items-center justify-center px-2 text-sm text-[var(--muted)] sm:justify-start">
-                Invite-only during the early launch.
+                Open to everyone. Find your place in the conversation.
               </p>
             </div>
           </div>
@@ -71,7 +74,9 @@ export default function Home() {
         <div className="grid gap-6 border-t border-[var(--border)] py-8 sm:grid-cols-3">
           {pillars.map((pillar) => (
             <div key={pillar.title} className="max-w-sm">
-              <h2 className="text-base font-semibold">{pillar.title}</h2>
+              <h2 className="text-base font-semibold">
+                {pillar.title}
+              </h2>
               <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
                 {pillar.description}
               </p>
