@@ -1,9 +1,9 @@
 # Agoré — Architecture
 
 **Document ID:** AG-ARCH-003  
-**Version:** 0.1  
+**Version:** 0.2  
 **Status:** Working technical reference  
-**Last reviewed:** 10 October 2026
+**Last reviewed:** 11 October 2026
 
 ## 1. Purpose
 
@@ -27,6 +27,7 @@ The architecture should support:
 - Independent evolution of product capabilities without premature microservices.
 - Reliable migration, testing, deployment, and incident-response processes.
 - Future growth without requiring avoidable architectural rewrites.
+- A reusable backend and application foundation that can support future client platforms.
 
 ### Core principles
 
@@ -116,7 +117,7 @@ Important page locations include:
 | `app/post/` | Individual post views |
 | `app/notifications/` | Notification interface |
 | `app/settings/` | Account and application settings |
-| `app/auth/` | Authentication interface |
+| `app/auth/` | Authentication interface and callback routes |
 | `app/onboarding/` | Initial profile and account setup |
 | `app/support/` | User-facing support |
 | `app/staff/support/` | Staff support interface |
@@ -129,7 +130,7 @@ Application endpoints are implemented under `app/api/`.
 
 Major groups include:
 
-- `auth/` — invitation validation and related authentication flows.
+- `auth/` — authentication callbacks and related account authentication flows. Legacy invitation endpoints are retired and return HTTP 410 Gone.
 - `posts/` — post operations, media, reactions, reposts, and reports.
 - `comments/` — comment operations.
 - `profile/` — profile and avatar operations.
@@ -151,7 +152,6 @@ The `lib/` directory contains shared infrastructure:
 | `lib/supabase/server.ts` | Cookie-aware server Supabase client |
 | `lib/supabase/admin.ts` | Privileged server-only Supabase client |
 | `lib/supabase/proxy.ts` | Session update and refresh logic |
-| `lib/auth/invite.ts` | Invitation assertion functionality |
 | `lib/messaging/conversation-access.ts` | Shared conversation-access rules |
 | `lib/security/rate-limit.ts` | Rate-limiting utilities |
 | `lib/notifications.ts` | Shared notification functionality |
@@ -173,17 +173,59 @@ The application must distinguish between:
 - **Authorisation:** determining whether that user may perform the requested action.
 - **Onboarding:** determining whether a signed-in account has completed the required setup.
 - **Account status:** determining whether the account is permitted to use the application.
-- **Invitation eligibility:** enforcing the private-access requirement while it remains enabled.
+- **Registration policy:** defining the authentication methods available to new users.
 
-The current V0 sign-in scope is:
+### 6.1 Public registration and supported methods
+
+Agoré is transitioning from invite-only access to public registration. New users should not need a development entry code or invitation assertion to create an account.
+
+The intended authentication methods are:
 
 1. Email and password.
 2. Google OAuth.
 3. Sign in with Apple.
 
-OAuth provider configuration and enablement must be verified in Supabase before those methods are treated as operational.
+The authentication interface supports these methods, subject to their required configuration and end-to-end verification.
 
-The invitation gate is temporary product policy for V0. Removing it after V0 must not remove unrelated safeguards such as rate limiting, account-status checks, input validation, or abuse prevention.
+Email registration and sign-in, email verification, password recovery, OAuth callbacks, and onboarding must operate as a coherent account lifecycle.
+
+Authentication callbacks must validate the authentication result, establish a valid session, handle errors safely, and restrict redirect destinations to approved internal paths.
+
+After authentication, users without completed profiles should be directed through onboarding. Existing users with completed profiles should be able to continue to the application.
+
+### 6.2 Account lifecycle
+
+The account lifecycle must distinguish between the following states and operations:
+
+- Registration and identity creation.
+- Email verification where required by the configured authentication policy.
+- Provider-based authentication.
+- Session creation, refresh, and termination.
+- Password recovery and password updates.
+- Initial profile and account-preference creation.
+- Account status and access restrictions.
+
+Registration must not bypass required email verification or other configured account safeguards.
+
+Onboarding should be safe to retry without creating duplicate profiles or duplicate account-preference records.
+
+The server must use the authenticated Supabase user as the authority for account identity. It must not rely on a user ID, email address, or role submitted by the client as proof of identity.
+
+### 6.3 Security boundaries
+
+Removing the invitation requirement changes registration policy only.
+
+It must not remove unrelated safeguards, including:
+
+- Server-side authentication and authorisation.
+- Database Row Level Security (RLS).
+- Account-status checks.
+- Input validation.
+- Rate limiting and abuse prevention.
+- Resource ownership and conversation-membership checks.
+- Protection of privileged credentials and private user data.
+
+A publicly accessible registration page does not make private profiles, private messages, account settings, or privileged backend operations publicly accessible.
 
 ## 7. Data-access architecture
 
@@ -296,7 +338,7 @@ Changes to the application should preserve the following requirements.
 ### Abuse protection
 
 - Use rate limits for sensitive and abuse-prone operations.
-- Protect authentication, onboarding, invitations, messaging, search, reporting, and upload endpoints as appropriate.
+- Protect authentication, onboarding, messaging, search, reporting, and upload endpoints as appropriate.
 - Consider automated abuse, enumeration, spam, and account-creation attacks.
 - Ensure limits behave consistently across instances where distributed deployment requires shared state.
 
@@ -384,8 +426,12 @@ npm run build
 
 Prioritise end-to-end verification of:
 
-- Authentication and onboarding.
-- Profile creation, editing, and avatar retrieval.
+- Public registration and email verification.
+- Email/password sign-in and sign-out.
+- Google and Apple authentication.
+- Password recovery and password updates.
+- Onboarding and profile creation.
+- Profile editing and avatar retrieval.
 - Feed loading and post creation.
 - Comments, reactions, reposts, and blocking.
 - Direct messages, group conversations, and attachments.
@@ -403,6 +449,9 @@ Verify that:
 - Privileged endpoints reject unauthorised users.
 - Invalid payloads and excessive requests are handled safely.
 - RLS policies behave as expected independently of frontend controls.
+- Registration does not depend on an invitation code or legacy invitation assertion.
+- Invalid, expired, or failed authentication callbacks do not create an authenticated application session.
+- Callback redirects cannot send users to unapproved external destinations.
 
 Record whether each check is automated, manually verified, or still outstanding.
 
@@ -415,9 +464,10 @@ The following items require continuing attention:
 3. **Feature completeness:** Validate end-to-end behaviour instead of treating route existence as proof of readiness.
 4. **Media access:** Confirm upload, metadata, storage policy, signing, and rendering paths work together.
 5. **Notification delivery:** Test event creation, in-app retrieval, subscriptions, and actual push delivery independently.
-6. **Abuse resistance:** Review rate-limit coverage and resource-intensive endpoints.
+6. **Abuse resistance:** Review rate-limit coverage and resource-intensive endpoints, especially now that registration is public.
 7. **Operational readiness:** Establish appropriate backups, incident procedures, monitoring, and recovery verification.
-8. **Authentication expansion:** Configure and test Google and Apple OAuth before announcing availability.
+8. **Authentication readiness:** Complete configuration and end-to-end verification for each intended sign-in method.
+9. **Legacy access cleanup:** Confirm retired invitation endpoints and unused invitation logic are no longer part of active registration or onboarding.
 
 Open decisions must be resolved through explicit engineering decisions rather than undocumented assumptions.
 
