@@ -99,19 +99,6 @@ export default async function HomePage() {
               </Link>
 
               <Link
-                href={profilePath}
-                aria-label={`Open ${profile.display_name}'s profile`}
-                className="ml-1 flex items-center rounded-full outline-none transition hover:opacity-80 focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
-              >
-                <AgoreAvatar
-                  avatarPath={profile.avatar_path}
-                  name={profile.display_name}
-                  className="h-9 w-9"
-                  textClassName="text-xs"
-                />
-              </Link>
-
-              <Link
                 href="/settings"
                 aria-label="Settings"
                 title="Settings"
