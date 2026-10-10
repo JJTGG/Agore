@@ -33,6 +33,7 @@ import {
 
 import { createClient } from "@/lib/supabase/browser";
 import AgoreAvatar from "@/components/agore-avatar";
+import UserIdentity from "@/components/user-identity";
 import GroupAvatarEditor from "./group-avatar-editor";
 import MessageActionMenu from "./message-action-menu";
 import MessageReactions from "./message-reactions";
@@ -361,9 +362,14 @@ function MessageBubble({
           }`}
         >
           {!isOwn && conversationType === "group" && !grouped ? (
-            <p className="mb-1 px-1 text-xs font-semibold text-[var(--accent)]">
-              {senderName}
-            </p>
+            <div className="mb-1 px-1 text-xs font-semibold text-[var(--accent)]">
+              <UserIdentity
+                userId={message.sender?.id}
+                displayName={senderName}
+                nameClassName="min-w-0 truncate"
+                badgeSize={13}
+              />
+            </div>
           ) : null}
 
           <div
@@ -398,16 +404,24 @@ function MessageBubble({
                     : "border-[var(--accent)] bg-[var(--surface)] hover:bg-[var(--surface-soft)]"
                 }`}
               >
-                <p
+                <div
                   className={`text-[11px] font-semibold ${
                     isOwn ? "text-white/85" : "text-[var(--accent)]"
                   }`}
                 >
-                  {replyTarget.sender?.display_name ||
-                    (replyTarget.sender_id === currentUserId
+                  {replyTarget.sender ? (
+                    <UserIdentity
+                      userId={replyTarget.sender.id}
+                      displayName={replyTarget.sender.display_name}
+                      nameClassName="min-w-0 truncate"
+                      badgeSize={13}
+                    />
+                  ) : (
+                    replyTarget.sender_id === currentUserId
                       ? "You"
-                      : "Message")}
-                </p>
+                      : "Message"
+                  )}
+                </div>
 
                 <p
                   className={`mt-1 line-clamp-2 text-xs leading-5 ${
@@ -1891,8 +1905,19 @@ export default function ConversationPage() {
             />
 
             <div className="min-w-0 flex-1">
-              <h1 className="truncate text-[15px] font-bold tracking-[-0.01em]">
-                {title}
+              <h1 className="min-w-0 truncate text-[15px] font-bold tracking-[-0.01em]">
+                {conversation?.type === "direct" &&
+                conversation.participant ? (
+                  <UserIdentity
+                    userId={conversation.participant.id}
+                    displayName={title}
+                    className="max-w-full"
+                    nameClassName="min-w-0 truncate text-[15px] font-bold tracking-[-0.01em]"
+                    badgeSize={15}
+                  />
+                ) : (
+                  title
+                )}
               </h1>
 
               <p className="truncate text-xs text-[var(--muted)]">
@@ -2111,12 +2136,28 @@ export default function ConversationPage() {
                   </div>
 
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs font-semibold text-[var(--accent)]">
-                      Replying to{" "}
-                      {replyingTo.sender_id === currentUserId
-                        ? "yourself"
-                        : replyingTo.sender?.display_name ?? "message"}
-                    </p>
+                    <div className="flex min-w-0 flex-wrap items-center gap-1">
+                      <span className="text-xs font-semibold text-[var(--accent)]">
+                        Replying to
+                      </span>
+
+                      {replyingTo.sender_id === currentUserId ? (
+                        <span className="text-xs font-semibold text-[var(--accent)]">
+                          yourself
+                        </span>
+                      ) : replyingTo.sender ? (
+                        <UserIdentity
+                          userId={replyingTo.sender.id}
+                          displayName={replyingTo.sender.display_name}
+                          nameClassName="text-xs font-semibold text-[var(--accent)]"
+                          badgeSize={13}
+                        />
+                      ) : (
+                        <span className="text-xs font-semibold text-[var(--accent)]">
+                          message
+                        </span>
+                      )}
+                    </div>
 
                     <p className="mt-1 truncate text-xs text-[var(--muted)]">
                       {truncateMessage(replyingTo)}
@@ -2335,9 +2376,20 @@ export default function ConversationPage() {
                             />
 
                             <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-semibold">
-                                {name}
-                              </p>
+                              {item.type === "direct" &&
+                              item.participant ? (
+                                <UserIdentity
+                                  userId={item.participant.id}
+                                  displayName={name}
+                                  className="w-full"
+                                  nameClassName="min-w-0 truncate text-sm font-semibold"
+                                  badgeSize={15}
+                                />
+                              ) : (
+                                <p className="truncate text-sm font-semibold">
+                                  {name}
+                                </p>
+                              )}
 
                               <p className="mt-0.5 truncate text-xs text-[var(--muted)]">
                                 {targetSubtitle}
@@ -2602,9 +2654,13 @@ export default function ConversationPage() {
 
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-2">
-                                <p className="truncate text-sm font-semibold">
-                                  {memberName}
-                                </p>
+                                <UserIdentity
+                                  userId={member.userId}
+                                  displayName={memberName}
+                                  className="min-w-0"
+                                  nameClassName="min-w-0 truncate text-sm font-semibold"
+                                  badgeSize={13}
+                                />
 
                                 {isSelf ? (
                                   <span className="rounded-full bg-[var(--accent-soft)] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-[var(--accent)]">
@@ -2770,9 +2826,13 @@ export default function ConversationPage() {
                             />
 
                             <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-semibold">
-                                {person.display_name}
-                              </p>
+                              <UserIdentity
+                                userId={person.id}
+                                displayName={person.display_name}
+                                className="w-full"
+                                nameClassName="min-w-0 truncate text-sm font-semibold"
+                                badgeSize={13}
+                              />
 
                               <p className="mt-0.5 truncate text-xs text-[var(--muted)]">
                                 @{person.username}
