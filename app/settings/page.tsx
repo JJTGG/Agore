@@ -24,6 +24,7 @@ import {
 import { useRouter } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/browser";
+import ActivityVisibilitySetting from "./activity-visibility-setting";
 
 type Theme =
   | "system"
@@ -718,6 +719,8 @@ export default function SettingsPage() {
               </div>
             </div>
           </section>
+
+          <ActivityVisibilitySetting />
 
           <section className="rounded-[2rem] border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-7">
             <SectionHeading
