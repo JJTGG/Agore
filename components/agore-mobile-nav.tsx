@@ -6,11 +6,12 @@ import {
   useState,
 } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
-  Bell,
   Compass,
   Home,
   MessageCircle,
+  Plus,
 } from "lucide-react";
 
 import AgoreAvatar from "@/components/agore-avatar";
@@ -26,6 +27,8 @@ export default function AgoreMobileNav({
   avatarPath,
   profileName,
 }: AgoreMobileNavProps) {
+  const pathname = usePathname();
+
   const [quiet, setQuiet] = useState(false);
   const lastScrollY = useRef(0);
   const ticking = useRef(false);
@@ -56,6 +59,7 @@ export default function AgoreMobileNav({
       }
 
       ticking.current = true;
+
       window.requestAnimationFrame(
         updateNavigationState,
       );
@@ -79,8 +83,22 @@ export default function AgoreMobileNav({
     setQuiet(false);
   }
 
+  function isActiveRoute(href: string) {
+    return (
+      pathname === href ||
+      pathname.startsWith(`${href}/`)
+    );
+  }
+
   const itemClass =
-    "flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-2 text-[var(--muted)] transition hover:bg-[var(--background)] hover:text-[var(--foreground)]";
+    "flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 text-[var(--muted)] transition hover:bg-[var(--background)] hover:text-[var(--foreground)]";
+
+  const activeItemClass =
+    "flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-2xl bg-[var(--foreground)] px-1 py-2 text-[var(--background)] transition";
+
+  function getItemClass(active: boolean) {
+    return active ? activeItemClass : itemClass;
+  }
 
   return (
     <nav
@@ -100,10 +118,12 @@ export default function AgoreMobileNav({
     >
       <Link
         href="/home"
-        className="flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl bg-[var(--foreground)] px-2 py-2 text-[var(--background)]"
-        aria-current="page"
+        className={getItemClass(isActiveRoute("/home"))}
+        aria-current={
+          isActiveRoute("/home") ? "page" : undefined
+        }
       >
-        <Home size={18} />
+        <Home size={19} />
 
         <span className="text-[10px] font-semibold">
           Home
@@ -112,9 +132,16 @@ export default function AgoreMobileNav({
 
       <Link
         href="/app/explore"
-        className={itemClass}
+        className={getItemClass(
+          isActiveRoute("/app/explore"),
+        )}
+        aria-current={
+          isActiveRoute("/app/explore")
+            ? "page"
+            : undefined
+        }
       >
-        <Compass size={18} />
+        <Compass size={19} />
 
         <span className="text-[10px] font-semibold">
           Explore
@@ -122,10 +149,35 @@ export default function AgoreMobileNav({
       </Link>
 
       <Link
-        href="/messages"
-        className={itemClass}
+        href="/create"
+        className={getItemClass(
+          isActiveRoute("/create"),
+        )}
+        aria-current={
+          isActiveRoute("/create")
+            ? "page"
+            : undefined
+        }
       >
-        <MessageCircle size={18} />
+        <Plus size={20} strokeWidth={2.5} />
+
+        <span className="text-[10px] font-semibold">
+          Create
+        </span>
+      </Link>
+
+      <Link
+        href="/messages"
+        className={getItemClass(
+          isActiveRoute("/messages"),
+        )}
+        aria-current={
+          isActiveRoute("/messages")
+            ? "page"
+            : undefined
+        }
+      >
+        <MessageCircle size={19} />
 
         <span className="text-[10px] font-semibold">
           Messages
@@ -133,24 +185,20 @@ export default function AgoreMobileNav({
       </Link>
 
       <Link
-        href="/notifications"
-        className={itemClass}
-      >
-        <Bell size={18} />
-
-        <span className="text-[10px] font-semibold">
-          Alerts
-        </span>
-      </Link>
-
-      <Link
         href={profilePath}
-        className={itemClass}
+        className={getItemClass(
+          isActiveRoute(profilePath),
+        )}
+        aria-current={
+          isActiveRoute(profilePath)
+            ? "page"
+            : undefined
+        }
       >
         <AgoreAvatar
           avatarPath={avatarPath}
           name={profileName}
-          className="h-[18px] w-[18px]"
+          className="h-[19px] w-[19px]"
           textClassName="text-[6px]"
         />
 
