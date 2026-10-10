@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -18,7 +19,17 @@ const onboardingSchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    let body: unknown;
+
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid request body." },
+        { status: 400 },
+      );
+    }
+
     const parsed = onboardingSchema.safeParse(body);
 
     if (!parsed.success) {
@@ -53,10 +64,7 @@ export async function POST(request: Request) {
       error: authoritativeUserError,
     } = await admin.auth.admin.getUserById(sessionUser.id);
 
-    if (
-      authoritativeUserError ||
-      !authoritativeUser
-    ) {
+    if (authoritativeUserError || !authoritativeUser) {
       return NextResponse.json(
         { error: "Unable to verify your Agoré account." },
         { status: 500 },
@@ -64,25 +72,33 @@ export async function POST(request: Request) {
     }
 
     if (
-      authoritativeUser.app_metadata?.agore_invite_consumed !== true
+      !authoritativeUser.email_confirmed_at &&
+      process.env.NEXT_PUBLIC_REQUIRE_EMAIL_VERIFICATION === "true"
     ) {
       return NextResponse.json(
         {
           error:
-            "This account has not been admitted to Agoré. A valid development entry code is required.",
+            "Please verify your email before completing your profile.",
         },
         { status: 403 },
       );
     }
 
-    const { data: existingProfile, error: profileLookupError } =
-      await admin
-        .from("profiles")
-        .select("id")
-        .eq("id", authoritativeUser.id)
-        .maybeSingle();
+    const {
+      data: existingProfile,
+      error: profileLookupError,
+    } = await admin
+      .from("profiles")
+      .select("id")
+      .eq("id", authoritativeUser.id)
+      .maybeSingle();
 
     if (profileLookupError) {
+      console.error(
+        "Failed to check Agore profile:",
+        profileLookupError,
+      );
+
       return NextResponse.json(
         { error: "Unable to check your profile." },
         { status: 500 },
@@ -123,29 +139,24 @@ export async function POST(request: Request) {
       );
     }
 
-    const [{ error: preferencesError }, { error: settingsError }] =
-      await Promise.all([
-        admin
-          .from("notification_preferences")
-          .upsert(
-            {
-              user_id: authoritativeUser.id,
-            },
-            {
-              onConflict: "user_id",
-            },
-          ),
-        admin
-          .from("user_settings")
-          .upsert(
-            {
-              user_id: authoritativeUser.id,
-            },
-            {
-              onConflict: "user_id",
-            },
-          ),
-      ]);
+    const [
+      { error: preferencesError },
+      { error: settingsError },
+    ] = await Promise.all([
+      admin
+        .from("notification_preferences")
+        .upsert(
+          { user_id: authoritativeUser.id },
+          { onConflict: "user_id" },
+        ),
+
+      admin
+        .from("user_settings")
+        .upsert(
+          { user_id: authoritativeUser.id },
+          { onConflict: "user_id" },
+        ),
+    ]);
 
     if (preferencesError || settingsError) {
       console.error(
