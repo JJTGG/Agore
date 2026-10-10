@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 
 const querySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(20),
+  offset: z.coerce.number().int().min(0).max(100000).default(0),
 });
 
 const postSelect = `
@@ -71,6 +72,7 @@ export async function GET(
 
   const parsedQuery = querySchema.safeParse({
     limit: searchParams.get("limit") ?? undefined,
+    offset: searchParams.get("offset") ?? undefined,
   });
 
   if (!parsedQuery.success) {
@@ -134,30 +136,28 @@ export async function GET(
     );
   }
 
-  if (
-    blockingRelationship &&
-    blockingRelationship.length > 0
-  ) {
+  if (blockingRelationship && blockingRelationship.length > 0) {
     return NextResponse.json(
       { error: "Profile not found." },
       { status: 404 },
     );
   }
 
+  const { limit, offset } = parsedQuery.data;
+
   const {
     data: posts,
     error: postsError,
+    count,
   } = await supabase
     .from("posts")
-    .select(postSelect)
+    .select(postSelect, { count: "exact" })
     .eq("author_id", targetUserId)
-    // Match the profile's published-post count:
-    // soft-deleted posts must not appear in the feed.
     .is("deleted_at", null)
     .order("created_at", {
       ascending: false,
     })
-    .limit(parsedQuery.data.limit);
+    .range(offset, offset + limit - 1);
 
   if (postsError) {
     console.error(
@@ -187,7 +187,13 @@ export async function GET(
       : [],
   }));
 
+  const total = count ?? offset + normalizedPosts.length;
+
   return NextResponse.json({
     posts: normalizedPosts,
+    total,
+    limit,
+    offset,
+    has_more: offset + normalizedPosts.length < total,
   });
 }
