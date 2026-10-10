@@ -23,6 +23,7 @@ import PostMedia, {
   type PostMediaItem,
 } from "@/components/post-media";
 import PostInteractions from "@/app/post-interactions";
+import UserIdentity from "@/components/user-identity";
 import { createClient } from "@/lib/supabase/browser";
 
 type Profile = {
@@ -462,9 +463,17 @@ export default function PostPage() {
                     <div className="min-w-0 flex-1 pt-0.5">
                       <Link
                         href={`/profile/${encodeURIComponent(post.author_id)}`}
-                        className="block truncate text-sm font-semibold transition hover:text-[var(--accent)]"
+                        className="block min-w-0 transition hover:text-[var(--accent)]"
                       >
-                        {post.profiles?.display_name ?? "Agoré user"}
+                        <UserIdentity
+                          userId={post.author_id}
+                          displayName={
+                            post.profiles?.display_name ?? "Agoré user"
+                          }
+                          className="w-full"
+                          nameClassName="min-w-0 truncate text-sm font-semibold"
+                          badgeSize={17}
+                        />
                       </Link>
 
                       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--muted)]">
