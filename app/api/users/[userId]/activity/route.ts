@@ -26,6 +26,15 @@ const activityEventTypes = [
   "follow.deleted",
 ] as const;
 
+type ActivityVisibility =
+  | "public"
+  | "private"
+  | "confidential";
+
+type ActivityVisibilitySettingRow = {
+  activity_visibility: ActivityVisibility;
+};
+
 type ActivityEventRow = {
   event_id: string;
   event_sequence: number | string;
@@ -215,6 +224,7 @@ export async function GET(
   const [
     profileResult,
     blockResult,
+    settingsResult,
   ] = await Promise.all([
     admin
       .from("profiles")
@@ -231,14 +241,25 @@ export async function GET(
       .or(
         `blocker_id.eq.${viewerId},blocked_id.eq.${viewerId}`,
       ),
+
+    admin
+      .from("user_settings")
+      .select("activity_visibility")
+      .eq("user_id", activityOwnerId)
+      .maybeSingle(),
   ]);
 
-  if (profileResult.error || blockResult.error) {
+  if (
+    profileResult.error ||
+    blockResult.error ||
+    settingsResult.error
+  ) {
     console.error(
       "Failed to resolve Agore activity access:",
       {
         profileError: profileResult.error,
         blockError: blockResult.error,
+        settingsError: settingsResult.error,
       },
     );
 
@@ -277,6 +298,39 @@ export async function GET(
       { error: "Profile not found." },
       404,
     );
+  }
+
+  // Existing accounts without a settings row retain the
+  // default public behavior defined by the migration.
+  const activityVisibility =
+    (
+      settingsResult.data as
+        | ActivityVisibilitySettingRow
+        | null
+    )?.activity_visibility ?? "public";
+
+  const canViewActivityTimeline =
+    activityVisibility === "public" ||
+    (
+      activityVisibility === "private" &&
+      isOwner
+    );
+
+  // Enforce profile Activity privacy before querying the
+  // authoritative event ledger.
+  if (!canViewActivityTimeline) {
+    return privateJson({
+      profile: publicProfile(
+        profileResult.data as ProfileRow,
+      ),
+      activity: [],
+      activityHidden: true,
+      pagination: {
+        limit,
+        hasMore: false,
+        nextCursor: null,
+      },
+    });
   }
 
   let eventsQuery = admin
@@ -327,7 +381,7 @@ export async function GET(
   const fetchedEvents =
     (eventData ?? []) as unknown as ActivityEventRow[];
 
-  // Paginate the events being scanned, not just the events
+  // Paginate the events being scanned, not just events
   // eventually shown. Hidden records must not break cursors.
   const hasMore = fetchedEvents.length > limit;
   const scannedEvents = fetchedEvents.slice(0, limit);
@@ -587,8 +641,7 @@ export async function GET(
       continue;
     }
 
-    // Do not return raw event data, internal IDs from its
-    // metadata, or unapproved event types.
+    // Never return raw event data or unapproved metadata.
     activity.push({
       id: event.event_id,
       type: event.event_type,
@@ -606,6 +659,7 @@ export async function GET(
       profileResult.data as ProfileRow,
     ),
     activity,
+    activityHidden: false,
     pagination: {
       limit,
       hasMore,
