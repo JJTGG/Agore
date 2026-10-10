@@ -4,107 +4,123 @@ import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/browser";
 
-type Mode = "signin" | "signup";
+type Mode = "signin" | "signup" | "recovery";
+type OAuthProvider = "google" | "apple";
 
 export default function AuthPage() {
   const router = useRouter();
   const supabase = createClient();
 
   const [mode, setMode] = useState<Mode>("signin");
-  const [inviteCode, setInviteCode] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [callbackError, setCallbackError] = useState<string | null>(null);
+  const [callbackError, setCallbackError] = useState<string | null>(
+    null,
+  );
   const [loading, setLoading] = useState(false);
+  const [oauthProvider, setOauthProvider] =
+    useState<OAuthProvider | null>(null);
   const [resending, setResending] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const currentCallbackError = params.get("error");
+    const currentError = params.get("error");
 
-    setCallbackError(currentCallbackError);
+    setCallbackError(currentError);
 
-    if (currentCallbackError === "verification") {
+    if (currentError === "verification") {
       setError(
         "Email verification could not be completed. You can request a new verification email below.",
       );
-      return;
-    }
-
-    if (currentCallbackError === "invite") {
+    } else if (currentError === "oauth") {
       setError(
-        "Your invite could not be confirmed. Please use a valid active invite and try again.",
+        "Sign-in could not be completed. Please try again or choose another sign-in method.",
       );
     }
   }, []);
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function clearFeedback() {
     setError("");
     setMessage("");
+  }
+
+  function getCallbackUrl(nextPath?: string) {
+    const url = new URL(
+      "/auth/callback",
+      window.location.origin,
+    );
+
+    if (nextPath) {
+      url.searchParams.set("next", nextPath);
+    }
+
+    return url.toString();
+  }
+
+  async function handleSubmit(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+    clearFeedback();
     setLoading(true);
 
+    const normalizedEmail = email.trim();
+
     try {
-      if (mode === "signup") {
-        const inviteResponse = await fetch("/api/auth/invite", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            code: inviteCode,
-            email,
-          }),
-        });
-
-        const inviteResult = await inviteResponse.json();
-
-        if (!inviteResponse.ok) {
-          throw new Error(
-            inviteResult.error ?? "Invalid invite code.",
+      if (mode === "recovery") {
+        const { error: recoveryError } =
+          await supabase.auth.resetPasswordForEmail(
+            normalizedEmail,
+            {
+              redirectTo: getCallbackUrl(
+                "/auth/update-password",
+              ),
+            },
           );
+
+        if (recoveryError) {
+          throw recoveryError;
         }
 
-        if (
-          typeof inviteResult.assertion !== "string" ||
-          !inviteResult.assertion
-        ) {
-          throw new Error("Invite validation did not return a valid claim.");
-        }
-
-        const redirectUrl = new URL(
-          "/auth/callback",
-          window.location.origin,
+        setMessage(
+          "If an account exists for that email address, a password recovery link has been requested. Check your inbox.",
         );
 
-        redirectUrl.searchParams.set(
-          "invite",
-          inviteResult.assertion,
-        );
+        return;
+      }
 
-        const { error: signupError } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            emailRedirectTo: redirectUrl.toString(),
-          },
-        });
+      if (mode === "signup") {
+        const { data, error: signupError } =
+          await supabase.auth.signUp({
+            email: normalizedEmail,
+            password,
+            options: {
+              emailRedirectTo: getCallbackUrl(),
+            },
+          });
 
         if (signupError) {
           throw signupError;
         }
 
+        if (data.session) {
+          router.replace("/home");
+          router.refresh();
+          return;
+        }
+
         setMessage(
-          "Account created. Check your email to verify your account, then continue through the verification link.",
+          "Your registration has been submitted. Check your email for a verification link to continue.",
         );
+
         return;
       }
 
       const { error: signinError } =
         await supabase.auth.signInWithPassword({
-          email,
+          email: normalizedEmail,
           password,
         });
 
@@ -112,7 +128,7 @@ export default function AuthPage() {
         throw signinError;
       }
 
-      router.push("/home");
+      router.replace("/home");
       router.refresh();
     } catch (caughtError) {
       setError(
@@ -125,28 +141,48 @@ export default function AuthPage() {
     }
   }
 
+  async function handleOAuth(provider: OAuthProvider) {
+    clearFeedback();
+    setOauthProvider(provider);
+
+    try {
+      const { error: oauthError } =
+        await supabase.auth.signInWithOAuth({
+          provider,
+          options: {
+            redirectTo: getCallbackUrl(),
+          },
+        });
+
+      if (oauthError) {
+        throw oauthError;
+      }
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Unable to start sign-in. Please try again.",
+      );
+      setOauthProvider(null);
+    }
+  }
+
   async function handleResendVerification() {
     if (!email.trim()) {
       setError("Enter your email address first.");
       return;
     }
 
-    setError("");
-    setMessage("");
+    clearFeedback();
     setResending(true);
 
     try {
-      const redirectUrl = new URL(
-        "/auth/callback",
-        window.location.origin,
-      );
-
       const { error: resendError } =
         await supabase.auth.resend({
           type: "signup",
           email: email.trim(),
           options: {
-            emailRedirectTo: redirectUrl.toString(),
+            emailRedirectTo: getCallbackUrl(),
           },
         });
 
@@ -168,44 +204,89 @@ export default function AuthPage() {
     }
   }
 
+  function switchMode(nextMode: Mode) {
+    setMode(nextMode);
+    clearFeedback();
+  }
+
+  const busy = loading || oauthProvider !== null;
+
   return (
-    <main className="min-h-screen px-6 py-8">
-      <div className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-md items-center">
-        <section className="w-full">
-          <div className="mb-8">
-            <p className="text-xl font-semibold tracking-[-0.03em]">
-              Agoré
-            </p>
+    <main className="flex min-h-screen items-center bg-[var(--background)] px-4 py-8 text-[var(--foreground)] sm:px-6">
+      <div className="mx-auto w-full max-w-md">
+        <a
+          href="/"
+          className="text-xl font-semibold tracking-[-0.03em]"
+          aria-label="Agoré home"
+        >
+          Agoré
+        </a>
 
-            <h1 className="mt-8 text-4xl font-semibold tracking-[-0.045em]">
-              {mode === "signin" ? "Welcome back." : "Join Agoré."}
-            </h1>
+        <section className="mt-8 rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-8">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[var(--accent)]">
+            Your social space
+          </p>
 
-            <p className="mt-3 leading-6 text-[var(--muted)]">
-              {mode === "signin"
-                ? "Sign in to continue to your conversations and community."
-                : "Agoré is invite-only while the early community takes shape."}
-            </p>
-          </div>
+          <h1 className="mt-3 text-3xl font-semibold tracking-tight">
+            {mode === "signin"
+              ? "Welcome back."
+              : mode === "signup"
+                ? "Join Agoré."
+                : "Recover your account."}
+          </h1>
 
-          <form onSubmit={handleSubmit} className="space-y-5">
-            {mode === "signup" && (
-              <label className="block">
-                <span className="mb-2 block text-sm font-medium">
-                  Invite code
+          <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
+            {mode === "signin"
+              ? "Sign in to reconnect with people and conversations."
+              : mode === "signup"
+                ? "Create an account and find your place in the conversation."
+                : "Enter your account email and we'll help you reset your password."}
+          </p>
+
+          {mode !== "recovery" && (
+            <>
+              <div className="mt-7 space-y-3">
+                <button
+                  type="button"
+                  onClick={() => handleOAuth("google")}
+                  disabled={busy}
+                  className="flex w-full items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--background)] px-4 py-3 text-sm font-semibold transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {oauthProvider === "google"
+                    ? "Connecting to Google..."
+                    : mode === "signin"
+                      ? "Continue with Google"
+                      : "Sign up with Google"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleOAuth("apple")}
+                  disabled={busy}
+                  className="flex w-full items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--background)] px-4 py-3 text-sm font-semibold transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {oauthProvider === "apple"
+                    ? "Connecting to Apple..."
+                    : mode === "signin"
+                      ? "Continue with Apple"
+                      : "Sign up with Apple"}
+                </button>
+              </div>
+
+              <div className="my-6 flex items-center gap-4">
+                <div className="h-px flex-1 bg-[var(--border)]" />
+                <span className="text-xs text-[var(--muted)]">
+                  OR CONTINUE WITH EMAIL
                 </span>
-                <input
-                  required
-                  value={inviteCode}
-                  onChange={(event) =>
-                    setInviteCode(event.target.value)
-                  }
-                  className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 outline-none transition focus:border-[var(--accent)]"
-                  autoComplete="off"
-                />
-              </label>
-            )}
+                <div className="h-px flex-1 bg-[var(--border)]" />
+              </div>
+            </>
+          )}
 
+          <form
+            onSubmit={handleSubmit}
+            className="space-y-5"
+          >
             <label className="block">
               <span className="mb-2 block text-sm font-medium">
                 Email
@@ -214,37 +295,59 @@ export default function AuthPage() {
                 required
                 type="email"
                 value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 outline-none transition focus:border-[var(--accent)]"
+                onChange={(event) =>
+                  setEmail(event.target.value)
+                }
                 autoComplete="email"
+                placeholder="you@example.com"
+                className="w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-4 py-3 outline-none transition focus:border-[var(--accent)]"
               />
             </label>
 
-            <label className="block">
-              <span className="mb-2 block text-sm font-medium">
-                Password
-              </span>
-              <input
-                required
-                type="password"
-                minLength={8}
-                value={password}
-                onChange={(event) =>
-                  setPassword(event.target.value)
-                }
-                className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 outline-none transition focus:border-[var(--accent)]"
-                autoComplete={
-                  mode === "signin"
-                    ? "current-password"
-                    : "new-password"
-                }
-              />
-            </label>
+            {mode !== "recovery" && (
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium">
+                  Password
+                </span>
+                <input
+                  required
+                  type="password"
+                  minLength={8}
+                  value={password}
+                  onChange={(event) =>
+                    setPassword(event.target.value)
+                  }
+                  autoComplete={
+                    mode === "signin"
+                      ? "current-password"
+                      : "new-password"
+                  }
+                  placeholder={
+                    mode === "signup"
+                      ? "At least 8 characters"
+                      : "Enter your password"
+                  }
+                  className="w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-4 py-3 outline-none transition focus:border-[var(--accent)]"
+                />
+              </label>
+            )}
+
+            {mode === "signin" && (
+              <div className="-mt-2 text-right">
+                <button
+                  type="button"
+                  onClick={() => switchMode("recovery")}
+                  className="text-sm font-medium text-[var(--accent)] hover:underline"
+                >
+                  Forgot password?
+                </button>
+              </div>
+            )}
 
             {error && (
               <p
                 role="alert"
-                className="rounded-2xl bg-red-50 px-4 py-3 text-sm leading-5 text-red-700"
+                className="rounded-xl border border-[var(--danger)]/30 bg-[var(--danger-soft)] px-4 py-3 text-sm leading-5"
               >
                 {error}
               </p>
@@ -253,7 +356,7 @@ export default function AuthPage() {
             {message && (
               <p
                 role="status"
-                className="rounded-2xl bg-[var(--accent-soft)] px-4 py-3 text-sm leading-5 text-[var(--accent-strong)]"
+                className="rounded-xl border border-[var(--success)]/30 bg-[var(--success-soft)] px-4 py-3 text-sm leading-5"
               >
                 {message}
               </p>
@@ -261,14 +364,16 @@ export default function AuthPage() {
 
             <button
               type="submit"
-              disabled={loading}
-              className="w-full rounded-2xl bg-[var(--accent)] px-5 py-3 font-medium text-white transition hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={busy || resending}
+              className="w-full rounded-xl bg-[var(--accent)] px-5 py-3 font-semibold text-white transition hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {loading
                 ? "Please wait..."
                 : mode === "signin"
                   ? "Sign in"
-                  : "Create account"}
+                  : mode === "signup"
+                    ? "Create account"
+                    : "Send recovery link"}
             </button>
           </form>
 
@@ -276,8 +381,8 @@ export default function AuthPage() {
             <button
               type="button"
               onClick={handleResendVerification}
-              disabled={resending}
-              className="mt-4 w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-5 py-3 text-sm font-medium transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={resending || busy}
+              className="mt-4 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-4 py-3 text-sm font-medium transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {resending
                 ? "Requesting email..."
@@ -285,34 +390,47 @@ export default function AuthPage() {
             </button>
           )}
 
-          <div className="mt-6 text-center text-sm text-[var(--muted)]">
+          <div className="mt-6 border-t border-[var(--border)] pt-5 text-center text-sm text-[var(--muted)]">
             {mode === "signin" ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setMode("signup");
-                  setError("");
-                  setMessage("");
-                }}
-                className="font-medium text-[var(--accent)] hover:underline"
-              >
-                Have an invite? Create an account
-              </button>
+              <p>
+                New to Agoré?{" "}
+                <button
+                  type="button"
+                  onClick={() => switchMode("signup")}
+                  className="font-semibold text-[var(--accent)] hover:underline"
+                >
+                  Create an account
+                </button>
+              </p>
+            ) : mode === "signup" ? (
+              <p>
+                Already have an account?{" "}
+                <button
+                  type="button"
+                  onClick={() => switchMode("signin")}
+                  className="font-semibold text-[var(--accent)] hover:underline"
+                >
+                  Sign in
+                </button>
+              </p>
             ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  setMode("signin");
-                  setError("");
-                  setMessage("");
-                }}
-                className="font-medium text-[var(--accent)] hover:underline"
-              >
-                Already have an account? Sign in
-              </button>
+              <p>
+                Remembered your password?{" "}
+                <button
+                  type="button"
+                  onClick={() => switchMode("signin")}
+                  className="font-semibold text-[var(--accent)] hover:underline"
+                >
+                  Back to sign in
+                </button>
+              </p>
             )}
           </div>
         </section>
+
+        <p className="mt-5 text-center text-xs leading-5 text-[var(--muted)]">
+          Agoré · A place to gather.
+        </p>
       </div>
     </main>
   );
