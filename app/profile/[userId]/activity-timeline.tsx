@@ -46,6 +46,7 @@ type ActivityItem = {
 };
 
 type ActivityResponse = {
+  profile?: PublicProfile;
   activity?: ActivityItem[];
   pagination?: {
     limit: number;
