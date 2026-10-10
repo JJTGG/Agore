@@ -56,6 +56,7 @@ type MediaPost = {
 
 type ProfilePostsProps = {
   userId: string;
+  onOwnPostDeleted?: () => void;
 };
 
 type PostsResponse = {
@@ -320,6 +321,7 @@ function RepostCard({
 
 export default function ProfilePosts({
   userId,
+  onOwnPostDeleted,
 }: ProfilePostsProps) {
   const [posts, setPosts] = useState<ProfilePost[]>([]);
   const [reposts, setReposts] = useState<RepostPost[]>([]);
@@ -702,6 +704,10 @@ export default function ProfilePosts({
       setPostsNextOffset((currentOffset) =>
         Math.max(0, currentOffset - 1),
       );
+    }
+
+    if (viewerId === userId) {
+      onOwnPostDeleted?.();
     }
 
     mediaLoadedForUser.current = null;
