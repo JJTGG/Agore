@@ -1,3 +1,4 @@
+
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -46,60 +47,36 @@ export async function GET(
   const {
     data: { user },
     error: userError,
-  } =
-    await supabase.auth.getUser();
+  } = await supabase.auth.getUser();
 
   if (userError || !user) {
     return NextResponse.json(
-      {
-        error:
-          "Authentication required.",
-      },
-      {
-        status: 401,
-      },
+      { error: "Authentication required." },
+      { status: 401 },
     );
   }
 
-  const { userId } =
-    await params;
-
-  const userIdResult =
-    z.uuid().safeParse(userId);
+  const { userId } = await params;
+  const userIdResult = z.uuid().safeParse(userId);
 
   if (!userIdResult.success) {
     return NextResponse.json(
-      {
-        error: "Invalid user ID.",
-      },
-      {
-        status: 400,
-      },
+      { error: "Invalid user ID." },
+      { status: 400 },
     );
   }
 
-  const targetUserId =
-    userIdResult.data;
+  const targetUserId = userIdResult.data;
+  const { searchParams } = new URL(request.url);
 
-  const { searchParams } =
-    new URL(request.url);
-
-  const parsedQuery =
-    querySchema.safeParse({
-      limit:
-        searchParams.get("limit") ??
-        undefined,
-    });
+  const parsedQuery = querySchema.safeParse({
+    limit: searchParams.get("limit") ?? undefined,
+  });
 
   if (!parsedQuery.success) {
     return NextResponse.json(
-      {
-        error:
-          "Invalid profile post parameters.",
-      },
-      {
-        status: 400,
-      },
+      { error: "Invalid profile post parameters." },
+      { status: 400 },
     );
   }
 
@@ -108,14 +85,9 @@ export async function GET(
     error: profileError,
   } = await supabase
     .from("profiles")
-    .select(
-      "id, account_status",
-    )
+    .select("id, account_status")
     .eq("id", targetUserId)
-    .eq(
-      "account_status",
-      "active",
-    )
+    .eq("account_status", "active")
     .maybeSingle();
 
   if (profileError) {
@@ -125,39 +97,26 @@ export async function GET(
     );
 
     return NextResponse.json(
-      {
-        error:
-          "Unable to load this profile.",
-      },
-      {
-        status: 500,
-      },
+      { error: "Unable to load this profile." },
+      { status: 500 },
     );
   }
 
   if (!profile) {
     return NextResponse.json(
-      {
-        error:
-          "Profile not found.",
-      },
-      {
-        status: 404,
-      },
+      { error: "Profile not found." },
+      { status: 404 },
     );
   }
 
-  const admin =
-    createAdminClient();
+  const admin = createAdminClient();
 
   const {
     data: blockingRelationship,
     error: blockError,
   } = await admin
     .from("blocks")
-    .select(
-      "blocker_id, blocked_id",
-    )
+    .select("blocker_id, blocked_id")
     .or(
       `and(blocker_id.eq.${user.id},blocked_id.eq.${targetUserId}),and(blocker_id.eq.${targetUserId},blocked_id.eq.${user.id})`,
     )
@@ -170,13 +129,8 @@ export async function GET(
     );
 
     return NextResponse.json(
-      {
-        error:
-          "Unable to load this profile.",
-      },
-      {
-        status: 500,
-      },
+      { error: "Unable to load this profile." },
+      { status: 500 },
     );
   }
 
@@ -185,13 +139,8 @@ export async function GET(
     blockingRelationship.length > 0
   ) {
     return NextResponse.json(
-      {
-        error:
-          "Profile not found.",
-      },
-      {
-        status: 404,
-      },
+      { error: "Profile not found." },
+      { status: 404 },
     );
   }
 
@@ -201,19 +150,14 @@ export async function GET(
   } = await supabase
     .from("posts")
     .select(postSelect)
-    .eq(
-      "author_id",
-      targetUserId,
-    )
-    .order(
-      "created_at",
-      {
-        ascending: false,
-      },
-    )
-    .limit(
-      parsedQuery.data.limit,
-    );
+    .eq("author_id", targetUserId)
+    // Match the profile's published-post count:
+    // soft-deleted posts must not appear in the feed.
+    .is("deleted_at", null)
+    .order("created_at", {
+      ascending: false,
+    })
+    .limit(parsedQuery.data.limit);
 
   if (postsError) {
     console.error(
@@ -222,54 +166,28 @@ export async function GET(
     );
 
     return NextResponse.json(
-      {
-        error:
-          "Unable to load profile posts.",
-      },
-      {
-        status: 500,
-      },
+      { error: "Unable to load profile posts." },
+      { status: 500 },
     );
   }
 
-  const normalizedPosts =
-    (posts ?? []).map(
-      (post) => ({
-        ...post,
-        post_media:
-          Array.isArray(
-            post.post_media,
-          )
-            ? [
-                ...post.post_media,
-              ].sort(
-                (a, b) => {
-                  if (
-                    a.sort_order !==
-                    b.sort_order
-                  ) {
-                    return (
-                      a.sort_order -
-                      b.sort_order
-                    );
-                  }
+  const normalizedPosts = (posts ?? []).map((post) => ({
+    ...post,
+    post_media: Array.isArray(post.post_media)
+      ? [...post.post_media].sort((a, b) => {
+          if (a.sort_order !== b.sort_order) {
+            return a.sort_order - b.sort_order;
+          }
 
-                  return (
-                    new Date(
-                      a.created_at,
-                    ).getTime() -
-                    new Date(
-                      b.created_at,
-                    ).getTime()
-                  );
-                },
-              )
-            : [],
-      }),
-    );
+          return (
+            new Date(a.created_at).getTime() -
+            new Date(b.created_at).getTime()
+          );
+        })
+      : [],
+  }));
 
   return NextResponse.json({
-    posts:
-      normalizedPosts,
+    posts: normalizedPosts,
   });
 }
