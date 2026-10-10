@@ -7,10 +7,7 @@ const createPostSchema = z.object({
   content: z
     .string()
     .trim()
-    .min(
-      1,
-      "Post content is required.",
-    )
+    .min(1, "Post content is required.")
     .max(
       2000,
       "Post content must be 2000 characters or fewer.",
@@ -24,6 +21,9 @@ const feedQuerySchema = z.object({
     .min(1)
     .max(50)
     .default(20),
+  feed: z
+    .enum(["for-you", "following", "likes"])
+    .default("for-you"),
 });
 
 const postSelect = `
@@ -119,6 +119,12 @@ function normalizePost(post: PostRow) {
   };
 }
 
+function emptyFeed() {
+  return NextResponse.json({
+    posts: [],
+  });
+}
+
 export async function GET(request: Request) {
   const supabase = await createClient();
 
@@ -130,100 +136,263 @@ export async function GET(request: Request) {
   if (userError || !user) {
     return NextResponse.json(
       {
-        error:
-          "Authentication required.",
+        error: "Authentication required.",
       },
       { status: 401 },
     );
   }
 
-  const { searchParams } =
-    new URL(request.url);
+  const { searchParams } = new URL(request.url);
 
-  const parsedQuery =
-    feedQuerySchema.safeParse({
-      limit:
-        searchParams.get("limit") ??
-        undefined,
-    });
+  const parsedQuery = feedQuerySchema.safeParse({
+    limit: searchParams.get("limit") ?? undefined,
+    feed: searchParams.get("feed") ?? undefined,
+  });
 
   if (!parsedQuery.success) {
     return NextResponse.json(
       {
-        error:
-          "Invalid feed parameters.",
+        error: "Invalid feed parameters.",
       },
       { status: 400 },
     );
   }
 
-  const limit = parsedQuery.data.limit;
+  const { limit, feed } = parsedQuery.data;
 
-  const [
-    { data: posts, error: postsError },
-    { data: reposts, error: repostsError },
-  ] = await Promise.all([
-    supabase
+  /*
+   * LIKES
+   *
+   * Return posts the current user has liked.
+   * This uses actual reaction records, not popularity.
+   */
+  if (feed === "likes") {
+    const {
+      data: reactions,
+      error: reactionsError,
+    } = await supabase
+      .from("post_reactions")
+      .select("post_id, created_at")
+      .eq("user_id", user.id)
+      .eq("reaction_type", "like")
+      .order("created_at", {
+        ascending: false,
+      })
+      .limit(limit);
+
+    if (reactionsError) {
+      console.error(
+        "Failed to load Agore liked posts:",
+        reactionsError,
+      );
+
+      return NextResponse.json(
+        {
+          error: "Unable to load liked posts.",
+        },
+        { status: 500 },
+      );
+    }
+
+    if (!reactions || reactions.length === 0) {
+      return emptyFeed();
+    }
+
+    const postIds = [
+      ...new Set(
+        reactions.map((reaction) => reaction.post_id),
+      ),
+    ];
+
+    const {
+      data: likedPosts,
+      error: likedPostsError,
+    } = await supabase
       .from("posts")
       .select(postSelect)
-      .is("deleted_at", null)
-      .order("created_at", {
-        ascending: false,
-      })
-      .limit(limit),
+      .in("id", postIds)
+      .is("deleted_at", null);
 
-    supabase
-      .from("reposts")
-      .select(repostSelect)
-      .order("created_at", {
-        ascending: false,
-      })
-      .limit(limit),
-  ]);
+    if (likedPostsError) {
+      console.error(
+        "Failed to load Agore liked post details:",
+        likedPostsError,
+      );
 
-  if (postsError) {
+      return NextResponse.json(
+        {
+          error: "Unable to load liked posts.",
+        },
+        { status: 500 },
+      );
+    }
+
+    const postMap = new Map(
+      ((likedPosts ?? []) as PostRow[]).map((post) => [
+        post.id,
+        normalizePost(post),
+      ]),
+    );
+
+    const likedFeed = reactions
+      .map((reaction) => {
+        const post = postMap.get(reaction.post_id);
+
+        if (!post) {
+          return null;
+        }
+
+        return {
+          ...post,
+          feed_at: reaction.created_at,
+          feed_context: {
+            type: "original" as const,
+          },
+        };
+      })
+      .filter(
+        (
+          item,
+        ): item is NonNullable<typeof item> =>
+          item !== null,
+      );
+
+    return NextResponse.json({
+      posts: likedFeed,
+    });
+  }
+
+  /*
+   * FOLLOWING
+   *
+   * Return original posts from followed accounts and
+   * reposts made by followed accounts.
+   */
+  let followingIds: string[] = [];
+
+  if (feed === "following") {
+    const {
+      data: follows,
+      error: followsError,
+    } = await supabase
+      .from("follows")
+      .select("following_id")
+      .eq("follower_id", user.id);
+
+    if (followsError) {
+      console.error(
+        "Failed to load Agore following relationships:",
+        followsError,
+      );
+
+      return NextResponse.json(
+        {
+          error: "Unable to load your following feed.",
+        },
+        { status: 500 },
+      );
+    }
+
+    followingIds = [
+      ...new Set(
+        (follows ?? []).map(
+          (follow) => follow.following_id,
+        ),
+      ),
+    ];
+
+    if (followingIds.length === 0) {
+      return emptyFeed();
+    }
+  }
+
+  /*
+   * FOR YOU
+   *
+   * Preserve the existing mixed, time-ordered feed
+   * until a separate recommendation-ranking system
+   * is implemented.
+   */
+  const [postsResult, repostsResult] =
+    feed === "following"
+      ? await Promise.all([
+          supabase
+            .from("posts")
+            .select(postSelect)
+            .in("author_id", followingIds)
+            .is("deleted_at", null)
+            .order("created_at", {
+              ascending: false,
+            })
+            .limit(limit),
+
+          supabase
+            .from("reposts")
+            .select(repostSelect)
+            .in("user_id", followingIds)
+            .order("created_at", {
+              ascending: false,
+            })
+            .limit(limit),
+        ])
+      : await Promise.all([
+          supabase
+            .from("posts")
+            .select(postSelect)
+            .is("deleted_at", null)
+            .order("created_at", {
+              ascending: false,
+            })
+            .limit(limit),
+
+          supabase
+            .from("reposts")
+            .select(repostSelect)
+            .order("created_at", {
+              ascending: false,
+            })
+            .limit(limit),
+        ]);
+
+  if (postsResult.error) {
     console.error(
       "Failed to load Agore feed posts:",
-      postsError,
+      postsResult.error,
     );
 
     return NextResponse.json(
       {
-        error:
-          "Unable to load the feed.",
+        error: "Unable to load the feed.",
       },
       { status: 500 },
     );
   }
 
-  if (repostsError) {
+  if (repostsResult.error) {
     console.error(
       "Failed to load Agore repost activity:",
-      repostsError,
+      repostsResult.error,
     );
 
     return NextResponse.json(
       {
-        error:
-          "Unable to load the feed activity.",
+        error: "Unable to load the feed activity.",
       },
       { status: 500 },
     );
   }
 
-  const normalizedPosts =
-    ((posts ?? []) as PostRow[]).map(
-      normalizePost,
-    );
+  const normalizedPosts = (
+    (postsResult.data ?? []) as PostRow[]
+  ).map(normalizePost);
 
-  const repostRows =
-    (reposts ?? []) as RepostRow[];
+  const repostRows = (
+    repostsResult.data ?? []
+  ) as RepostRow[];
 
   const repostPostIds = [
     ...new Set(
-      repostRows.map(
-        (repost) => repost.post_id,
-      ),
+      repostRows.map((repost) => repost.post_id),
     ),
   ];
 
@@ -247,15 +416,13 @@ export async function GET(request: Request) {
 
       return NextResponse.json(
         {
-          error:
-            "Unable to load reposted content.",
+          error: "Unable to load reposted content.",
         },
         { status: 500 },
       );
     }
 
-    repostSourcePosts =
-      (sourcePosts ?? []) as PostRow[];
+    repostSourcePosts = (sourcePosts ?? []) as PostRow[];
   }
 
   const sourcePostMap = new Map(
@@ -276,10 +443,9 @@ export async function GET(request: Request) {
 
     ...repostRows
       .map((repost) => {
-        const sourcePost =
-          sourcePostMap.get(
-            repost.post_id,
-          );
+        const sourcePost = sourcePostMap.get(
+          repost.post_id,
+        );
 
         if (!sourcePost) {
           return null;
@@ -293,19 +459,15 @@ export async function GET(request: Request) {
             id: repost.id,
             user_id: repost.user_id,
             created_at: repost.created_at,
-            profiles:
-              normalizeProfile(
-                repost.profiles,
-              ),
+            profiles: normalizeProfile(repost.profiles),
           },
         };
       })
       .filter(
         (
           item,
-        ): item is NonNullable<
-          typeof item
-        > => item !== null,
+        ): item is NonNullable<typeof item> =>
+          item !== null,
       ),
   ]
     .sort(
@@ -331,8 +493,7 @@ export async function POST(request: Request) {
   if (userError || !user) {
     return NextResponse.json(
       {
-        error:
-          "Authentication required.",
+        error: "Authentication required.",
       },
       { status: 401 },
     );
@@ -345,22 +506,19 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json(
       {
-        error:
-          "Invalid JSON body.",
+        error: "Invalid JSON body.",
       },
       { status: 400 },
     );
   }
 
-  const parsedBody =
-    createPostSchema.safeParse(body);
+  const parsedBody = createPostSchema.safeParse(body);
 
   if (!parsedBody.success) {
     return NextResponse.json(
       {
         error:
-          parsedBody.error.issues[0]
-            ?.message ??
+          parsedBody.error.issues[0]?.message ??
           "Invalid post content.",
       },
       { status: 400 },
@@ -374,8 +532,7 @@ export async function POST(request: Request) {
     .from("posts")
     .insert({
       author_id: user.id,
-      content:
-        parsedBody.data.content,
+      content: parsedBody.data.content,
     })
     .select(postSelect)
     .single();
@@ -388,8 +545,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json(
       {
-        error:
-          "Unable to create the post.",
+        error: "Unable to create the post.",
       },
       { status: 500 },
     );
@@ -397,11 +553,7 @@ export async function POST(request: Request) {
 
   return NextResponse.json(
     {
-      post: {
-        ...normalizePost(
-          post as PostRow,
-        ),
-      },
+      post: normalizePost(post as PostRow),
     },
     { status: 201 },
   );
