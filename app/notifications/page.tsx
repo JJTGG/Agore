@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/browser";
+import UserIdentity from "@/components/user-identity";
 
 type Actor = {
   id: string;
@@ -89,34 +90,32 @@ function formatDate(value: string): string {
   }).format(date);
 }
 
-function getNotificationText(
+function getNotificationActionText(
   notification: AgoreNotification,
 ): string {
-  const actorName = notification.actor?.display_name ?? "Someone";
-
   switch (notification.type) {
     case "follow":
-      return `${actorName} followed you.`;
+      return "followed you.";
 
     case "reaction":
-      return `${actorName} reacted to your post.`;
+      return "reacted to your post.";
 
     case "comment":
       return notification.data?.is_reply === true
-        ? `${actorName} replied to your comment.`
-        : `${actorName} commented on your post.`;
+        ? "replied to your comment."
+        : "commented on your post.";
 
     case "repost":
-      return `${actorName} reposted your post.`;
+      return "reposted your post.";
 
     case "message":
-      return `${actorName} sent you a message.`;
+      return "sent you a message.";
 
     case "group_activity":
-      return `${actorName} updated a group conversation.`;
+      return "updated a group conversation.";
 
     default:
-      return `${actorName} sent you a notification.`;
+      return "sent you a notification.";
   }
 }
 
@@ -995,7 +994,14 @@ export default function NotificationsPage() {
                               unread ? "font-semibold" : "font-medium",
                             ].join(" ")}
                           >
-                            {getNotificationText(notification)}
+                            <UserIdentity
+                              userId={notification.actor_id ?? notification.actor?.id}
+                              displayName={notification.actor?.display_name ?? "Someone"}
+                              className="inline-flex align-baseline"
+                              nameClassName="font-semibold"
+                              badgeSize={14}
+                            />{" "}
+                            {getNotificationActionText(notification)}
                           </p>
 
                           <p className="mt-1 text-xs text-[var(--muted)]">
