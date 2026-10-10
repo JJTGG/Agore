@@ -3,8 +3,9 @@ import { redirect } from "next/navigation";
 import {
   ArrowLeft,
   ArrowUpRight,
-  Compass,
+  Bell,
   MessageCircle,
+  Search,
   Settings,
   Sparkles,
 } from "lucide-react";
@@ -52,10 +53,10 @@ export default async function CreatePage() {
     <main className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
       <div className="mx-auto min-h-screen w-full max-w-[1440px] px-4 pb-28 sm:px-6 lg:px-8 lg:pb-0">
         <header className="sticky top-0 z-40 border-b border-[var(--border)] bg-[color:var(--background)]/95 backdrop-blur">
-          <div className="flex min-h-[72px] items-center justify-between gap-4">
+          <div className="flex min-h-[72px] items-center justify-between gap-3">
             <Link
               href="/home"
-              className="group flex items-center gap-3"
+              className="group flex shrink-0 items-center gap-3"
               aria-label="Agoré home"
             >
               <span className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-2xl bg-[var(--foreground)] text-sm font-black tracking-[-0.04em] text-[var(--background)] transition duration-200 group-hover:bg-[var(--accent)] group-hover:text-white">
@@ -63,38 +64,40 @@ export default async function CreatePage() {
                 <span className="absolute -right-3 -top-3 h-7 w-7 rounded-full bg-[var(--accent)] opacity-70 transition duration-200 group-hover:scale-150" />
               </span>
 
-              <div className="hidden sm:block">
-                <p className="text-base font-bold tracking-[-0.04em]">
+              <span className="hidden sm:block">
+                <span className="block text-base font-bold tracking-[-0.04em]">
                   Agoré
-                </p>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+                </span>
+                <span className="block text-[10px] font-medium text-[var(--muted)]">
                   Your social space
-                </p>
-              </div>
+                </span>
+              </span>
             </Link>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 sm:gap-2">
               <Link
-                href={profilePath}
-                aria-label={`Open ${profile.display_name}'s profile`}
-                className="group flex items-center gap-2.5 rounded-full border border-[var(--border)] bg-[var(--surface)] py-1.5 pl-1.5 pr-3 transition hover:border-[var(--accent)]"
+                href="/app/explore"
+                aria-label="Explore and search Agoré"
+                title="Explore"
+                className="flex h-10 w-10 items-center justify-center rounded-full text-[var(--muted)] transition hover:bg-[var(--surface)] hover:text-[var(--foreground)]"
               >
-                <AgoreAvatar
-                  avatarPath={profile.avatar_path}
-                  name={profile.display_name}
-                  className="h-8 w-8"
-                  textClassName="text-[10px]"
-                />
+                <Search size={19} />
+              </Link>
 
-                <span className="hidden max-w-36 truncate text-sm font-semibold sm:block">
-                  {profile.display_name}
-                </span>
+              <Link
+                href="/notifications"
+                aria-label="Notifications"
+                title="Notifications"
+                className="flex h-10 w-10 items-center justify-center rounded-full text-[var(--muted)] transition hover:bg-[var(--surface)] hover:text-[var(--foreground)]"
+              >
+                <Bell size={19} />
               </Link>
 
               <Link
                 href="/settings"
-                className="flex h-10 w-10 items-center justify-center rounded-full text-[var(--muted)] transition hover:bg-[var(--surface)] hover:text-[var(--foreground)]"
                 aria-label="Settings"
+                title="Settings"
+                className="flex h-10 w-10 items-center justify-center rounded-full text-[var(--muted)] transition hover:bg-[var(--surface)] hover:text-[var(--foreground)]"
               >
                 <Settings size={18} />
               </Link>
@@ -102,7 +105,7 @@ export default async function CreatePage() {
               <form action={signOut}>
                 <button
                   type="submit"
-                  className="hidden rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm font-medium transition hover:border-[var(--foreground)] sm:block"
+                  className="hidden rounded-full border border-[var(--border)] px-3.5 py-2 text-xs font-semibold transition hover:border-[var(--foreground)] sm:block"
                 >
                   Sign out
                 </button>
@@ -257,7 +260,7 @@ export default async function CreatePage() {
                   className="mt-3 flex items-center justify-between gap-3 text-sm text-[var(--muted)] transition hover:text-[var(--accent)]"
                 >
                   Tune your space
-                  <Compass size={15} />
+                  <Settings size={15} />
                 </Link>
               </section>
             </div>
