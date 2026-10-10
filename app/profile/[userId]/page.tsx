@@ -1,4 +1,3 @@
-
 "use client";
 
 import Link from "next/link";
@@ -439,15 +438,15 @@ export default function ProfilePage() {
     profile && !profile.is_blocked && (hasProfileDetails || isOwner),
   );
 
-  function renderProfileDetails() {
+  function renderProfileDetails(headingId: string) {
     if (!profile || profile.is_blocked || !showProfileDetails) {
       return null;
     }
 
     return (
-      <section aria-labelledby="profile-details-heading">
+      <section aria-labelledby={headingId}>
         <h2
-          id="profile-details-heading"
+          id={headingId}
           className="text-sm font-semibold"
         >
           Profile details
@@ -681,7 +680,7 @@ export default function ProfilePage() {
 
                 {profile.is_blocked ? null : (
                   <div className="mt-5 lg:hidden">
-                    {renderProfileDetails()}
+                    {renderProfileDetails("profile-details-heading-mobile")}
                   </div>
                 )}
 
@@ -881,7 +880,7 @@ export default function ProfilePage() {
 
             <aside className="hidden min-w-0 border-l border-[var(--border)] pl-6 lg:block">
               <div className="sticky top-6 py-2">
-                {renderProfileDetails()}
+                {renderProfileDetails("profile-details-heading-desktop")}
               </div>
             </aside>
 
