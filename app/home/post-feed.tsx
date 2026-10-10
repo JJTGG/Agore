@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 
 import AgoreAvatar from "@/components/agore-avatar";
+import UserIdentity from "@/components/user-identity";
 import PostMedia, {
   type PostMediaItem,
 } from "@/components/post-media";
@@ -200,7 +201,7 @@ function sanitizeFileName(name: string) {
   const cleaned = name
     .normalize("NFKD")
     .replace(
-      /[^A-Za-z0-9._'()+?;,:@&=$!*\-\s]/g,
+      /[^A-Za-z0-9._'()+?;,:@&=$!*\\-\s]/g,
       "_",
     )
     .replace(/\s+/g, " ")
@@ -1138,13 +1139,25 @@ export default function PostFeed({
                               href={`/profile/${encodeURIComponent(
                                 feedContext.user_id,
                               )}`}
-                              className="truncate font-semibold text-[var(--foreground)] transition hover:text-[var(--accent)]"
+                              className="min-w-0 max-w-full truncate font-semibold text-[var(--foreground)] transition hover:text-[var(--accent)]"
                             >
-                              {repostedByName}
+                              <UserIdentity
+                                userId={feedContext.user_id}
+                                displayName={repostedByName}
+                                className="max-w-full"
+                                nameClassName="truncate font-semibold text-[var(--foreground)]"
+                                badgeSize={14}
+                              />
                             </Link>
                           ) : (
-                            <span className="truncate font-semibold text-[var(--foreground)]">
-                              {repostedByName}
+                            <span className="min-w-0 max-w-full truncate font-semibold text-[var(--foreground)]">
+                              <UserIdentity
+                                userId={feedContext.user_id}
+                                displayName={repostedByName}
+                                className="max-w-full"
+                                nameClassName="truncate font-semibold text-[var(--foreground)]"
+                                badgeSize={14}
+                              />
                             </span>
                           )}
                         </div>
@@ -1171,9 +1184,13 @@ export default function PostFeed({
                           />
 
                           <span className="min-w-0">
-                            <span className="block truncate text-sm font-semibold">
-                              {authorName}
-                            </span>
+                            <UserIdentity
+                              userId={post.author_id}
+                              displayName={authorName}
+                              className="w-full"
+                              nameClassName="min-w-0 truncate text-sm font-semibold"
+                              badgeSize={17}
+                            />
 
                             <span className="mt-0.5 block truncate text-xs text-[var(--muted)]">
                               @{authorUsername}
