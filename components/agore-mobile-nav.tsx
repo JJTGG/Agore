@@ -15,6 +15,10 @@ import {
 } from "lucide-react";
 
 import AgoreAvatar from "@/components/agore-avatar";
+import {
+  useUnreadIndicators,
+  UnreadBadge,
+} from "@/components/unread-indicators";
 
 type AgoreMobileNavProps = {
   profilePath: string;
@@ -28,6 +32,8 @@ export default function AgoreMobileNav({
   profileName,
 }: AgoreMobileNavProps) {
   const pathname = usePathname();
+
+  const { hasUnreadMessages } = useUnreadIndicators();
 
   const [quiet, setQuiet] = useState(false);
   const lastScrollY = useRef(0);
@@ -54,28 +60,19 @@ export default function AgoreMobileNav({
     }
 
     function handleScroll() {
-      if (ticking.current) {
-        return;
-      }
+      if (ticking.current) return;
 
       ticking.current = true;
 
-      window.requestAnimationFrame(
-        updateNavigationState,
-      );
+      window.requestAnimationFrame(updateNavigationState);
     }
 
-    window.addEventListener(
-      "scroll",
-      handleScroll,
-      { passive: true },
-    );
+    window.addEventListener("scroll", handleScroll, {
+      passive: true,
+    });
 
     return () => {
-      window.removeEventListener(
-        "scroll",
-        handleScroll,
-      );
+      window.removeEventListener("scroll", handleScroll);
     };
   }, []);
 
@@ -176,8 +173,20 @@ export default function AgoreMobileNav({
             ? "page"
             : undefined
         }
+        aria-label={
+          hasUnreadMessages
+            ? "Messages, unread messages"
+            : "Messages"
+        }
       >
-        <MessageCircle size={19} />
+        <span className="relative inline-flex">
+          <MessageCircle size={19} />
+
+          <UnreadBadge
+            count={hasUnreadMessages ? 1 : 0}
+            dotOnly
+          />
+        </span>
 
         <span className="text-[10px] font-semibold">
           Messages
