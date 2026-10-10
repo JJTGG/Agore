@@ -2,9 +2,9 @@
 
 **People first. Conversation at the center.**
 
-Agoré is an early-stage social platform being built around people, content, and communication. Designed for a global audience, Agoré aims to bring meaningful connections, public conversations, and private communication into one connected space.
+Agoré is a social platform built around people, content, and communication. Designed for a global audience, Agoré brings meaningful connections, public conversations, and private communication into one connected space.
 
-> **Development status:** Agoré is under active development and currently invite-only during V0. Features, integrations, and configuration may be incomplete or change as development continues.
+> **Development status:** Agoré is transitioning to public registration and remains under active development. The planned authentication methods are email and password, Google, and Apple. Features, integrations, and configuration may be incomplete or change as development continues.
 
 ## Product direction
 
@@ -18,7 +18,7 @@ Agoré is being built around the following capabilities:
 - **Notifications** — in-app activity and web-push notification capabilities.
 - **Trust, safety, and control** — reporting workflows, privacy settings, and account-level controls.
 
-These describe the V0 scope and product direction. They do not guarantee that every capability is complete or production-ready.
+These describe the product scope and direction. They do not guarantee that every capability is complete or production-ready.
 
 ## Principles
 
@@ -109,6 +109,7 @@ Run these after configuring the required environment variables. A successful bui
 - Never commit `.env.local`, service-role keys, VAPID private keys, or other secrets.
 - Keep privileged Supabase operations on the server.
 - Never expose `SUPABASE_SERVICE_ROLE_KEY` through a `NEXT_PUBLIC_*` variable.
+- Keep authentication, authorisation, and database access controls in place as registration becomes public.
 - Test database and configuration changes in development before applying them to production.
 - Treat this as pre-release software; do not assume that all features or safeguards are complete.
 
