@@ -1,3 +1,4 @@
+
 "use client";
 
 import {
@@ -13,6 +14,7 @@ import {
   Repeat2,
   MessageCircle,
   FileText,
+  Clock3,
 } from "lucide-react";
 
 import AgoreAvatar from "@/components/agore-avatar";
@@ -21,6 +23,7 @@ import PostMedia, {
 } from "@/components/post-media";
 import PostInteractions from "@/app/post-interactions";
 import ProfileMedia from "./profile-media";
+import ActivityTimeline from "./activity-timeline";
 import { createClient } from "@/lib/supabase/browser";
 
 type ProfileAuthor = {
@@ -75,7 +78,8 @@ type MediaResponse = {
 type ProfileTab =
   | "posts"
   | "media"
-  | "reposts";
+  | "reposts"
+  | "activity";
 
 const supabase = createClient();
 
@@ -853,8 +857,8 @@ export default function ProfilePosts({
         <div className="mb-4 h-5 w-32 animate-pulse rounded-full bg-[var(--surface-muted)]" />
 
         <div className="overflow-hidden rounded-[1.75rem] border border-[var(--border)] bg-[var(--surface)]">
-          <div className="grid grid-cols-3 border-b border-[var(--border)]">
-            {[0, 1, 2].map(
+          <div className="grid grid-cols-4 border-b border-[var(--border)]">
+            {[0, 1, 2, 3].map(
               (item) => (
                 <div
                   key={item}
@@ -907,29 +911,11 @@ export default function ProfilePosts({
 
   return (
     <section className="mt-7">
-      <div className="mb-4">
-        <div className="flex items-center gap-2">
-          <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
-
-          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--accent)]">
-            Profile activity
-          </p>
-        </div>
-
-        <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em]">
-          Activity
-        </h2>
-
-        <p className="mt-1 text-sm text-[var(--muted)]">
-          Posts, media, and reposts from this profile.
-        </p>
-      </div>
-
       <div className="overflow-hidden rounded-[1.75rem] border border-[var(--border)] bg-[var(--surface)]">
         <div
           role="tablist"
-          aria-label="Profile activity"
-          className="grid grid-cols-3 border-b border-[var(--border)]"
+          aria-label="Profile content"
+          className="grid grid-cols-4 border-b border-[var(--border)]"
         >
           <button
             type="button"
@@ -1032,6 +1018,26 @@ export default function ProfilePosts({
               <span className="absolute inset-x-5 bottom-0 h-0.5 rounded-full bg-[var(--accent)]" />
             ) : null}
           </button>
+
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "activity"}
+            onClick={() => selectTab("activity")}
+            className={[
+              "relative flex items-center justify-center gap-2 px-3 py-4 text-sm font-semibold transition",
+              activeTab === "activity"
+                ? "text-[var(--foreground)]"
+                : "text-[var(--muted)] hover:text-[var(--foreground)]",
+            ].join(" ")}
+          >
+            <Clock3 size={15} />
+            Activity
+
+            {activeTab === "activity" ? (
+              <span className="absolute inset-x-5 bottom-0 h-0.5 rounded-full bg-[var(--accent)]" />
+            ) : null}
+          </button>
         </div>
 
         {activeTab ===
@@ -1058,6 +1064,15 @@ export default function ProfilePosts({
               Loading media…
             </div>
           </div>
+        ) : activeTab === "activity" ? (
+          <ActivityTimeline
+            key={"activity-" + userId}
+            userId={userId}
+            isOwner={
+              viewerId !== null &&
+              viewerId === userId
+            }
+          />
         ) : activeTab ===
           "media" &&
           mediaError ? (
