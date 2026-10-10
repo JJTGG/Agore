@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Archive,
   File,
@@ -211,6 +212,8 @@ function sanitizeFileName(name: string) {
 export default function PostFeed({
   mode = "combined",
 }: PostFeedProps) {
+  const router = useRouter();
+
   const [posts, setPosts] = useState<Post[]>([]);
   const [activeFeed, setActiveFeed] =
     useState<HomeFeedTab>("for-you");
@@ -580,6 +583,11 @@ export default function PostFeed({
 
       setContent("");
       setSelectedFiles([]);
+
+      if (mode === "create") {
+        router.replace("/home");
+        return;
+      }
 
       setNotice(
         selectedFiles.length > 0
