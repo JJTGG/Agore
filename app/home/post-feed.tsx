@@ -81,6 +81,23 @@ type AttachedMediaResponse = {
   error?: string;
 };
 
+type PostFeedMode = "combined" | "home" | "create";
+
+type HomeFeedTab = "for-you" | "following" | "likes";
+
+type PostFeedProps = {
+  mode?: PostFeedMode;
+};
+
+const HOME_FEED_TABS: Array<{
+  value: HomeFeedTab;
+  label: string;
+}> = [
+  { value: "for-you", label: "For you" },
+  { value: "following", label: "Following" },
+  { value: "likes", label: "Likes" },
+];
+
 const supabase = createClient();
 
 const MAX_MEDIA_FILES = 10;
@@ -191,8 +208,13 @@ function sanitizeFileName(name: string) {
   return cleaned.slice(0, 120) || "attachment";
 }
 
-export default function PostFeed() {
+export default function PostFeed({
+  mode = "combined",
+}: PostFeedProps) {
   const [posts, setPosts] = useState<Post[]>([]);
+  const [activeFeed, setActiveFeed] =
+    useState<HomeFeedTab>("for-you");
+
   const [content, setContent] = useState("");
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
 
@@ -243,10 +265,13 @@ export default function PostFeed() {
     setError("");
 
     try {
-      const response = await fetch("/api/posts?limit=20", {
-        method: "GET",
-        cache: "no-store",
-      });
+      const response = await fetch(
+        `/api/posts?limit=20&feed=${activeFeed}`,
+        {
+          method: "GET",
+          cache: "no-store",
+        },
+      );
 
       const data = (await response.json()) as
         | PostsResponse
@@ -284,12 +309,17 @@ export default function PostFeed() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeFeed]);
 
   useEffect(() => {
     void loadViewer();
-    void loadPosts();
-  }, [loadPosts, loadViewer]);
+  }, [loadViewer]);
+
+  useEffect(() => {
+    if (mode !== "create") {
+      void loadPosts();
+    }
+  }, [loadPosts, mode]);
 
   function handleMediaChange(
     event: React.ChangeEvent<HTMLInputElement>,
@@ -360,6 +390,7 @@ export default function PostFeed() {
     files: File[],
   ) {
     const uploadedPaths: string[] = [];
+
     const uploadedItems: Array<{
       storage_path: string;
       mime_type: string;
@@ -549,6 +580,7 @@ export default function PostFeed() {
 
       setContent("");
       setSelectedFiles([]);
+
       setNotice(
         selectedFiles.length > 0
           ? "Your post and attachments are live."
@@ -709,103 +741,94 @@ export default function PostFeed() {
 
   return (
     <div className="space-y-7">
-      <section className="relative overflow-hidden rounded-[2rem] border border-[var(--border)] bg-[var(--surface)]">
-        <div className="absolute inset-y-0 left-0 w-1 bg-[var(--accent)]" />
+      {mode !== "home" ? (
+        <section className="relative overflow-hidden rounded-[2rem] border border-[var(--border)] bg-[var(--surface)]">
+          <div className="absolute inset-y-0 left-0 w-1 bg-[var(--accent)]" />
 
-        <div className="absolute right-[-45px] top-[-45px] h-32 w-32 rounded-full border-[16px] border-[var(--accent-soft)]" />
+          <div className="absolute right-[-45px] top-[-45px] h-32 w-32 rounded-full border-[16px] border-[var(--accent-soft)]" />
 
-        <div className="relative px-5 py-5 sm:px-7 sm:py-6">
-          <div className="flex items-start justify-between gap-5">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
+          <div className="relative px-5 py-5 sm:px-7 sm:py-6">
+            <div className="flex items-start justify-between gap-5">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
 
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--accent)]">
-                  Your turn
+                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--accent)]">
+                    Your turn
+                  </p>
+                </div>
+
+                <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em]">
+                  What’s worth saying?
+                </h2>
+
+                <p className="mt-2 max-w-lg text-sm leading-6 text-[var(--muted)]">
+                  Drop a thought, question, observation, or something you want
+                  people to see.
                 </p>
               </div>
 
-              <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em]">
-                What’s worth saying?
-              </h2>
-
-              <p className="mt-2 max-w-lg text-sm leading-6 text-[var(--muted)]">
-                Drop a thought, question, observation, or something you want
-                people to see.
-              </p>
+              <span className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)] sm:flex">
+                <Sparkles size={18} />
+              </span>
             </div>
 
-            <span className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)] sm:flex">
-              <Sparkles size={18} />
-            </span>
-          </div>
-
-          <form
-            onSubmit={handleSubmit}
-            className="mt-6"
-          >
-            <div className="flex items-start gap-3">
-              <AgoreAvatar
-                avatarPath={viewerAvatarPath}
-                name={viewerName}
-                className="h-10 w-10"
-                textClassName="text-xs"
-              />
-
-              <div className="min-w-0 flex-1">
-                <textarea
-                  value={content}
-                  onChange={(event) =>
-                    setContent(
-                      event.target.value,
-                    )
-                  }
-                  maxLength={2000}
-                  rows={4}
-                  disabled={publishing}
-                  placeholder={
-                    viewerName
-                      ? `Say something, ${
-                          viewerName.split(
-                            " ",
-                          )[0]
-                        }…`
-                      : "Say something…"
-                  }
-                  className="w-full resize-none rounded-[1.35rem] border border-[var(--border)] bg-[var(--background)] px-4 py-4 text-[15px] leading-7 outline-none transition placeholder:text-[var(--muted)] focus:border-[var(--accent)] focus:ring-4 focus:ring-[var(--accent-soft)] disabled:cursor-not-allowed disabled:opacity-70"
+            <form
+              onSubmit={handleSubmit}
+              className="mt-6"
+            >
+              <div className="flex items-start gap-3">
+                <AgoreAvatar
+                  avatarPath={viewerAvatarPath}
+                  name={viewerName}
+                  className="h-10 w-10"
+                  textClassName="text-xs"
                 />
 
-                {selectedFiles.length > 0 ? (
-                  <div className="mt-3 rounded-2xl border border-[var(--border)] bg-[var(--background)] p-3">
-                    <div className="mb-2 flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-xs font-semibold">
-                          Attachments
-                        </p>
+                <div className="min-w-0 flex-1">
+                  <textarea
+                    value={content}
+                    onChange={(event) =>
+                      setContent(event.target.value)
+                    }
+                    maxLength={2000}
+                    rows={4}
+                    disabled={publishing}
+                    placeholder={
+                      viewerName
+                        ? `Say something, ${
+                            viewerName.split(" ")[0]
+                          }…`
+                        : "Say something…"
+                    }
+                    className="w-full resize-none rounded-[1.35rem] border border-[var(--border)] bg-[var(--background)] px-4 py-4 text-[15px] leading-7 outline-none transition placeholder:text-[var(--muted)] focus:border-[var(--accent)] focus:ring-4 focus:ring-[var(--accent-soft)] disabled:cursor-not-allowed disabled:opacity-70"
+                  />
 
-                        <p className="mt-0.5 text-[11px] text-[var(--muted)]">
-                          {selectedFiles.length}{" "}
-                          {selectedFiles.length ===
-                          1
-                            ? "file"
-                            : "files"}{" "}
-                          selected
-                        </p>
+                  {selectedFiles.length > 0 ? (
+                    <div className="mt-3 rounded-2xl border border-[var(--border)] bg-[var(--background)] p-3">
+                      <div className="mb-2 flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold">
+                            Attachments
+                          </p>
+
+                          <p className="mt-0.5 text-[11px] text-[var(--muted)]">
+                            {selectedFiles.length}{" "}
+                            {selectedFiles.length === 1
+                              ? "file"
+                              : "files"}{" "}
+                            selected
+                          </p>
+                        </div>
+
+                        <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                          Max 15 MB each
+                        </span>
                       </div>
 
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
-                        Max 15 MB each
-                      </span>
-                    </div>
-
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      {selectedFiles.map(
-                        (
-                          file,
-                          index,
-                        ) => {
-                          const Icon =
-                            getFileIcon(file);
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {selectedFiles.map((file, index) => {
+                          const Icon = getFileIcon(file);
 
                           return (
                             <div
@@ -822,18 +845,14 @@ export default function PostFeed() {
                                 </p>
 
                                 <p className="mt-0.5 text-[11px] text-[var(--muted)]">
-                                  {formatFileSize(
-                                    file.size,
-                                  )}
+                                  {formatFileSize(file.size)}
                                 </p>
                               </div>
 
                               <button
                                 type="button"
                                 onClick={() =>
-                                  removeSelectedFile(
-                                    index,
-                                  )
+                                  removeSelectedFile(index)
                                 }
                                 disabled={publishing}
                                 className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[var(--muted)] transition hover:bg-[var(--background)] hover:text-[var(--foreground)] disabled:opacity-40"
@@ -843,71 +862,67 @@ export default function PostFeed() {
                               </button>
                             </div>
                           );
-                        },
-                      )}
+                        })}
+                      </div>
                     </div>
-                  </div>
-                ) : null}
+                  ) : null}
 
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <label
-                      htmlFor="agore-post-media"
-                      className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-[var(--background)] px-3 py-1.5 text-xs font-medium text-[var(--muted)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)] ${
-                        publishing
-                          ? "pointer-events-none opacity-50"
-                          : ""
-                      }`}
-                    >
-                      <Paperclip size={13} />
-                      Add media
-                    </label>
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label
+                        htmlFor="agore-post-media"
+                        className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-[var(--background)] px-3 py-1.5 text-xs font-medium text-[var(--muted)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)] ${
+                          publishing
+                            ? "pointer-events-none opacity-50"
+                            : ""
+                        }`}
+                      >
+                        <Paperclip size={13} />
+                        Add media
+                      </label>
 
-                    <input
-                      id="agore-post-media"
-                      type="file"
-                      multiple
-                      accept="*/*"
-                      className="sr-only"
-                      onChange={handleMediaChange}
-                      disabled={publishing}
-                    />
+                      <input
+                        id="agore-post-media"
+                        type="file"
+                        multiple
+                        accept="*/*"
+                        className="sr-only"
+                        onChange={handleMediaChange}
+                        disabled={publishing}
+                      />
 
-                    <span className="hidden items-center gap-1.5 rounded-full bg-[var(--background)] px-3 py-1.5 text-xs font-medium text-[var(--muted)] sm:inline-flex">
-                      <ImageIcon size={13} />
-                      Images, video, audio, documents & more
-                    </span>
-                  </div>
+                      <span className="hidden items-center gap-1.5 rounded-full bg-[var(--background)] px-3 py-1.5 text-xs font-medium text-[var(--muted)] sm:inline-flex">
+                        <ImageIcon size={13} />
+                        Images, video, audio, documents & more
+                      </span>
+                    </div>
 
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs tabular-nums text-[var(--muted)]">
-                      {content.length}/2000
-                    </span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs tabular-nums text-[var(--muted)]">
+                        {content.length}/2000
+                      </span>
 
-                    <button
-                      type="submit"
-                      disabled={
-                        !content.trim() ||
-                        publishing
-                      }
-                      className="rounded-full bg-[var(--foreground)] px-5 py-2.5 text-sm font-semibold text-[var(--background)] transition hover:bg-[var(--accent)] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      {publishing
-                        ? uploadingIndex !==
-                          null
-                          ? `Uploading ${
-                              uploadingIndex + 1
-                            }/${selectedFiles.length}…`
-                          : "Publishing…"
-                        : "Put it out there"}
-                    </button>
+                      <button
+                        type="submit"
+                        disabled={!content.trim() || publishing}
+                        className="rounded-full bg-[var(--foreground)] px-5 py-2.5 text-sm font-semibold text-[var(--background)] transition hover:bg-[var(--accent)] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {publishing
+                          ? uploadingIndex !== null
+                            ? `Uploading ${
+                                uploadingIndex + 1
+                              }/${selectedFiles.length}…`
+                            : "Publishing…"
+                          : "Put it out there"}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          </form>
-        </div>
-      </section>
+            </form>
+          </div>
+        </section>
+      ) : null}
 
       {error ? (
         <section className="flex items-center justify-between gap-4 rounded-2xl border border-[var(--danger)]/20 bg-[var(--danger-soft)] px-4 py-3 text-sm">
@@ -939,332 +954,332 @@ export default function PostFeed() {
         </section>
       ) : null}
 
-      <section>
-        <div className="mb-4 flex items-end justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
+      {mode !== "create" ? (
+        <section>
+          <div className="mb-5">
+            <div className="flex items-end justify-between gap-4">
+              <div>
+                <h1 className="text-3xl font-semibold tracking-[-0.05em] sm:text-4xl">
+                  Home
+                </h1>
 
-              <p className="text-xs font-bold uppercase tracking-[0.16em] text-[var(--accent)]">
-                Community
-              </p>
+                <p className="mt-2 text-sm text-[var(--muted)]">
+                  Your world, in motion.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => void loadPosts()}
+                disabled={loading}
+                aria-label="Refresh feed"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--muted)] transition hover:border-[var(--accent)] hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <RefreshCw
+                  size={16}
+                  className={loading ? "animate-spin" : ""}
+                />
+              </button>
             </div>
 
-            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] sm:text-[1.75rem]">
-              Latest from Agoré
-            </h2>
+            <div className="sticky top-[72px] z-30 mt-4 border-b border-[var(--border)] bg-[color:var(--background)]/95 backdrop-blur">
+              <div
+                className="grid grid-cols-3"
+                role="tablist"
+                aria-label="Home feed sections"
+              >
+                {HOME_FEED_TABS.map((tab) => {
+                  const selected = activeFeed === tab.value;
+
+                  return (
+                    <button
+                      key={tab.value}
+                      type="button"
+                      role="tab"
+                      aria-selected={selected}
+                      onClick={() => setActiveFeed(tab.value)}
+                      className={`relative min-h-12 px-2 text-sm font-medium transition ${
+                        selected
+                          ? "text-[var(--foreground)]"
+                          : "text-[var(--muted)] hover:text-[var(--foreground)]"
+                      }`}
+                    >
+                      {tab.label}
+
+                      {selected ? (
+                        <span className="absolute inset-x-5 bottom-0 h-0.5 rounded-full bg-[var(--accent)]" />
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <p
+              className="mt-3 text-xs text-[var(--muted)]"
+              aria-live="polite"
+            >
+              {activeFeed === "for-you"
+                ? "Discover conversations beyond your following list."
+                : activeFeed === "following"
+                  ? "Recent posts from people you follow."
+                  : "Posts you've liked, collected in one place."}
+            </p>
           </div>
 
-          <button
-            type="button"
-            onClick={() => void loadPosts()}
-            disabled={loading}
-            className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2 text-sm font-medium text-[var(--muted)] transition hover:border-[var(--accent)] hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <RefreshCw
-              size={15}
-              className={
-                loading
-                  ? "animate-spin"
-                  : ""
-              }
-            />
+          {loading ? (
+            <div className="space-y-4">
+              {[0, 1, 2].map((item) => (
+                <article
+                  key={item}
+                  className="rounded-[1.75rem] border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6"
+                >
+                  <div className="animate-pulse space-y-5">
+                    <div className="flex gap-3">
+                      <div className="h-11 w-11 rounded-full bg-[var(--surface-muted)]" />
 
-            <span className="hidden sm:inline">
-              Refresh
-            </span>
-          </button>
-        </div>
-
-        {loading ? (
-          <div className="space-y-4">
-            {[0, 1, 2].map((item) => (
-              <article
-                key={item}
-                className="rounded-[1.75rem] border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6"
-              >
-                <div className="animate-pulse space-y-5">
-                  <div className="flex gap-3">
-                    <div className="h-11 w-11 rounded-full bg-[var(--surface-muted)]" />
+                      <div className="space-y-2">
+                        <div className="h-3 w-28 rounded-full bg-[var(--surface-muted)]" />
+                        <div className="h-3 w-20 rounded-full bg-[var(--surface-muted)]" />
+                      </div>
+                    </div>
 
                     <div className="space-y-2">
-                      <div className="h-3 w-28 rounded-full bg-[var(--surface-muted)]" />
-                      <div className="h-3 w-20 rounded-full bg-[var(--surface-muted)]" />
+                      <div className="h-3 w-full rounded-full bg-[var(--surface-muted)]" />
+                      <div className="h-3 w-5/6 rounded-full bg-[var(--surface-muted)]" />
+                      <div className="h-3 w-2/3 rounded-full bg-[var(--surface-muted)]" />
                     </div>
                   </div>
-
-                  <div className="space-y-2">
-                    <div className="h-3 w-full rounded-full bg-[var(--surface-muted)]" />
-                    <div className="h-3 w-5/6 rounded-full bg-[var(--surface-muted)]" />
-                    <div className="h-3 w-2/3 rounded-full bg-[var(--surface-muted)]" />
-                  </div>
-                </div>
-              </article>
-            ))}
-          </div>
-        ) : posts.length === 0 ? (
-          <div className="overflow-hidden rounded-[1.75rem] border border-dashed border-[var(--border)] bg-[var(--surface)]">
-            <div className="px-6 py-12 text-center sm:px-10">
-              <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]">
-                <Sparkles size={24} />
-              </span>
-
-              <h3 className="mt-5 text-lg font-semibold tracking-[-0.02em]">
-                The conversation is waiting.
-              </h3>
-
-              <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[var(--muted)]">
-                There are no visible posts in your feed yet. Put the first
-                thought out there and give Agoré somewhere to begin.
-              </p>
+                </article>
+              ))}
             </div>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {posts.map((post) => {
-              const feedContext =
-                post.feed_context ?? {
-                  type: "original" as const,
-                };
+          ) : posts.length === 0 ? (
+            <div className="overflow-hidden rounded-[1.75rem] border border-dashed border-[var(--border)] bg-[var(--surface)]">
+              <div className="px-6 py-12 text-center sm:px-10">
+                <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]">
+                  <Sparkles size={24} />
+                </span>
 
-              const isRepost =
-                feedContext.type === "repost";
+                <h3 className="mt-5 text-lg font-semibold tracking-[-0.02em]">
+                  The conversation is waiting.
+                </h3>
 
-              const isOwner =
-                viewerId !== null &&
-                viewerId === post.author_id;
+                <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[var(--muted)]">
+                  {activeFeed === "likes"
+                    ? "Posts you like will appear here so you can revisit them."
+                    : activeFeed === "following"
+                      ? "Your following feed is quiet. Explore Agoré and follow people to bring their conversations here."
+                      : "No visible posts have reached your feed yet. Explore Agoré to discover more people and conversations."}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {posts.map((post) => {
+                const feedContext =
+                  post.feed_context ?? {
+                    type: "original" as const,
+                  };
 
-              const authorName =
-                post.profiles?.display_name ??
-                "Agoré user";
+                const isRepost = feedContext.type === "repost";
 
-              const authorUsername =
-                post.profiles?.username ??
-                "unknown";
+                const isOwner =
+                  viewerId !== null &&
+                  viewerId === post.author_id;
 
-              const postPath =
-                `/post/${encodeURIComponent(post.id)}`;
+                const authorName =
+                  post.profiles?.display_name ?? "Agoré user";
 
-              const feedItemKey = isRepost
-                ? `repost-${feedContext.id}`
-                : `post-${post.id}`;
+                const authorUsername =
+                  post.profiles?.username ?? "unknown";
 
-              const feedItemId = isRepost
-                ? `feed-repost-${feedContext.id}`
-                : `post-${post.id}`;
+                const postPath =
+                  `/post/${encodeURIComponent(post.id)}`;
 
-              const repostedByName =
-                isRepost
-                  ? feedContext.profiles
-                      ?.display_name ??
+                const feedItemKey = isRepost
+                  ? `repost-${feedContext.id}`
+                  : `post-${post.id}`;
+
+                const feedItemId = isRepost
+                  ? `feed-repost-${feedContext.id}`
+                  : `post-${post.id}`;
+
+                const repostedByName = isRepost
+                  ? feedContext.profiles?.display_name ??
                     "Agoré user"
                   : "";
 
-              return (
-                <article
-                  id={feedItemId}
-                  key={feedItemKey}
-                  className="group relative overflow-visible rounded-[1.75rem] border border-[var(--border)] bg-[var(--surface)] transition hover:border-[var(--accent)]/30"
-                >
-                  {isRepost ? (
-                    <div className="px-5 pt-4 sm:px-6 sm:pt-5">
-                      <div className="flex items-center gap-2 text-xs text-[var(--muted)]">
-                        <Repeat2
-                          size={14}
-                          className="shrink-0 text-[var(--accent)]"
-                        />
-
-                        <span>Reposted by</span>
-
-                        {feedContext.profiles ? (
-                          <Link
-                            href={`/profile/${encodeURIComponent(
-                              feedContext.user_id,
-                            )}`}
-                            className="truncate font-semibold text-[var(--foreground)] transition hover:text-[var(--accent)]"
-                          >
-                            {repostedByName}
-                          </Link>
-                        ) : (
-                          <span className="truncate font-semibold text-[var(--foreground)]">
-                            {repostedByName}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  <div
-                    className={`px-5 sm:px-6 ${
-                      isRepost
-                        ? "pt-3"
-                        : "pt-5"
-                    }`}
+                return (
+                  <article
+                    id={feedItemId}
+                    key={feedItemKey}
+                    className="group relative overflow-visible rounded-[1.75rem] border border-[var(--border)] bg-[var(--surface)] transition hover:border-[var(--accent)]/30"
                   >
-                    <header className="flex items-start justify-between gap-4">
-                      <Link
-                        href={`/profile/${encodeURIComponent(
-                          post.author_id,
-                        )}`}
-                        className="flex min-w-0 items-center gap-3"
-                      >
-                        <AgoreAvatar
-                          avatarPath={
-                            post.profiles
-                              ?.avatar_path
-                          }
-                          name={authorName}
-                          className="h-11 w-11 transition group-hover:scale-[1.02]"
-                          textClassName="text-sm"
-                        />
+                    {isRepost ? (
+                      <div className="px-5 pt-4 sm:px-6 sm:pt-5">
+                        <div className="flex items-center gap-2 text-xs text-[var(--muted)]">
+                          <Repeat2
+                            size={14}
+                            className="shrink-0 text-[var(--accent)]"
+                          />
 
-                        <span className="min-w-0">
-                          <span className="block truncate text-sm font-semibold">
-                            {authorName}
-                          </span>
+                          <span>Reposted by</span>
 
-                          <span className="mt-0.5 block truncate text-xs text-[var(--muted)]">
-                            @{authorUsername}
-                          </span>
-                        </span>
-                      </Link>
-
-                      <div className="relative flex shrink-0 items-center gap-2">
-                        <time
-                          dateTime={post.created_at}
-                          className="hidden text-right text-xs text-[var(--muted)] sm:block"
-                        >
-                          {formatPostDate(
-                            post.created_at,
+                          {feedContext.profiles ? (
+                            <Link
+                              href={`/profile/${encodeURIComponent(
+                                feedContext.user_id,
+                              )}`}
+                              className="truncate font-semibold text-[var(--foreground)] transition hover:text-[var(--accent)]"
+                            >
+                              {repostedByName}
+                            </Link>
+                          ) : (
+                            <span className="truncate font-semibold text-[var(--foreground)]">
+                              {repostedByName}
+                            </span>
                           )}
-                        </time>
+                        </div>
+                      </div>
+                    ) : null}
 
-                        {!isOwner ? (
-                          <>
-                            <button
-                              type="button"
-                              aria-label="Post actions"
-                              aria-expanded={
-                                openPostMenuId ===
-                                post.id
-                              }
-                              onClick={() =>
-                                setOpenPostMenuId(
-                                  (current) =>
-                                    current ===
-                                    post.id
+                    <div
+                      className={`px-5 sm:px-6 ${
+                        isRepost ? "pt-3" : "pt-5"
+                      }`}
+                    >
+                      <header className="flex items-start justify-between gap-4">
+                        <Link
+                          href={`/profile/${encodeURIComponent(
+                            post.author_id,
+                          )}`}
+                          className="flex min-w-0 items-center gap-3"
+                        >
+                          <AgoreAvatar
+                            avatarPath={post.profiles?.avatar_path}
+                            name={authorName}
+                            className="h-11 w-11 transition group-hover:scale-[1.02]"
+                            textClassName="text-sm"
+                          />
+
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-semibold">
+                              {authorName}
+                            </span>
+
+                            <span className="mt-0.5 block truncate text-xs text-[var(--muted)]">
+                              @{authorUsername}
+                            </span>
+                          </span>
+                        </Link>
+
+                        <div className="relative flex shrink-0 items-center gap-2">
+                          <time
+                            dateTime={post.created_at}
+                            className="hidden text-right text-xs text-[var(--muted)] sm:block"
+                          >
+                            {formatPostDate(post.created_at)}
+                          </time>
+
+                          {!isOwner ? (
+                            <>
+                              <button
+                                type="button"
+                                aria-label="Post actions"
+                                aria-expanded={openPostMenuId === post.id}
+                                onClick={() =>
+                                  setOpenPostMenuId((current) =>
+                                    current === post.id
                                       ? null
                                       : post.id,
-                                )
-                              }
-                              className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--muted)] transition hover:bg-[var(--background)] hover:text-[var(--foreground)]"
-                            >
-                              {actionPostId ===
-                              post.id ? (
-                                <Loader2
-                                  size={16}
-                                  className="animate-spin"
-                                />
-                              ) : (
-                                <MoreHorizontal
-                                  size={17}
-                                />
-                              )}
-                            </button>
+                                  )
+                                }
+                                className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--muted)] transition hover:bg-[var(--background)] hover:text-[var(--foreground)]"
+                              >
+                                {actionPostId === post.id ? (
+                                  <Loader2
+                                    size={16}
+                                    className="animate-spin"
+                                  />
+                                ) : (
+                                  <MoreHorizontal size={17} />
+                                )}
+                              </button>
 
-                            {openPostMenuId ===
-                            post.id ? (
-                              <>
-                                <button
-                                  type="button"
-                                  aria-label="Close post actions"
-                                  className="fixed inset-0 z-10 cursor-default"
-                                  onClick={() =>
-                                    setOpenPostMenuId(
-                                      null,
-                                    )
-                                  }
-                                />
-
-                                <div className="absolute right-0 top-full z-20 mt-2 w-48 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-1.5 shadow-[0_12px_35px_rgba(0,0,0,0.12)]">
+                              {openPostMenuId === post.id ? (
+                                <>
                                   <button
                                     type="button"
+                                    aria-label="Close post actions"
+                                    className="fixed inset-0 z-10 cursor-default"
                                     onClick={() =>
-                                      void sharePost(
-                                        post,
-                                      )
+                                      setOpenPostMenuId(null)
                                     }
-                                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm transition hover:bg-[var(--background)]"
-                                  >
-                                    <Share2
-                                      size={15}
-                                    />
-                                    Share post
-                                  </button>
+                                  />
 
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      void reportPost(
-                                        post,
-                                      )
-                                    }
-                                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-[var(--danger)] transition hover:bg-[var(--danger-soft)]"
-                                  >
-                                    <FileText
-                                      size={15}
-                                    />
-                                    Report post
-                                  </button>
-                                </div>
-                              </>
-                            ) : null}
-                          </>
-                        ) : null}
-                      </div>
-                    </header>
+                                  <div className="absolute right-0 top-full z-20 mt-2 w-48 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-1.5 shadow-[0_12px_35px_rgba(0,0,0,0.12)]">
+                                    <button
+                                      type="button"
+                                      onClick={() => void sharePost(post)}
+                                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm transition hover:bg-[var(--background)]"
+                                    >
+                                      <Share2 size={15} />
+                                      Share post
+                                    </button>
 
-                    <Link
-                      href={postPath}
-                      aria-label={`Open post by ${authorName}`}
-                      className="mt-5 block rounded-[1rem] outline-none transition focus-visible:ring-4 focus-visible:ring-[var(--accent-soft)]"
-                    >
-                      <p className="whitespace-pre-wrap text-[15px] leading-7 text-[var(--foreground)] transition group-hover:text-[var(--accent)] sm:text-base sm:leading-7">
-                        {post.content}
-                      </p>
-                    </Link>
+                                    <button
+                                      type="button"
+                                      onClick={() => void reportPost(post)}
+                                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-[var(--danger)] transition hover:bg-[var(--danger-soft)]"
+                                    >
+                                      <FileText size={15} />
+                                      Report post
+                                    </button>
+                                  </div>
+                                </>
+                              ) : null}
+                            </>
+                          ) : null}
+                        </div>
+                      </header>
 
-                    <PostMedia media={post.post_media} />
-                  </div>
+                      <Link
+                        href={postPath}
+                        aria-label={`Open post by ${authorName}`}
+                        className="mt-5 block rounded-[1rem] outline-none transition focus-visible:ring-4 focus-visible:ring-[var(--accent-soft)]"
+                      >
+                        <p className="whitespace-pre-wrap text-[15px] leading-7 text-[var(--foreground)] transition group-hover:text-[var(--accent)] sm:text-base sm:leading-7">
+                          {post.content}
+                        </p>
+                      </Link>
 
-                  <div className="px-5 pb-2 sm:px-6">
-                    <PostInteractions
-                      postId={post.id}
-                      initialContent={post.content}
-                      isOwner={isOwner}
-                      onPostUpdated={
-                        handlePostUpdated
-                      }
-                      onPostDeleted={
-                        handlePostDeleted
-                      }
-                    />
-                  </div>
-
-                  {post.updated_at !==
-                  post.created_at ? (
-                    <div className="px-5 pb-4 sm:px-6">
-                      <p className="text-[11px] text-[var(--muted)]">
-                        Edited
-                      </p>
+                      <PostMedia media={post.post_media} />
                     </div>
-                  ) : null}
-                </article>
-              );
-            })}
-          </div>
-        )}
-      </section>
+
+                    <div className="px-5 pb-2 sm:px-6">
+                      <PostInteractions
+                        postId={post.id}
+                        initialContent={post.content}
+                        isOwner={isOwner}
+                        onPostUpdated={handlePostUpdated}
+                        onPostDeleted={handlePostDeleted}
+                      />
+                    </div>
+
+                    {post.updated_at !== post.created_at ? (
+                      <div className="px-5 pb-4 sm:px-6">
+                        <p className="text-[11px] text-[var(--muted)]">
+                          Edited
+                        </p>
+                      </div>
+                    ) : null}
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      ) : null}
     </div>
   );
 }
