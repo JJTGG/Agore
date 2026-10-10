@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 
 import AgoreAvatar from "@/components/agore-avatar";
+import UserIdentity from "@/components/user-identity";
 import { createClient } from "@/lib/supabase/browser";
 
 type ReactionType =
@@ -959,9 +960,13 @@ export default function PostInteractions({
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold">
-                  {profile?.display_name ?? "Agoré user"}
-                </p>
+                <UserIdentity
+                  userId={comment.author_id}
+                  displayName={profile?.display_name ?? "Agoré user"}
+                  className="w-full"
+                  nameClassName="min-w-0 truncate text-sm font-semibold"
+                  badgeSize={15}
+                />
 
                 <p className="mt-0.5 truncate text-[11px] text-[var(--muted)]">
                   @{profile?.username ?? "unknown"} ·{" "}
