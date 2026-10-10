@@ -17,6 +17,11 @@ import {
   UserRound,
 } from "lucide-react";
 
+import {
+  useUnreadIndicators,
+  UnreadBadge,
+} from "@/components/unread-indicators";
+
 type AgoreDesktopNavProps = {
   profilePath: string;
 };
@@ -25,6 +30,11 @@ export default function AgoreDesktopNav({
   profilePath,
 }: AgoreDesktopNavProps) {
   const pathname = usePathname();
+
+  const {
+    hasUnreadMessages,
+    unreadNotifications,
+  } = useUnreadIndicators();
 
   const [quiet, setQuiet] = useState(false);
   const lastScrollY = useRef(0);
@@ -51,28 +61,18 @@ export default function AgoreDesktopNav({
     }
 
     function handleScroll() {
-      if (ticking.current) {
-        return;
-      }
+      if (ticking.current) return;
 
       ticking.current = true;
-
-      window.requestAnimationFrame(
-        updateNavigationState,
-      );
+      window.requestAnimationFrame(updateNavigationState);
     }
 
-    window.addEventListener(
-      "scroll",
-      handleScroll,
-      { passive: true },
-    );
+    window.addEventListener("scroll", handleScroll, {
+      passive: true,
+    });
 
     return () => {
-      window.removeEventListener(
-        "scroll",
-        handleScroll,
-      );
+      window.removeEventListener("scroll", handleScroll);
     };
   }, []);
 
@@ -114,9 +114,7 @@ export default function AgoreDesktopNav({
     >
       <Link
         href="/home"
-        className={getItemClass(
-          isActiveRoute("/home"),
-        )}
+        className={getItemClass(isActiveRoute("/home"))}
         aria-current={
           isActiveRoute("/home") ? "page" : undefined
         }
@@ -165,8 +163,19 @@ export default function AgoreDesktopNav({
             ? "page"
             : undefined
         }
+        aria-label={
+          hasUnreadMessages
+            ? "Messages, unread messages"
+            : "Messages"
+        }
       >
-        <MessageCircle size={17} />
+        <span className="relative inline-flex">
+          <MessageCircle size={17} />
+          <UnreadBadge
+            count={hasUnreadMessages ? 1 : 0}
+            dotOnly
+          />
+        </span>
         Messages
       </Link>
 
@@ -180,8 +189,16 @@ export default function AgoreDesktopNav({
             ? "page"
             : undefined
         }
+        aria-label={
+          unreadNotifications > 0
+            ? `Notifications, ${unreadNotifications} unread`
+            : "Notifications"
+        }
       >
-        <Bell size={17} />
+        <span className="relative inline-flex">
+          <Bell size={17} />
+          <UnreadBadge count={unreadNotifications} />
+        </span>
         Notifications
       </Link>
 
