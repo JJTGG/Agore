@@ -1,69 +1,7 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
-import { consumeInviteForUser } from "@/lib/auth/invite";
 
-function redirectToAuth(requestUrl: URL, error: string) {
-  return NextResponse.redirect(
-    new URL(`/auth?error=${encodeURIComponent(error)}`, requestUrl),
-  );
-}
-
-export async function GET(request: Request) {
-  const requestUrl = new URL(request.url);
-  const code = requestUrl.searchParams.get("code");
-  const inviteFromLink = requestUrl.searchParams.get("invite");
-
-  if (!code) {
-    return redirectToAuth(requestUrl, "verification");
-  }
-
-  const supabase = await createClient();
-
-  const { error: exchangeError } =
-    await supabase.auth.exchangeCodeForSession(code);
-
-  if (exchangeError) {
-    return redirectToAuth(requestUrl, "verification");
-  }
-
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
-
-  if (userError || !user || !user.email) {
-    await supabase.auth.signOut();
-    return redirectToAuth(requestUrl, "verification");
-  }
-
-  const cookieStore = await cookies();
-  const inviteFromCookie = cookieStore.get(
-    "agore_invite_assertion",
-  )?.value;
-
-  const assertion = inviteFromLink ?? inviteFromCookie;
-
-  if (!assertion) {
-    await supabase.auth.signOut();
-    return redirectToAuth(requestUrl, "invite");
-  }
-
-  const inviteResult = await consumeInviteForUser(
-    user.id,
-    user.email,
-    assertion,
-  );
-
-  if (!inviteResult.ok) {
-    await supabase.auth.signOut();
-    return redirectToAuth(requestUrl, "invite");
-  }
-
-  const response = NextResponse.redirect(
-    new URL("/home", requestUrl),
-  );
-
+function clearLegacyInviteCookie(response: NextResponse) {
   response.cookies.set({
     name: "agore_invite_assertion",
     value: "",
@@ -75,4 +13,74 @@ export async function GET(request: Request) {
   });
 
   return response;
+}
+
+function redirectToAuth(requestUrl: URL, error: string) {
+  const destination = new URL("/auth", requestUrl.origin);
+  destination.searchParams.set("error", error);
+
+  return clearLegacyInviteCookie(
+    NextResponse.redirect(destination),
+  );
+}
+
+function getSafeNextPath(requestUrl: URL) {
+  const next = requestUrl.searchParams.get("next");
+
+  const allowedPaths = [
+    "/home",
+    "/auth/update-password",
+    "/onboarding",
+  ];
+
+  return next && allowedPaths.includes(next)
+    ? next
+    : "/home";
+}
+
+export async function GET(request: Request) {
+  const requestUrl = new URL(request.url);
+
+  if (requestUrl.searchParams.has("error")) {
+    return redirectToAuth(requestUrl, "oauth");
+  }
+
+  const code = requestUrl.searchParams.get("code");
+
+  if (!code) {
+    return redirectToAuth(requestUrl, "verification");
+  }
+
+  const supabase = await createClient();
+
+  const { error: exchangeError } =
+    await supabase.auth.exchangeCodeForSession(code);
+
+  if (exchangeError) {
+    console.error(
+      "Agore authentication callback failed:",
+      exchangeError.message,
+    );
+
+    return redirectToAuth(requestUrl, "verification");
+  }
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    await supabase.auth.signOut();
+    return redirectToAuth(requestUrl, "verification");
+  }
+
+  const destination = new URL(
+    getSafeNextPath(requestUrl),
+    requestUrl.origin,
+  );
+
+  return clearLegacyInviteCookie(
+    NextResponse.redirect(destination),
+  );
 }
