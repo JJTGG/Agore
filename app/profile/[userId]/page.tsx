@@ -225,6 +225,7 @@ export default function ProfilePage() {
       return;
     }
 
+    const targetProfileId = profile.id;
     const wasFollowing = profile.is_following;
 
     setActionLoading("follow");
@@ -232,14 +233,19 @@ export default function ProfilePage() {
 
     try {
       const response = await fetch(
-        `/api/users/${encodeURIComponent(profile.id)}/follow`,
+        `/api/users/${encodeURIComponent(targetProfileId)}/follow`,
         {
           method: wasFollowing ? "DELETE" : "POST",
         },
       );
 
-      const data =
-        response.status === 204 ? null : await response.json();
+      const data = (await response.json().catch(() => null)) as
+        | {
+            error?: string;
+            following?: boolean;
+            changed?: boolean;
+          }
+        | null;
 
       if (!response.ok) {
         setError(
@@ -248,17 +254,45 @@ export default function ProfilePage() {
         return;
       }
 
+      const nextFollowing =
+        typeof data?.following === "boolean"
+          ? data.following
+          : !wasFollowing;
+
       setProfile((current) =>
         current
           ? {
               ...current,
-              is_following: !wasFollowing,
-              follower_count: wasFollowing
-                ? Math.max(0, current.follower_count - 1)
-                : current.follower_count + 1,
+              is_following: nextFollowing,
+              follower_count:
+                data?.changed === true
+                  ? nextFollowing
+                    ? current.follower_count + 1
+                    : Math.max(0, current.follower_count - 1)
+                  : current.follower_count,
             }
           : current,
       );
+
+      // Reconcile the displayed state with the latest server values.
+      // This fetch is silent and does not trigger the page loading skeleton.
+      try {
+        const profileResponse = await fetch(
+          `/api/users/${encodeURIComponent(targetProfileId)}`,
+          { cache: "no-store" },
+        );
+
+        const profileData = await profileResponse.json();
+
+        if (
+          profileResponse.ok &&
+          profileData.profile?.id === targetProfileId
+        ) {
+          setProfile(profileData.profile as Profile);
+        }
+      } catch {
+        // Retain the successful follow API result if reconciliation fails.
+      }
     } catch {
       setError("Unable to update follow status.");
     } finally {
