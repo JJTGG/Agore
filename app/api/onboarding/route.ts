@@ -71,10 +71,7 @@ export async function POST(request: Request) {
       );
     }
 
-    if (
-      !authoritativeUser.email_confirmed_at &&
-      process.env.NEXT_PUBLIC_REQUIRE_EMAIL_VERIFICATION === "true"
-    ) {
+    if (!authoritativeUser.email_confirmed_at) {
       return NextResponse.json(
         {
           error:
