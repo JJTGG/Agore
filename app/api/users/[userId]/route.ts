@@ -1,4 +1,3 @@
-
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -232,6 +231,8 @@ export async function GET(
       username,
       bio,
       avatar_path,
+      location,
+      profile_links,
       account_type,
       account_status,
       created_at
