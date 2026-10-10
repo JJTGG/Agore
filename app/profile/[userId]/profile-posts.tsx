@@ -1,4 +1,3 @@
-
 "use client";
 
 import {
@@ -62,6 +61,10 @@ type ProfilePostsProps = {
 type PostsResponse = {
   posts?: ProfilePost[];
   error?: string;
+  total?: number;
+  limit?: number;
+  offset?: number;
+  has_more?: boolean;
 };
 
 type RepostsResponse = {
@@ -80,6 +83,7 @@ type ProfileTab =
   | "reposts"
   | "activity";
 
+const PROFILE_POSTS_PAGE_SIZE = 50;
 const supabase = createClient();
 
 function formatPostDate(value: string) {
@@ -100,6 +104,21 @@ function normalizeMediaPosts(
   }
 
   return media.map((post) => ({
+    ...post,
+    post_media: Array.isArray(post.post_media)
+      ? post.post_media
+      : [],
+  }));
+}
+
+function normalizeProfilePosts(
+  posts: ProfilePost[] | undefined,
+): ProfilePost[] {
+  if (!Array.isArray(posts)) {
+    return [];
+  }
+
+  return posts.map((post) => ({
     ...post,
     post_media: Array.isArray(post.post_media)
       ? post.post_media
@@ -311,9 +330,14 @@ export default function ProfilePosts({
   const [loading, setLoading] = useState(true);
   const [repostsLoading, setRepostsLoading] = useState(false);
   const [mediaLoading, setMediaLoading] = useState(false);
+  const [morePostsLoading, setMorePostsLoading] = useState(false);
+
+  const [postsHasMore, setPostsHasMore] = useState(false);
+  const [postsNextOffset, setPostsNextOffset] = useState(0);
 
   const [error, setError] = useState("");
   const [mediaError, setMediaError] = useState("");
+  const [morePostsError, setMorePostsError] = useState("");
 
   const repostsLoadedForUser = useRef<string | null>(null);
   const mediaLoadedForUser = useRef<string | null>(null);
@@ -330,8 +354,12 @@ export default function ProfilePosts({
     setMediaPosts([]);
     setError("");
     setMediaError("");
+    setMorePostsError("");
+    setPostsHasMore(false);
+    setPostsNextOffset(0);
     setRepostsLoading(false);
     setMediaLoading(false);
+    setMorePostsLoading(false);
   }, [userId]);
 
   const loadViewer = useCallback(async () => {
@@ -348,12 +376,16 @@ export default function ProfilePosts({
     }
 
     const requestUserId = userId;
+
     setLoading(true);
     setError("");
+    setMorePostsError("");
+    setPostsHasMore(false);
+    setPostsNextOffset(0);
 
     try {
       const response = await fetch(
-        `/api/users/${encodeURIComponent(requestUserId)}/posts?limit=50`,
+        `/api/users/${encodeURIComponent(requestUserId)}/posts?limit=${PROFILE_POSTS_PAGE_SIZE}&offset=0`,
         {
           method: "GET",
           cache: "no-store",
@@ -370,15 +402,15 @@ export default function ProfilePosts({
         throw new Error(data.error ?? "Unable to load posts.");
       }
 
-      setPosts(
-        Array.isArray(data.posts)
-          ? data.posts.map((post) => ({
-              ...post,
-              post_media: Array.isArray(post.post_media)
-                ? post.post_media
-                : [],
-            }))
-          : [],
+      const normalizedPosts = normalizeProfilePosts(data.posts);
+
+      setPosts(normalizedPosts);
+      setPostsNextOffset(
+        (data.offset ?? 0) + normalizedPosts.length,
+      );
+      setPostsHasMore(
+        data.has_more ??
+          (normalizedPosts.length >= PROFILE_POSTS_PAGE_SIZE),
       );
     } catch (requestError) {
       if (currentUserIdRef.current !== requestUserId) {
@@ -391,12 +423,92 @@ export default function ProfilePosts({
           : "Unable to load posts.",
       );
       setPosts([]);
+      setPostsHasMore(false);
+      setPostsNextOffset(0);
     } finally {
       if (currentUserIdRef.current === requestUserId) {
         setLoading(false);
       }
     }
   }, [userId]);
+
+  const loadMorePosts = useCallback(async () => {
+    if (
+      !userId ||
+      !postsHasMore ||
+      morePostsLoading
+    ) {
+      return;
+    }
+
+    const requestUserId = userId;
+    const requestOffset = postsNextOffset;
+
+    setMorePostsLoading(true);
+    setMorePostsError("");
+
+    try {
+      const response = await fetch(
+        `/api/users/${encodeURIComponent(requestUserId)}/posts?limit=${PROFILE_POSTS_PAGE_SIZE}&offset=${requestOffset}`,
+        {
+          method: "GET",
+          cache: "no-store",
+        },
+      );
+
+      const data = (await response.json()) as PostsResponse;
+
+      if (currentUserIdRef.current !== requestUserId) {
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Unable to load more posts.");
+      }
+
+      const nextPosts = normalizeProfilePosts(data.posts);
+
+      setPosts((currentPosts) => {
+        const existingIds = new Set(
+          currentPosts.map((post) => post.id),
+        );
+
+        const uniqueNextPosts = nextPosts.filter(
+          (post) => !existingIds.has(post.id),
+        );
+
+        return [...currentPosts, ...uniqueNextPosts];
+      });
+
+      setPostsNextOffset(
+        (data.offset ?? requestOffset) + nextPosts.length,
+      );
+
+      setPostsHasMore(
+        data.has_more ??
+          (nextPosts.length >= PROFILE_POSTS_PAGE_SIZE),
+      );
+    } catch (requestError) {
+      if (currentUserIdRef.current !== requestUserId) {
+        return;
+      }
+
+      setMorePostsError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Unable to load more posts.",
+      );
+    } finally {
+      if (currentUserIdRef.current === requestUserId) {
+        setMorePostsLoading(false);
+      }
+    }
+  }, [
+    userId,
+    postsHasMore,
+    morePostsLoading,
+    postsNextOffset,
+  ]);
 
   const loadReposts = useCallback(async () => {
     if (
@@ -570,6 +682,10 @@ export default function ProfilePosts({
   }
 
   function handlePostDeleted(postId: string) {
+    const wasInProfilePosts = posts.some(
+      (post) => post.id === postId,
+    );
+
     setPosts((currentPosts) =>
       currentPosts.filter((post) => post.id !== postId),
     );
@@ -582,6 +698,12 @@ export default function ProfilePosts({
       currentMediaPosts.filter((post) => post.id !== postId),
     );
 
+    if (wasInProfilePosts) {
+      setPostsNextOffset((currentOffset) =>
+        Math.max(0, currentOffset - 1),
+      );
+    }
+
     mediaLoadedForUser.current = null;
     setMediaError("");
   }
@@ -589,6 +711,7 @@ export default function ProfilePosts({
   function selectTab(tab: ProfileTab) {
     setError("");
     setMediaError("");
+    setMorePostsError("");
     setActiveTab(tab);
   }
 
@@ -829,6 +952,34 @@ export default function ProfilePosts({
                 ))}
           </div>
         )}
+
+        {activeTab === "posts" && postsHasMore ? (
+          <div className="border-t border-[var(--border)] px-4 py-5 text-center sm:px-6">
+            {morePostsError ? (
+              <p className="mb-3 text-sm text-[var(--danger)]">
+                {morePostsError}
+              </p>
+            ) : null}
+
+            <button
+              type="button"
+              onClick={() => void loadMorePosts()}
+              disabled={morePostsLoading}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-full border border-[var(--border)] px-5 py-2 text-sm font-semibold text-[var(--foreground)] transition hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {morePostsLoading ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  Loading posts…
+                </>
+              ) : morePostsError ? (
+                "Retry loading posts"
+              ) : (
+                "Load more posts"
+              )}
+            </button>
+          </div>
+        ) : null}
 
         {error ? (
           <div className="border-t border-[var(--border)] px-4 py-4 sm:px-6">
