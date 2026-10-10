@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 
 import AgoreAvatar from "@/components/agore-avatar";
+import UserIdentity from "@/components/user-identity";
 import PostMedia, {
   type PostMediaItem,
 } from "@/components/post-media";
@@ -231,9 +232,13 @@ function PersonCard({
             onClick={onOpen}
             className="block max-w-full text-left"
           >
-            <p className="truncate text-sm font-semibold hover:text-[var(--accent)]">
-              {person.display_name}
-            </p>
+            <UserIdentity
+              userId={person.id}
+              displayName={person.display_name}
+              className="w-full"
+              nameClassName="min-w-0 truncate text-sm font-semibold"
+              badgeSize={15}
+            />
 
             <p className="mt-0.5 truncate text-xs text-[var(--muted)]">
               @{person.username}
@@ -326,9 +331,14 @@ function PostCard({
               <button
                 type="button"
                 onClick={() => onOpenProfile(author.id)}
-                className="text-sm font-semibold hover:text-[var(--accent)]"
+                className="max-w-full text-left hover:text-[var(--accent)]"
               >
-                {author.display_name}
+                <UserIdentity
+                  userId={author.id}
+                  displayName={author.display_name}
+                  nameClassName="min-w-0 truncate text-sm font-semibold"
+                  badgeSize={15}
+                />
               </button>
             ) : (
               <span className="text-sm font-semibold">
@@ -342,7 +352,10 @@ function PostCard({
               </span>
             ) : null}
 
-            <span aria-hidden="true" className="text-xs text-[var(--muted)]">
+            <span
+              aria-hidden="true"
+              className="text-xs text-[var(--muted)]"
+            >
               ·
             </span>
 
