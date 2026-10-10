@@ -164,7 +164,6 @@ export default function ProfilePage() {
       }
 
       const loadedProfile = data.profile as Profile;
-
       setProfile(loadedProfile);
 
       const {
@@ -396,6 +395,7 @@ export default function ProfilePage() {
       return;
     }
 
+    setMoreOpen(false);
     setError("");
     setShareFeedback("");
     setShareFallbackUrl("");
@@ -415,7 +415,6 @@ export default function ProfilePage() {
         setShareFeedback("Profile shared.");
         return;
       } catch (shareError) {
-        // Closing the system share sheet is not an error.
         if (
           shareError instanceof Error &&
           shareError.name === "AbortError"
@@ -518,12 +517,89 @@ export default function ProfilePage() {
             Back
           </button>
 
-          <Link
-            href="/home"
-            className="rounded-full px-3 py-2 text-sm font-semibold tracking-[0.14em] text-[var(--accent)] transition hover:bg-[var(--accent-soft)]"
-          >
-            AGORÉ
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/home"
+              className="rounded-full px-3 py-2 text-sm font-semibold tracking-[0.14em] text-[var(--accent)] transition hover:bg-[var(--accent-soft)]"
+            >
+              AGORÉ
+            </Link>
+
+            {profile && (!profile.is_blocked || isOwner) ? (
+              <div ref={moreMenuRef} className="relative">
+                <button
+                  type="button"
+                  onClick={() => setMoreOpen((current) => !current)}
+                  aria-label="More profile options"
+                  aria-haspopup="menu"
+                  aria-expanded={moreOpen}
+                  aria-controls="profile-more-menu"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--muted-strong)] transition hover:border-[var(--accent)]/50 hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)]"
+                >
+                  <MoreHorizontal size={18} />
+                </button>
+
+                {moreOpen ? (
+                  <div
+                    id="profile-more-menu"
+                    role="menu"
+                    aria-label="More profile options"
+                    className="absolute right-0 top-[calc(100%+0.5rem)] z-30 w-48 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-1.5 shadow-xl"
+                  >
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => void shareProfile()}
+                      className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition hover:bg-[var(--surface-muted)]"
+                    >
+                      <Share2 size={16} />
+                      Share profile
+                    </button>
+
+                    {isOwner ? (
+                      <Link
+                        href="/settings"
+                        role="menuitem"
+                        onClick={() => setMoreOpen(false)}
+                        className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition hover:bg-[var(--surface-muted)]"
+                      >
+                        <Settings size={16} />
+                        Settings
+                      </Link>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => void toggleBlock()}
+                          disabled={actionLoading !== null || messageLoading}
+                          className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition hover:bg-[var(--danger-soft)] hover:text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {actionLoading === "block" ? (
+                            <Loader2 size={16} className="animate-spin" />
+                          ) : (
+                            <Ban size={16} />
+                          )}
+                          Block
+                        </button>
+
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={openReport}
+                          disabled={actionLoading !== null || messageLoading}
+                          className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-[var(--muted-strong)] transition hover:bg-[var(--danger-soft)] hover:text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <Flag size={16} />
+                          Report
+                        </button>
+                      </>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
         </header>
 
         {loading ? (
@@ -610,15 +686,7 @@ export default function ProfilePage() {
                 )}
 
                 <div className="mt-5 flex flex-wrap items-center gap-2">
-                  {isOwner ? (
-                    <Link
-                      href={`/profile/edit?userId=${encodeURIComponent(profile.id)}`}
-                      className="inline-flex min-h-10 items-center justify-center gap-2 rounded-full bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--accent-strong)]"
-                    >
-                      <Edit3 size={15} />
-                      Edit profile
-                    </Link>
-                  ) : profile.is_blocked ? (
+                  {!isOwner && profile.is_blocked ? (
                     <button
                       type="button"
                       onClick={() => void toggleBlock()}
@@ -632,7 +700,9 @@ export default function ProfilePage() {
                       )}
                       Unblock
                     </button>
-                  ) : (
+                  ) : null}
+
+                  {!isOwner && !profile.is_blocked ? (
                     <>
                       <button
                         type="button"
@@ -669,80 +739,6 @@ export default function ProfilePage() {
                         {messageLoading ? "Opening…" : "Message"}
                       </button>
                     </>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => void shareProfile()}
-                    className="inline-flex min-h-10 items-center justify-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm font-semibold transition hover:border-[var(--accent)]/50 hover:bg-[var(--surface-muted)]"
-                  >
-                    <Share2 size={15} />
-                    Share profile
-                  </button>
-
-                  {(!profile.is_blocked || isOwner) ? (
-                    <div ref={moreMenuRef} className="relative">
-                      <button
-                        type="button"
-                        onClick={() => setMoreOpen((current) => !current)}
-                        aria-label="More profile options"
-                        aria-haspopup="menu"
-                        aria-expanded={moreOpen}
-                        aria-controls="profile-more-menu"
-                        className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--muted-strong)] transition hover:border-[var(--accent)]/50 hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)]"
-                      >
-                        <MoreHorizontal size={18} />
-                      </button>
-
-                      {moreOpen ? (
-                        <div
-                          id="profile-more-menu"
-                          role="menu"
-                          aria-label="More profile options"
-                          className="absolute right-0 top-[calc(100%+0.5rem)] z-30 w-48 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-1.5 shadow-xl"
-                        >
-                          {isOwner ? (
-                            <Link
-                              href="/settings"
-                              role="menuitem"
-                              onClick={() => setMoreOpen(false)}
-                              className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition hover:bg-[var(--surface-muted)]"
-                            >
-                              <Settings size={16} />
-                              Settings
-                            </Link>
-                          ) : (
-                            <>
-                              <button
-                                type="button"
-                                role="menuitem"
-                                onClick={() => void toggleBlock()}
-                                disabled={actionLoading !== null || messageLoading}
-                                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition hover:bg-[var(--danger-soft)] hover:text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                {actionLoading === "block" ? (
-                                  <Loader2 size={16} className="animate-spin" />
-                                ) : (
-                                  <Ban size={16} />
-                                )}
-                                Block
-                              </button>
-
-                              <button
-                                type="button"
-                                role="menuitem"
-                                onClick={openReport}
-                                disabled={actionLoading !== null || messageLoading}
-                                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-[var(--muted-strong)] transition hover:bg-[var(--danger-soft)] hover:text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                <Flag size={16} />
-                                Report
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      ) : null}
-                    </div>
                   ) : null}
                 </div>
 
