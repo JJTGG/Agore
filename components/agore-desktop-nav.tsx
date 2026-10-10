@@ -6,11 +6,13 @@ import {
   useState,
 } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   Bell,
   Compass,
   Home,
   MessageCircle,
+  Plus,
   Settings,
   UserRound,
 } from "lucide-react";
@@ -22,6 +24,8 @@ type AgoreDesktopNavProps = {
 export default function AgoreDesktopNav({
   profilePath,
 }: AgoreDesktopNavProps) {
+  const pathname = usePathname();
+
   const [quiet, setQuiet] = useState(false);
   const lastScrollY = useRef(0);
   const ticking = useRef(false);
@@ -76,8 +80,22 @@ export default function AgoreDesktopNav({
     setQuiet(false);
   }
 
+  function isActiveRoute(href: string) {
+    return (
+      pathname === href ||
+      pathname.startsWith(`${href}/`)
+    );
+  }
+
   const itemClass =
     "flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-medium text-[var(--muted)] transition hover:bg-[var(--surface)] hover:text-[var(--foreground)]";
+
+  const activeItemClass =
+    "flex items-center gap-3 rounded-2xl bg-[var(--foreground)] px-3.5 py-3 text-sm font-semibold text-[var(--background)] transition hover:bg-[var(--accent)] hover:text-white";
+
+  function getItemClass(active: boolean) {
+    return active ? activeItemClass : itemClass;
+  }
 
   return (
     <nav
@@ -96,8 +114,12 @@ export default function AgoreDesktopNav({
     >
       <Link
         href="/home"
-        className="flex items-center gap-3 rounded-2xl bg-[var(--foreground)] px-3.5 py-3 text-sm font-semibold text-[var(--background)] transition hover:bg-[var(--accent)] hover:text-white"
-        aria-current="page"
+        className={getItemClass(
+          isActiveRoute("/home"),
+        )}
+        aria-current={
+          isActiveRoute("/home") ? "page" : undefined
+        }
       >
         <Home size={17} />
         Home
@@ -105,15 +127,44 @@ export default function AgoreDesktopNav({
 
       <Link
         href="/app/explore"
-        className={itemClass}
+        className={getItemClass(
+          isActiveRoute("/app/explore"),
+        )}
+        aria-current={
+          isActiveRoute("/app/explore")
+            ? "page"
+            : undefined
+        }
       >
         <Compass size={17} />
         Explore
       </Link>
 
       <Link
+        href="/create"
+        className={getItemClass(
+          isActiveRoute("/create"),
+        )}
+        aria-current={
+          isActiveRoute("/create")
+            ? "page"
+            : undefined
+        }
+      >
+        <Plus size={17} />
+        Create
+      </Link>
+
+      <Link
         href="/messages"
-        className={itemClass}
+        className={getItemClass(
+          isActiveRoute("/messages"),
+        )}
+        aria-current={
+          isActiveRoute("/messages")
+            ? "page"
+            : undefined
+        }
       >
         <MessageCircle size={17} />
         Messages
@@ -121,7 +172,14 @@ export default function AgoreDesktopNav({
 
       <Link
         href="/notifications"
-        className={itemClass}
+        className={getItemClass(
+          isActiveRoute("/notifications"),
+        )}
+        aria-current={
+          isActiveRoute("/notifications")
+            ? "page"
+            : undefined
+        }
       >
         <Bell size={17} />
         Notifications
@@ -129,7 +187,14 @@ export default function AgoreDesktopNav({
 
       <Link
         href={profilePath}
-        className={itemClass}
+        className={getItemClass(
+          isActiveRoute(profilePath),
+        )}
+        aria-current={
+          isActiveRoute(profilePath)
+            ? "page"
+            : undefined
+        }
       >
         <UserRound size={17} />
         Profile
@@ -137,7 +202,14 @@ export default function AgoreDesktopNav({
 
       <Link
         href="/settings"
-        className={itemClass}
+        className={getItemClass(
+          isActiveRoute("/settings"),
+        )}
+        aria-current={
+          isActiveRoute("/settings")
+            ? "page"
+            : undefined
+        }
       >
         <Settings size={17} />
         Settings
