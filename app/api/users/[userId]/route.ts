@@ -1,3 +1,4 @@
+
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -79,8 +80,6 @@ function getActiveVerificationKind(
     return null;
   }
 
-  // Legacy "official" records are temporarily mapped to the
-  // explicit Agoré-only value during the database migration.
   if (
     (grant.verification_kind === "agore_official" ||
       grant.verification_kind === "official") &&
@@ -119,12 +118,8 @@ export async function GET(
 
   if (userError || !user) {
     return NextResponse.json(
-      {
-        error: "Authentication required.",
-      },
-      {
-        status: 401,
-      },
+      { error: "Authentication required." },
+      { status: 401 },
     );
   }
 
@@ -133,12 +128,8 @@ export async function GET(
 
   if (!parsedUserId.success) {
     return NextResponse.json(
-      {
-        error: "Invalid user ID.",
-      },
-      {
-        status: 400,
-      },
+      { error: "Invalid user ID." },
+      { status: 400 },
     );
   }
 
@@ -183,12 +174,8 @@ export async function GET(
     );
 
     return NextResponse.json(
-      {
-        error: "Unable to load the profile relationships.",
-      },
-      {
-        status: 500,
-      },
+      { error: "Unable to load the profile relationships." },
+      { status: 500 },
     );
   }
 
@@ -211,12 +198,8 @@ export async function GET(
 
   if (targetBlockedViewer) {
     return NextResponse.json(
-      {
-        error: "User not found.",
-      },
-      {
-        status: 404,
-      },
+      { error: "User not found." },
+      { status: 404 },
     );
   }
 
@@ -247,12 +230,8 @@ export async function GET(
     );
 
     return NextResponse.json(
-      {
-        error: "Unable to load the profile.",
-      },
-      {
-        status: 500,
-      },
+      { error: "Unable to load the profile." },
+      { status: 500 },
     );
   }
 
@@ -261,17 +240,11 @@ export async function GET(
     profile.account_status !== "active"
   ) {
     return NextResponse.json(
-      {
-        error: "User not found.",
-      },
-      {
-        status: 404,
-      },
+      { error: "User not found." },
+      { status: 404 },
     );
   }
 
-  // Verification records and internal notes remain server-only.
-  // Never return internal_note or administrative fields.
   const {
     data: verificationGrantData,
     error: verificationError,
@@ -290,12 +263,8 @@ export async function GET(
     );
 
     return NextResponse.json(
-      {
-        error: "Unable to load verification status.",
-      },
-      {
-        status: 500,
-      },
+      { error: "Unable to load verification status." },
+      { status: 500 },
     );
   }
 
@@ -319,12 +288,8 @@ export async function GET(
 
   const connectionIds = [
     ...new Set([
-      ...followerRows.map(
-        (row) => row.follower_id,
-      ),
-      ...followingRows.map(
-        (row) => row.following_id,
-      ),
+      ...followerRows.map((row) => row.follower_id),
+      ...followingRows.map((row) => row.following_id),
     ]),
   ];
 
@@ -347,12 +312,8 @@ export async function GET(
       );
 
       return NextResponse.json(
-        {
-          error: "Unable to load the profile relationships.",
-        },
-        {
-          status: 500,
-        },
+        { error: "Unable to load the profile relationships." },
+        { status: 500 },
       );
     }
 
@@ -363,25 +324,53 @@ export async function GET(
     );
   }
 
-  const followerCount =
-    viewerBlockedTarget
-      ? 0
-      : countVisibleConnections(
-          followerRows,
-          blockedConnectionIds,
-          activeConnectionIds,
-          "followers",
-        );
+  const followerCount = viewerBlockedTarget
+    ? 0
+    : countVisibleConnections(
+        followerRows,
+        blockedConnectionIds,
+        activeConnectionIds,
+        "followers",
+      );
 
-  const followingCount =
-    viewerBlockedTarget
-      ? 0
-      : countVisibleConnections(
-          followingRows,
-          blockedConnectionIds,
-          activeConnectionIds,
-          "following",
-        );
+  const followingCount = viewerBlockedTarget
+    ? 0
+    : countVisibleConnections(
+        followingRows,
+        blockedConnectionIds,
+        activeConnectionIds,
+        "following",
+      );
+
+  let postCount = 0;
+
+  if (!viewerBlockedTarget) {
+    const {
+      count,
+      error: postCountError,
+    } = await admin
+      .from("posts")
+      .select("id", {
+        count: "exact",
+        head: true,
+      })
+      .eq("author_id", targetUserId)
+      .is("deleted_at", null);
+
+    if (postCountError) {
+      console.error(
+        "Failed to count Agore profile posts:",
+        postCountError,
+      );
+
+      return NextResponse.json(
+        { error: "Unable to load the profile post count." },
+        { status: 500 },
+      );
+    }
+
+    postCount = count ?? 0;
+  }
 
   let isFollowing = false;
 
@@ -406,6 +395,7 @@ export async function GET(
       is_self: targetUserId === user.id,
       is_following: isFollowing,
       is_blocked: viewerBlockedTarget,
+      post_count: postCount,
       follower_count: followerCount,
       following_count: followingCount,
     },
