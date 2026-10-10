@@ -226,7 +226,9 @@ export async function POST(_: Request, context: RouteContext) {
     );
   }
 
-  if (follow) {
+  const changed = Boolean(follow);
+
+  if (changed) {
     await createNotification({
       recipientId: targetUserId,
       actorId: user.id,
@@ -237,6 +239,7 @@ export async function POST(_: Request, context: RouteContext) {
 
   return NextResponse.json({
     following: true,
+    changed,
     follow: follow ?? null,
   });
 }
@@ -269,11 +272,13 @@ export async function DELETE(_: Request, context: RouteContext) {
     );
   }
 
-  const { error: deleteError } = await supabase
+  const { data: deletedFollow, error: deleteError } = await supabase
     .from("follows")
     .delete()
     .eq("follower_id", user.id)
-    .eq("following_id", targetUserId);
+    .eq("following_id", targetUserId)
+    .select("follower_id")
+    .maybeSingle();
 
   if (deleteError) {
     console.error(
@@ -287,5 +292,8 @@ export async function DELETE(_: Request, context: RouteContext) {
     );
   }
 
-  return new NextResponse(null, { status: 204 });
+  return NextResponse.json({
+    following: false,
+    changed: Boolean(deletedFollow),
+  });
 }
