@@ -3,11 +3,16 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { createClient } from "@/lib/supabase/server";
 
+const appName = "Agoré";
+const appDescription =
+  "A place to gather, connect, communicate, and share.";
+const socialImage = "/opengraph-image.png";
+
 export const metadata: Metadata = {
-  applicationName: "Agoré",
-  title: "Agoré",
-  description:
-    "A place to gather, connect, communicate, and share.",
+  metadataBase: new URL("https://agore.vercel.app"),
+  applicationName: appName,
+  title: appName,
+  description: appDescription,
   icons: {
     icon: [
       {
@@ -21,6 +26,31 @@ export const metadata: Metadata = {
       },
     ],
     shortcut: ["/agore-favicon.ico"],
+  },
+  openGraph: {
+    type: "website",
+    siteName: appName,
+    title: appName,
+    description: appDescription,
+    images: [
+      {
+        url: socialImage,
+        width: 1200,
+        height: 630,
+        alt: "Agoré — A place to gather, connect, communicate, and share.",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: appName,
+    description: appDescription,
+    images: [
+      {
+        url: socialImage,
+        alt: "Agoré — A place to gather, connect, communicate, and share.",
+      },
+    ],
   },
 };
 
