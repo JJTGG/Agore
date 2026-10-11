@@ -26,6 +26,13 @@ export const metadata: Metadata = {
       },
     ],
     shortcut: ["/agore-favicon.ico"],
+    apple: [
+      {
+        url: "/agore-apple-touch-icon.png",
+        sizes: "180x180",
+        type: "image/png",
+      },
+    ],
   },
   openGraph: {
     type: "website",
