@@ -1,3 +1,4 @@
+
 "use client";
 
 import Link from "next/link";
@@ -106,6 +107,9 @@ function getNotificationActionText(
 
     case "repost":
       return "reposted your post.";
+
+    case "mention":
+      return "mentioned you in a post.";
 
     case "message":
       return "sent you a message.";
@@ -716,6 +720,7 @@ export default function NotificationsPage() {
             "reaction",
             "comment",
             "repost",
+            "mention",
           ].includes(notification.type);
 
         case "messages":
@@ -920,7 +925,8 @@ export default function NotificationsPage() {
 
               <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[var(--muted)]">
                 Notifications about follows, reactions, comments,
-                reposts, messages, and group activity will appear here.
+                mentions, reposts, messages, and group activity
+                will appear here.
               </p>
             </div>
           ) : filteredNotifications.length === 0 ? (
