@@ -1,3 +1,4 @@
+
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   isPushConfigured,
@@ -10,7 +11,8 @@ export type NotificationType =
   | "comment"
   | "repost"
   | "message"
-  | "group_activity";
+  | "group_activity"
+  | "mention";
 
 type NotificationInput = {
   recipientId: string;
@@ -27,6 +29,7 @@ type NotificationPreferences = {
   reposts: boolean;
   messages: boolean;
   group_activity: boolean;
+  mentions: boolean;
 };
 
 const preferenceByType: Record<
@@ -39,6 +42,7 @@ const preferenceByType: Record<
   repost: "reposts",
   message: "messages",
   group_activity: "group_activity",
+  mention: "mentions",
 };
 
 function getEventTypes(
@@ -63,6 +67,9 @@ function getEventTypes(
         "message.created",
         "message.media_added",
       ];
+
+    case "mention":
+      return ["post.created", "post.updated"];
 
     case "group_activity":
       if (
@@ -285,6 +292,15 @@ function getPushPresentation({
           : "/messages",
       };
 
+    case "mention":
+      return {
+        title: "You were mentioned",
+        body: `${actorName} mentioned you in a post.`,
+        url: entityId
+          ? `/post/${encodeURIComponent(entityId)}`
+          : "/notifications",
+      };
+
     case "group_activity":
       return {
         title: "Group activity",
@@ -324,7 +340,7 @@ export async function createNotification({
   } = await admin
     .from("notification_preferences")
     .select(
-      "follows, reactions, comments, reposts, messages, group_activity",
+      "follows, reactions, comments, reposts, messages, group_activity, mentions",
     )
     .eq("user_id", recipientId)
     .maybeSingle();
