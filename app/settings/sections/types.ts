@@ -34,6 +34,7 @@ export type NotificationPreferences = {
   reposts: boolean;
   messages: boolean;
   group_activity: boolean;
+  mentions: boolean;
 };
 
 export type UserSettingKey =
