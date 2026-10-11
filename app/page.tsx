@@ -18,18 +18,33 @@ const pillars = [
   },
 ];
 
+function AgoreBrandLogo() {
+  return (
+    <Link
+      href="/"
+      className="inline-flex shrink-0 items-center"
+      aria-label="Agoré home"
+    >
+      <img
+        src="/agore-logo.svg"
+        alt="Agoré"
+        className="agore-brand-logo-primary h-9 w-auto sm:h-10"
+      />
+      <img
+        src="/agore-logo-inverse.svg"
+        alt="Agoré"
+        className="agore-brand-logo-inverse h-9 w-auto sm:h-10"
+      />
+    </Link>
+  );
+}
+
 export default function Home() {
   return (
     <main className="min-h-screen">
       <section className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-6 py-8 sm:px-10 lg:px-12">
         <header className="flex items-center justify-between">
-          <Link
-            href="/"
-            className="text-xl font-semibold tracking-[-0.03em]"
-            aria-label="Agoré home"
-          >
-            Agoré
-          </Link>
+          <AgoreBrandLogo />
 
           <Link
             href="/auth"
