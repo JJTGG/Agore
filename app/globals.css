@@ -134,3 +134,26 @@ select {
   background: var(--accent-soft);
   color: var(--accent-strong);
 }
+
+/* Theme-aware approved Agoré logo lockups. */
+.agore-brand-logo-inverse {
+  display: none;
+}
+
+:root[data-theme="dark"] .agore-brand-logo-primary {
+  display: none;
+}
+
+:root[data-theme="dark"] .agore-brand-logo-inverse {
+  display: block;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] .agore-brand-logo-primary {
+    display: none;
+  }
+
+  :root[data-theme="system"] .agore-brand-logo-inverse {
+    display: block;
+  }
+}
