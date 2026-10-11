@@ -24,6 +24,7 @@ import PostMedia, {
 } from "@/components/post-media";
 import PostInteractions from "@/app/post-interactions";
 import UserIdentity from "@/components/user-identity";
+import { MentionText } from "@/components/post-mentions";
 import { createClient } from "@/lib/supabase/browser";
 
 type AccountType =
@@ -635,7 +636,7 @@ export default function PostPage() {
 
                   <div className="mt-6">
                     <p className="whitespace-pre-wrap break-words text-[17px] leading-8 tracking-[-0.01em] sm:text-lg">
-                      {post.content}
+                      <MentionText content={post.content} />
                     </p>
                   </div>
 
