@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/browser";
 
 type Mode = "signin" | "signup" | "recovery";
-type OAuthProvider = "google" | "apple";
+type OAuthProvider = "google";
 
 export default function AuthPage() {
   const router = useRouter();
@@ -16,9 +16,8 @@ export default function AuthPage() {
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [callbackError, setCallbackError] = useState<string | null>(
-    null,
-  );
+  const [callbackError, setCallbackError] =
+    useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [oauthProvider, setOauthProvider] =
     useState<OAuthProvider | null>(null);
@@ -253,7 +252,7 @@ export default function AuthPage() {
 
           {mode !== "recovery" && (
             <>
-              <div className="mt-7 space-y-3">
+              <div className="mt-7">
                 <button
                   type="button"
                   onClick={() => handleOAuth("google")}
@@ -265,19 +264,6 @@ export default function AuthPage() {
                     : mode === "signin"
                       ? "Continue with Google"
                       : "Sign up with Google"}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleOAuth("apple")}
-                  disabled={busy}
-                  className="flex w-full items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--background)] px-4 py-3 text-sm font-semibold transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {oauthProvider === "apple"
-                    ? "Connecting to Apple..."
-                    : mode === "signin"
-                      ? "Continue with Apple"
-                      : "Sign up with Apple"}
                 </button>
               </div>
 
