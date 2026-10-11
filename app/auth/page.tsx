@@ -23,6 +23,8 @@ export default function AuthPage() {
   const [oauthProvider, setOauthProvider] =
     useState<OAuthProvider | null>(null);
   const [resending, setResending] = useState(false);
+  const [verificationPending, setVerificationPending] =
+    useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -31,6 +33,7 @@ export default function AuthPage() {
     setCallbackError(currentError);
 
     if (currentError === "verification") {
+      setVerificationPending(true);
       setError(
         "Email verification could not be completed. You can request a new verification email below.",
       );
@@ -111,8 +114,10 @@ export default function AuthPage() {
           return;
         }
 
+        setEmail(normalizedEmail);
+        setVerificationPending(true);
         setMessage(
-          "Your registration has been submitted. Check your email for a verification link to continue.",
+          "Your registration has been submitted. Check your email for a verification link. If it does not arrive, you can request another below.",
         );
 
         return;
@@ -190,6 +195,7 @@ export default function AuthPage() {
         throw resendError;
       }
 
+      setVerificationPending(true);
       setMessage(
         "A new verification email has been requested. Check your inbox.",
       );
@@ -210,6 +216,8 @@ export default function AuthPage() {
   }
 
   const busy = loading || oauthProvider !== null;
+  const showResendVerification =
+    callbackError === "verification" || verificationPending;
 
   return (
     <main className="flex min-h-screen items-center bg-[var(--background)] px-4 py-8 text-[var(--foreground)] sm:px-6">
@@ -377,7 +385,7 @@ export default function AuthPage() {
             </button>
           </form>
 
-          {callbackError === "verification" && (
+          {showResendVerification && (
             <button
               type="button"
               onClick={handleResendVerification}
