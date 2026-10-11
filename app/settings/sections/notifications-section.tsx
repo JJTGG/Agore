@@ -2,6 +2,7 @@
 "use client";
 
 import {
+  AtSign,
   Bell,
   MessageCircle,
   Repeat2,
@@ -69,6 +70,12 @@ const notificationOptions: {
     description:
       "Activity in group conversations you're part of.",
     icon: Users,
+  },
+  {
+    key: "mentions",
+    label: "Mentions",
+    description: "When someone tags you in a post.",
+    icon: AtSign,
   },
 ];
 
