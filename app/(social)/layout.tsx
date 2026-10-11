@@ -1,3 +1,4 @@
+
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -150,16 +151,25 @@ export default async function SocialLayout({
                     href="/support"
                     className="block rounded-xl px-3 py-2.5 text-sm transition hover:bg-[var(--background)]"
                   >
-                    Help & support
+                    Help &amp; support
                   </Link>
 
                   {hasAdminAccess ? (
-                    <Link
-                      href="/admin"
-                      className="block rounded-xl px-3 py-2.5 text-sm font-semibold text-[var(--accent)] transition hover:bg-[var(--accent-soft)]"
-                    >
-                      Administration
-                    </Link>
+                    <>
+                      <Link
+                        href="/admin"
+                        className="block rounded-xl px-3 py-2.5 text-sm font-semibold text-[var(--accent)] transition hover:bg-[var(--accent-soft)]"
+                      >
+                        Administration
+                      </Link>
+
+                      <Link
+                        href="/admin/insights"
+                        className="block rounded-xl px-3 py-2.5 text-sm font-semibold transition hover:bg-[var(--background)]"
+                      >
+                        Agoré Insights
+                      </Link>
+                    </>
                   ) : null}
 
                   {hasFounderAccess ? (
