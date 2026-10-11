@@ -1,3 +1,4 @@
+
 import type { Metadata } from "next";
 
 import "./globals.css";
@@ -13,6 +14,13 @@ export const metadata: Metadata = {
   applicationName: appName,
   title: appName,
   description: appDescription,
+
+  appleWebApp: {
+    capable: true,
+    title: appName,
+    statusBarStyle: "default",
+  },
+
   icons: {
     icon: [
       {
