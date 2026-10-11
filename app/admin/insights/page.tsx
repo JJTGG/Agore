@@ -10,12 +10,10 @@ import {
   Eye,
   Globe,
   Loader2,
-  MessageCircle,
   RefreshCw,
-  Repeat2,
   ShieldCheck,
-  Users,
   UserPlus,
+  Users,
 } from "lucide-react";
 
 type Summary = {
@@ -63,6 +61,22 @@ type DailyPoint = {
   groupsCreated: number;
 };
 
+type RetentionMetric = {
+  eligibleUsers: number;
+  returnedUsers: number;
+  ratePercent: number | null;
+};
+
+type RetentionData = {
+  trackingStartedAt: string | null;
+  definition: string;
+  cohorts: {
+    day1: RetentionMetric;
+    day7: RetentionMetric;
+    day30: RetentionMetric;
+  };
+};
+
 type RankedItem = {
   label: string;
   value: number;
@@ -90,6 +104,7 @@ type Insights = {
     pageViews: number;
     visitors: number;
   }>;
+  retention: RetentionData;
   role?: string;
   error?: string;
 };
@@ -278,7 +293,11 @@ export default function AgoreInsightsPage() {
           );
         }
 
-        if (!payload.summary || !Array.isArray(payload.daily)) {
+        if (
+          !payload.summary ||
+          !Array.isArray(payload.daily) ||
+          !payload.retention?.cohorts
+        ) {
           throw new Error("The analytics response was invalid.");
         }
 
@@ -307,11 +326,34 @@ export default function AgoreInsightsPage() {
     ...(data?.daily ?? []).map((point) => point.pageViews),
   );
 
+  const retentionCards = data?.retention
+    ? [
+        {
+          label: "Day 1",
+          period: "24–48 hours after sign-up",
+          metric: data.retention.cohorts.day1,
+        },
+        {
+          label: "Day 7",
+          period: "7–8 days after sign-up",
+          metric: data.retention.cohorts.day7,
+        },
+        {
+          label: "Day 30",
+          period: "30–31 days after sign-up",
+          metric: data.retention.cohorts.day30,
+        },
+      ]
+    : [];
+
   const dailyActivity: RankedItem[] = summary
     ? [
         { label: "Posts created", value: summary.newPosts },
         { label: "Comments created", value: summary.newComments },
-        { label: "Reactions added or changed", value: summary.newReactions },
+        {
+          label: "Reactions added or changed",
+          value: summary.newReactions,
+        },
         { label: "Reposts created", value: summary.newReposts },
         { label: "New follows", value: summary.newFollows },
         { label: "Messages sent", value: summary.messagesSent },
@@ -359,7 +401,7 @@ export default function AgoreInsightsPage() {
                   Agoré Insights
                 </h1>
                 <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--muted)]">
-                  Traffic, growth, engagement and platform activity in one
+                  Traffic, growth, engagement and retention in one
                   private dashboard.
                 </p>
               </div>
@@ -425,18 +467,10 @@ export default function AgoreInsightsPage() {
         </section>
       ) : null}
 
-      {summary ? (
+      {data && summary ? (
         <>
           <section>
-            <div className="mb-3 flex items-end justify-between gap-3">
-              <div>
-                <h2 className="font-semibold">Traffic &amp; growth</h2>
-                <p className="mt-1 text-xs text-[var(--muted)]">
-                  For the selected reporting period
-                </p>
-              </div>
-            </div>
-
+            <h2 className="mb-3 font-semibold">Traffic &amp; growth</h2>
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               <MetricCard
                 label="Page views"
@@ -490,8 +524,40 @@ export default function AgoreInsightsPage() {
           </section>
 
           <Panel
+            title="Retention by signup cohort"
+            description="Return rates for accounts created after tracking began. Only completed measurement windows are included."
+          >
+            <p className="mb-4 text-xs leading-5 text-[var(--muted)]">
+              {data.retention.definition}
+            </p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {retentionCards.map((card) => (
+                <div
+                  key={card.label}
+                  className="rounded-xl border border-[var(--border)] bg-[var(--background)] p-4"
+                >
+                  <p className="text-sm font-semibold">{card.label} retention</p>
+                  <p className="mt-3 text-3xl font-semibold tracking-tight">
+                    {card.metric.ratePercent === null
+                      ? "—"
+                      : `${card.metric.ratePercent}%`}
+                  </p>
+                  <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
+                    {card.period}
+                  </p>
+                  <p className="mt-3 text-xs text-[var(--muted)]">
+                    {card.metric.eligibleUsers === 0
+                      ? "Not enough completed cohort data"
+                      : `${number(card.metric.returnedUsers)} of ${number(card.metric.eligibleUsers)} users returned`}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </Panel>
+
+          <Panel
             title="Traffic over time"
-            description="Daily page views. Page-view tracking starts with this release; earlier visits cannot be reconstructed."
+            description="Daily page views. Historical visits before tracking cannot be reconstructed."
           >
             {summary.pageViews === 0 ? (
               <div className="flex min-h-44 flex-col items-center justify-center rounded-xl border border-dashed border-[var(--border)] px-5 text-center">
@@ -500,9 +566,9 @@ export default function AgoreInsightsPage() {
                   Waiting for page-view data
                 </p>
                 <p className="mt-1 max-w-md text-xs leading-5 text-[var(--muted)]">
-                  The tracker will begin recording visits after its code is
-                  deployed. Existing sign-ups and database activity are
-                  already available below.
+                  The tracker will begin recording visits after its app
+                  integration is deployed. Existing sign-ups and database
+                  activity are available now.
                 </p>
               </div>
             ) : (
@@ -539,7 +605,11 @@ export default function AgoreInsightsPage() {
 
                 <div className="mt-2 flex justify-between gap-2 text-[10px] text-[var(--muted)]">
                   <span>{formatDate(data.daily[0]?.date ?? summary.from)}</span>
-                  <span>{formatDate(data.daily[data.daily.length - 1]?.date ?? summary.to)}</span>
+                  <span>
+                    {formatDate(
+                      data.daily[data.daily.length - 1]?.date ?? summary.to,
+                    )}
+                  </span>
                 </div>
               </div>
             )}
@@ -548,14 +618,14 @@ export default function AgoreInsightsPage() {
           <div className="grid gap-4 lg:grid-cols-2">
             <Panel
               title="Popular pages"
-              description="Ranked by page views, with unique visitors per path"
+              description="Page views and unique visitors by path"
             >
               <RankedList
-                rows={data?.popularPages.map((row) => ({
+                rows={data.popularPages.map((row) => ({
                   label: row.path,
                   value: row.pageViews,
                   detail: `${number(row.visitors)} unique visitors`,
-                })) ?? []}
+                }))}
                 emptyMessage="Page popularity will appear after tracking starts."
               />
             </Panel>
@@ -565,14 +635,14 @@ export default function AgoreInsightsPage() {
               description="Sessions grouped by referring hostname"
             >
               <RankedList
-                rows={data?.trafficSources.map((row) => ({
+                rows={data.trafficSources.map((row) => ({
                   label:
                     row.source === "direct"
                       ? "Direct / none"
                       : row.source,
                   value: row.visits,
                   detail: "Sessions",
-                })) ?? []}
+                }))}
                 emptyMessage="Referral data will appear after tracking starts."
               />
             </Panel>
@@ -581,7 +651,7 @@ export default function AgoreInsightsPage() {
           <div className="grid gap-4 lg:grid-cols-2">
             <Panel
               title="Engagement"
-              description="Recorded product activity for the selected period"
+              description="Recorded product activity in the selected period"
             >
               <RankedList
                 rows={dailyActivity}
@@ -591,7 +661,7 @@ export default function AgoreInsightsPage() {
 
             <Panel
               title="Current platform"
-              description="Current database totals, not just the selected period"
+              description="Current totals, not just the selected period"
             >
               <RankedList
                 rows={currentTotals}
@@ -603,21 +673,24 @@ export default function AgoreInsightsPage() {
           <div className="grid gap-4 lg:grid-cols-2">
             <Panel title="Devices" description="Page views by device category">
               <RankedList
-                rows={data?.devices.map((row) => ({
+                rows={data.devices.map((row) => ({
                   label: row.device,
                   value: row.pageViews,
-                })) ?? []}
+                }))}
                 emptyMessage="Device breakdown will appear after tracking starts."
               />
             </Panel>
 
-            <Panel title="Countries" description="Country-level traffic when available">
+            <Panel
+              title="Countries"
+              description="Country-level traffic when available"
+            >
               <RankedList
-                rows={data?.countries.map((row) => ({
+                rows={data.countries.map((row) => ({
                   label: row.country,
                   value: row.pageViews,
                   detail: `${number(row.visitors)} visitors`,
-                })) ?? []}
+                }))}
                 emptyMessage="Country data will appear when available."
               />
             </Panel>
@@ -634,18 +707,13 @@ export default function AgoreInsightsPage() {
                   Privacy and metric definitions
                 </h2>
                 <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
-                  Analytics records normalized page paths, random first-party
-                  visitor and session IDs, referrer hostnames, broad device
-                  categories, and country codes when available. Raw IP
-                  addresses, full query strings and message contents are not
-                  stored by this tracker. Page-view records are cleaned up
-                  after 180 days. Active users count distinct signed-in
-                  accounts with a page view or meaningful product event.
-                </p>
-                <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
-                  Product-event history is available from the existing
-                  database event log; anonymous visit history starts when this
-                  page tracker is deployed.
+                  The tracker stores normalized page paths, random first-party
+                  visitor and session IDs, referrer hostnames, device
+                  categories and country codes when available. It does not
+                  store raw IP addresses, full query strings or message
+                  contents. Page-view records are cleaned up after 180 days.
+                  Product-event history comes from the existing database
+                  event log.
                 </p>
               </div>
             </div>
