@@ -1,3 +1,4 @@
+
 "use client";
 
 import {
@@ -32,10 +33,9 @@ export default function AgoreMobileNav({
   profileName,
 }: AgoreMobileNavProps) {
   const pathname = usePathname();
-
   const { hasUnreadMessages } = useUnreadIndicators();
 
-  const [quiet, setQuiet] = useState(false);
+  const [hidden, setHidden] = useState(false);
   const lastScrollY = useRef(0);
   const ticking = useRef(false);
 
@@ -47,12 +47,12 @@ export default function AgoreMobileNav({
       const previousY = lastScrollY.current;
       const delta = currentY - previousY;
 
-      if (currentY <= 8) {
-        setQuiet(false);
-      } else if (delta > 4) {
-        setQuiet(true);
+      if (currentY <= 12) {
+        setHidden(false);
+      } else if (delta > 6 && currentY > 72) {
+        setHidden(true);
       } else if (delta < -4) {
-        setQuiet(false);
+        setHidden(false);
       }
 
       lastScrollY.current = currentY;
@@ -63,7 +63,6 @@ export default function AgoreMobileNav({
       if (ticking.current) return;
 
       ticking.current = true;
-
       window.requestAnimationFrame(updateNavigationState);
     }
 
@@ -76,8 +75,12 @@ export default function AgoreMobileNav({
     };
   }, []);
 
+  useEffect(() => {
+    setHidden(false);
+  }, [pathname]);
+
   function restoreNavigation() {
-    setQuiet(false);
+    setHidden(false);
   }
 
   function isActiveRoute(href: string) {
@@ -87,14 +90,35 @@ export default function AgoreMobileNav({
     );
   }
 
-  const itemClass =
-    "flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 text-[var(--muted)] transition hover:bg-[var(--background)] hover:text-[var(--foreground)]";
+  const itemClass = [
+    "group relative flex min-w-0 flex-1 flex-col items-center justify-center gap-1",
+    "rounded-2xl px-1 py-2 text-[var(--muted)]",
+    "transition-all duration-200 ease-out",
+    "hover:bg-[var(--background)] hover:text-[var(--foreground)]",
+    "active:scale-[0.94]",
+    "focus-visible:outline-none focus-visible:ring-2",
+    "focus-visible:ring-[var(--accent)]",
+  ].join(" ");
 
-  const activeItemClass =
-    "flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-2xl bg-[var(--foreground)] px-1 py-2 text-[var(--background)] transition";
+  const activeItemClass = [
+    "group relative flex min-w-0 flex-1 flex-col items-center justify-center gap-1",
+    "rounded-2xl bg-[var(--accent-soft)] px-1 py-2",
+    "text-[var(--accent)] shadow-sm",
+    "transition-all duration-200 ease-out",
+    "active:scale-[0.94]",
+    "focus-visible:outline-none focus-visible:ring-2",
+    "focus-visible:ring-[var(--accent)]",
+  ].join(" ");
 
   function getItemClass(active: boolean) {
     return active ? activeItemClass : itemClass;
+  }
+
+  function getIconClass(active: boolean) {
+    return [
+      "transition-transform duration-200 ease-out",
+      active ? "scale-110" : "group-hover:scale-110",
+    ].join(" ");
   }
 
   return (
@@ -103,14 +127,15 @@ export default function AgoreMobileNav({
       onPointerDownCapture={restoreNavigation}
       onFocusCapture={restoreNavigation}
       className={[
-        "fixed inset-x-3 bottom-3 z-50 mx-auto flex max-w-md items-center justify-between",
+        "fixed inset-x-3 bottom-3 z-40 mx-auto flex max-w-md items-center justify-between",
         "rounded-[1.5rem] border border-[var(--border)]",
-        "px-2 py-2 backdrop-blur",
+        "bg-[color:var(--surface)]/95 px-2 py-2 backdrop-blur-xl",
         "transition-[opacity,transform,background-color,box-shadow]",
-        "duration-200 ease-out md:hidden",
-        quiet
-          ? "translate-y-1 bg-[color:var(--surface)]/70 opacity-75 shadow-[0_10px_28px_rgba(0,0,0,0.08)]"
-          : "translate-y-0 bg-[color:var(--surface)]/95 opacity-100 shadow-[0_18px_50px_rgba(0,0,0,0.14)]",
+        "duration-300 ease-out",
+        "md:hidden",
+        hidden
+          ? "pointer-events-none translate-y-[130%] opacity-0"
+          : "translate-y-0 opacity-100 shadow-[0_18px_50px_rgba(0,0,0,0.14)]",
       ].join(" ")}
     >
       <Link
@@ -120,8 +145,10 @@ export default function AgoreMobileNav({
           isActiveRoute("/home") ? "page" : undefined
         }
       >
-        <Home size={19} />
-
+        <Home
+          size={19}
+          className={getIconClass(isActiveRoute("/home"))}
+        />
         <span className="text-[10px] font-semibold">
           Home
         </span>
@@ -138,8 +165,12 @@ export default function AgoreMobileNav({
             : undefined
         }
       >
-        <Compass size={19} />
-
+        <Compass
+          size={19}
+          className={getIconClass(
+            isActiveRoute("/app/explore"),
+          )}
+        />
         <span className="text-[10px] font-semibold">
           Explore
         </span>
@@ -156,8 +187,13 @@ export default function AgoreMobileNav({
             : undefined
         }
       >
-        <Plus size={20} strokeWidth={2.5} />
-
+        <Plus
+          size={20}
+          strokeWidth={2.5}
+          className={getIconClass(
+            isActiveRoute("/create"),
+          )}
+        />
         <span className="text-[10px] font-semibold">
           Create
         </span>
@@ -180,8 +216,12 @@ export default function AgoreMobileNav({
         }
       >
         <span className="relative inline-flex">
-          <MessageCircle size={19} />
-
+          <MessageCircle
+            size={19}
+            className={getIconClass(
+              isActiveRoute("/messages"),
+            )}
+          />
           <UnreadBadge
             count={hasUnreadMessages ? 1 : 0}
             dotOnly
@@ -207,10 +247,14 @@ export default function AgoreMobileNav({
         <AgoreAvatar
           avatarPath={avatarPath}
           name={profileName}
-          className="h-[19px] w-[19px]"
+          className={[
+            "h-[19px] w-[19px] transition-transform duration-200",
+            isActiveRoute(profilePath)
+              ? "scale-110 ring-2 ring-[var(--accent)] ring-offset-2 ring-offset-[var(--surface)]"
+              : "group-hover:scale-110",
+          ].join(" ")}
           textClassName="text-[6px]"
         />
-
         <span className="text-[10px] font-semibold">
           Profile
         </span>
