@@ -97,6 +97,7 @@ html {
 
 body {
   min-height: 100vh;
+  min-height: 100dvh;
   margin: 0;
   background: var(--background);
   color: var(--foreground);
@@ -105,7 +106,13 @@ body {
     Helvetica,
     sans-serif;
   -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
   text-rendering: optimizeLegibility;
+}
+
+/* Prefer the dynamic viewport height on modern mobile browsers. */
+.min-h-screen {
+  min-height: 100dvh;
 }
 
 button,
@@ -155,5 +162,90 @@ select {
 
   :root[data-theme="system"] .agore-brand-logo-inverse {
     display: block;
+  }
+}
+
+/* iOS and other devices that expose display safe areas. */
+@supports (padding: env(safe-area-inset-top)) {
+  /*
+   * The global authenticated header stays below the top
+   * safe area when the mobile navigation is present.
+   */
+  body:has(nav[aria-label="Mobile navigation"])
+    header.sticky {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  /*
+   * Keep the floating navigation clear of the screen edges
+   * and the iPhone home indicator.
+   */
+  nav[aria-label="Mobile navigation"] {
+    left: calc(
+      0.75rem + env(safe-area-inset-left, 0px)
+    );
+    right: calc(
+      0.75rem + env(safe-area-inset-right, 0px)
+    );
+    bottom: calc(
+      0.75rem + env(safe-area-inset-bottom, 0px)
+    );
+  }
+
+  /*
+   * The full-screen conversation view keeps its header
+   * and composer inside the usable viewport.
+   */
+  main.h-dvh.max-h-dvh {
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /*
+   * Sign-in and password recovery screens.
+   */
+  body > main.flex.items-center {
+    min-height: 100dvh;
+    padding-top: calc(
+      2rem + env(safe-area-inset-top, 0px)
+    );
+    padding-bottom: calc(
+      2rem + env(safe-area-inset-bottom, 0px)
+    );
+  }
+
+  /*
+   * Onboarding screen and its vertically centered content.
+   */
+  body > main.px-6.py-8 {
+    min-height: 100dvh;
+    padding-top: calc(
+      2rem + env(safe-area-inset-top, 0px)
+    );
+    padding-bottom: calc(
+      2rem + env(safe-area-inset-bottom, 0px)
+    );
+  }
+
+  body > main.px-6.py-8 > div.flex.items-center {
+    min-height: calc(
+      100dvh
+      - 4rem
+      - env(safe-area-inset-top, 0px)
+      - env(safe-area-inset-bottom, 0px)
+    );
+  }
+
+  /*
+   * Public landing page.
+   */
+  body > main > section.flex.min-h-screen {
+    min-height: 100dvh;
+    padding-top: calc(
+      2rem + env(safe-area-inset-top, 0px)
+    );
+    padding-bottom: calc(
+      2rem + env(safe-area-inset-bottom, 0px)
+    );
   }
 }
