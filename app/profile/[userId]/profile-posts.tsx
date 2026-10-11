@@ -1,3 +1,4 @@
+
 "use client";
 
 import {
@@ -21,6 +22,7 @@ import PostMedia, {
   type PostMediaItem,
 } from "@/components/post-media";
 import PostInteractions from "@/app/post-interactions";
+import { MentionText } from "@/components/post-mentions";
 import ProfileMedia from "./profile-media";
 import ActivityTimeline from "./activity-timeline";
 import { createClient } from "@/lib/supabase/browser";
@@ -189,14 +191,18 @@ function PostCard({
             </time>
           </div>
 
-          <Link
-            href={`/post/${encodeURIComponent(post.id)}`}
-            className="mt-4 block rounded-xl outline-none focus-visible:ring-4 focus-visible:ring-[var(--accent-soft)]"
-          >
-            <p className="whitespace-pre-wrap text-[15px] leading-7 text-[var(--foreground)] transition hover:text-[var(--accent)]">
-              {post.content}
+          <div className="mt-4">
+            <p className="whitespace-pre-wrap break-words text-[15px] leading-7 text-[var(--foreground)]">
+              <MentionText content={post.content} />
             </p>
-          </Link>
+
+            <Link
+              href={`/post/${encodeURIComponent(post.id)}`}
+              className="mt-2 inline-flex text-xs font-semibold text-[var(--muted)] transition hover:text-[var(--accent)]"
+            >
+              View post
+            </Link>
+          </div>
 
           <PostMedia media={post.post_media} />
 
@@ -292,14 +298,18 @@ function RepostCard({
             </p>
           </div>
 
-          <Link
-            href={`/post/${encodeURIComponent(repost.id)}`}
-            className="mt-4 block rounded-xl outline-none focus-visible:ring-4 focus-visible:ring-[var(--accent-soft)]"
-          >
-            <p className="whitespace-pre-wrap text-[15px] leading-7 text-[var(--foreground)] transition hover:text-[var(--accent)]">
-              {repost.content}
+          <div className="mt-4">
+            <p className="whitespace-pre-wrap break-words text-[15px] leading-7 text-[var(--foreground)]">
+              <MentionText content={repost.content} />
             </p>
-          </Link>
+
+            <Link
+              href={`/post/${encodeURIComponent(repost.id)}`}
+              className="mt-2 inline-flex text-xs font-semibold text-[var(--muted)] transition hover:text-[var(--accent)]"
+            >
+              View post
+            </Link>
+          </div>
 
           <PostMedia media={repost.post_media} />
 
