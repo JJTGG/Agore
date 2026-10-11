@@ -47,7 +47,7 @@ When an account is created or used, Agoré may process:
 - Authentication and session-related information.
 - Account status and relevant account-verification state.
 - Authentication-provider information where an external sign-in provider is used.
-- Information required to complete onboarding or validate an invitation while invite-only access is enabled.
+- Information needed to complete onboarding and account setup.
 
 Authentication credentials are handled through the configured authentication system. Agoré does not require users to provide their account passwords to support staff.
 
@@ -225,7 +225,7 @@ These technologies may be used to:
 
 - Maintain authentication sessions.
 - Support secure account flows.
-- Complete invitation validation while private access is enabled.
+- Support verification, authentication callbacks, and password-recovery flows.
 - Maintain relevant application functionality.
 - Support notification features where enabled.
 
