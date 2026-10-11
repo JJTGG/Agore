@@ -4,9 +4,24 @@ import "./globals.css";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
+  applicationName: "Agoré",
   title: "Agoré",
   description:
     "A place to gather, connect, communicate, and share.",
+  icons: {
+    icon: [
+      {
+        url: "/agore-favicon.ico",
+        type: "image/x-icon",
+      },
+      {
+        url: "/agore-icon-192.png",
+        sizes: "192x192",
+        type: "image/png",
+      },
+    ],
+    shortcut: ["/agore-favicon.ico"],
+  },
 };
 
 type Theme = "system" | "light" | "dark";
