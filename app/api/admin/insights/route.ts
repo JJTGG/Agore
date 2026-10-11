@@ -16,8 +16,7 @@ function privateJson(payload: unknown, status = 200) {
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const rawDays = url.searchParams.get("days") ?? "30";
-  const days = Number(rawDays);
+  const days = Number(url.searchParams.get("days") ?? "30");
 
   if (![7, 30, 90].includes(days)) {
     return privateJson(
@@ -35,30 +34,41 @@ export async function GET(request: Request) {
   const { admin, role, user } = authorization.context;
 
   try {
-    const { data, error } = await admin.rpc(
-      "agore_admin_get_insights",
-      {
+    const [insightsResult, retentionResult] = await Promise.all([
+      admin.rpc("agore_admin_get_insights", {
         p_actor_id: user.id,
         p_days: days,
-      },
-    );
+      }),
+      admin.rpc("agore_admin_get_retention", {
+        p_actor_id: user.id,
+      }),
+    ]);
 
-    if (error) {
-      if (error.code === "42501") {
+    const errors = [
+      insightsResult.error,
+      retentionResult.error,
+    ].filter(Boolean);
+
+    if (errors.length > 0) {
+      const denied = errors.some((error) => error?.code === "42501");
+
+      if (denied) {
         return privateJson(
           { error: "Administrative access required." },
           403,
         );
       }
 
-      if (error.code === "22023") {
+      const invalid = errors.some((error) => error?.code === "22023");
+
+      if (invalid) {
         return privateJson(
-          { error: "Invalid reporting period." },
+          { error: "Invalid reporting parameters." },
           400,
         );
       }
 
-      console.error("Failed to load Agoré Insights:", error);
+      console.error("Failed to load Agoré Insights:", errors);
 
       return privateJson(
         { error: "Unable to load platform analytics." },
@@ -66,7 +76,17 @@ export async function GET(request: Request) {
       );
     }
 
-    if (!data || typeof data !== "object" || Array.isArray(data)) {
+    const data = insightsResult.data;
+    const retention = retentionResult.data;
+
+    if (
+      !data ||
+      typeof data !== "object" ||
+      Array.isArray(data) ||
+      !retention ||
+      typeof retention !== "object" ||
+      Array.isArray(retention)
+    ) {
       return privateJson(
         { error: "The analytics response was invalid." },
         500,
@@ -75,6 +95,7 @@ export async function GET(request: Request) {
 
     return privateJson({
       ...(data as Record<string, unknown>),
+      retention,
       role,
     });
   } catch (error) {
