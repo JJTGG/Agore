@@ -1,3 +1,4 @@
+
 "use client";
 
 import {
@@ -34,6 +35,10 @@ import PostMedia, {
 } from "@/components/post-media";
 import { createClient } from "@/lib/supabase/browser";
 import PostInteractions from "@/app/post-interactions";
+import {
+  MentionText,
+  MentionTextarea,
+} from "@/components/post-mentions";
 
 type Profile = {
   display_name: string;
@@ -795,11 +800,9 @@ export default function PostFeed({
                 />
 
                 <div className="min-w-0 flex-1">
-                  <textarea
+                  <MentionTextarea
                     value={content}
-                    onChange={(event) =>
-                      setContent(event.target.value)
-                    }
+                    onChange={setContent}
                     maxLength={2000}
                     rows={4}
                     disabled={publishing}
@@ -1268,15 +1271,18 @@ export default function PostFeed({
                         </div>
                       </header>
 
-                      <Link
-                        href={postPath}
-                        aria-label={`Open post by ${authorName}`}
-                        className="mt-5 block rounded-[1rem] outline-none transition focus-visible:ring-4 focus-visible:ring-[var(--accent-soft)]"
-                      >
-                        <p className="whitespace-pre-wrap text-[15px] leading-7 text-[var(--foreground)] transition group-hover:text-[var(--accent)] sm:text-base sm:leading-7">
-                          {post.content}
+                      <div className="mt-5">
+                        <p className="whitespace-pre-wrap break-words text-[15px] leading-7 text-[var(--foreground)] sm:text-base sm:leading-7">
+                          <MentionText content={post.content} />
                         </p>
-                      </Link>
+
+                        <Link
+                          href={postPath}
+                          className="mt-2 inline-flex text-xs font-semibold text-[var(--muted)] transition hover:text-[var(--accent)]"
+                        >
+                          View post
+                        </Link>
+                      </div>
 
                       <PostMedia media={post.post_media} />
                     </div>
