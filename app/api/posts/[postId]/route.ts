@@ -1,8 +1,10 @@
+
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { notifyPostMentions } from "@/lib/post-mentions";
 
 const updatePostSchema = z.object({
   content: z
@@ -226,7 +228,7 @@ export async function PATCH(
   } = await supabase
     .from("posts")
     .select(
-      "id, author_id, deleted_at",
+      "id, author_id, deleted_at, content",
     )
     .eq(
       "id",
@@ -335,6 +337,13 @@ export async function PATCH(
       { status: 500 },
     );
   }
+
+  await notifyPostMentions({
+    actorId: user.id,
+    postId: post.id,
+    content: parsedBody.data.content,
+    previousContent: existingPost.content,
+  });
 
   return NextResponse.json({
     post,
