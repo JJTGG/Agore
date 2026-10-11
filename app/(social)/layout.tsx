@@ -1,4 +1,3 @@
-
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -43,6 +42,7 @@ export default async function SocialLayout({
   }
 
   let hasAdminAccess = false;
+  let hasFounderAccess = false;
 
   try {
     const admin = createAdminClient();
@@ -61,6 +61,8 @@ export default async function SocialLayout({
       hasAdminAccess =
         typeof role === "string" &&
         adminPanelRoles.includes(role);
+
+      hasFounderAccess = role === "founder";
     }
   } catch (error) {
     console.error(
@@ -120,7 +122,7 @@ export default async function SocialLayout({
                   />
                 </summary>
 
-                <div className="absolute right-0 top-full z-50 mt-2 w-56 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-1.5 shadow-xl">
+                <div className="absolute right-0 top-full z-50 mt-2 w-60 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-1.5 shadow-xl">
                   <div className="border-b border-[var(--border)] px-3 py-3">
                     <p className="truncate text-sm font-semibold">
                       {profile.display_name}
@@ -157,6 +159,15 @@ export default async function SocialLayout({
                       className="block rounded-xl px-3 py-2.5 text-sm font-semibold text-[var(--accent)] transition hover:bg-[var(--accent-soft)]"
                     >
                       Administration
+                    </Link>
+                  ) : null}
+
+                  {hasFounderAccess ? (
+                    <Link
+                      href="/admin/founder-tools"
+                      className="block rounded-xl px-3 py-2.5 text-sm font-semibold transition hover:bg-[var(--background)]"
+                    >
+                      Founder tools
                     </Link>
                   ) : null}
 
