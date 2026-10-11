@@ -53,6 +53,7 @@ const DEFAULT_NOTIFICATION_PREFERENCES: Omit<
   reposts: true,
   messages: true,
   group_activity: true,
+  mentions: true,
 };
 
 const supabase = createClient();
@@ -190,6 +191,7 @@ export default function SettingsPage() {
                 "reposts",
                 "messages",
                 "group_activity",
+                "mentions",
               ].join(", "),
             )
             .eq("user_id", user.id)
@@ -286,6 +288,11 @@ export default function SettingsPage() {
             "boolean"
               ? storedNotifications.group_activity
               : DEFAULT_NOTIFICATION_PREFERENCES.group_activity,
+
+          mentions:
+            typeof storedNotifications?.mentions === "boolean"
+              ? storedNotifications.mentions
+              : DEFAULT_NOTIFICATION_PREFERENCES.mentions,
         };
 
         setProfile(
