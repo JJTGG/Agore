@@ -1,3 +1,4 @@
+
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -5,7 +6,16 @@ import AgoreAvatar from "@/components/agore-avatar";
 import AgoreDesktopNav from "@/components/agore-desktop-nav";
 import AgoreMobileNav from "@/components/agore-mobile-nav";
 import NotificationBellLink from "@/components/notification-bell-link";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+
+const adminPanelRoles = [
+  "founder",
+  "super_admin",
+  "platform_admin",
+  "moderator",
+  "analyst",
+];
 
 export default async function SocialLayout({
   children,
@@ -32,6 +42,33 @@ export default async function SocialLayout({
     redirect("/onboarding");
   }
 
+  let hasAdminAccess = false;
+
+  try {
+    const admin = createAdminClient();
+
+    const { data: role, error } = await admin.rpc(
+      "agore_get_admin_role",
+      { candidate_user_id: user.id },
+    );
+
+    if (error) {
+      console.error(
+        "Unable to resolve Agore admin menu access:",
+        error,
+      );
+    } else {
+      hasAdminAccess =
+        typeof role === "string" &&
+        adminPanelRoles.includes(role);
+    }
+  } catch (error) {
+    console.error(
+      "Unable to initialize Agore admin menu access:",
+      error,
+    );
+  }
+
   async function signOut() {
     "use server";
 
@@ -45,9 +82,9 @@ export default async function SocialLayout({
   const profilePath = `/profile/${encodeURIComponent(user.id)}`;
 
   return (
-    <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
-      <div className="mx-auto min-h-screen w-full max-w-[1440px] px-4 pb-28 sm:px-6 lg:px-8 lg:pb-0">
-        <header className="sticky top-0 z-40 border-b border-[var(--border)] bg-[color:var(--background)]/95 backdrop-blur">
+    <div className="min-h-dvh bg-[var(--background)] text-[var(--foreground)]">
+      <div className="agore-social-shell mx-auto w-full max-w-[1440px] px-4 sm:px-6 lg:px-8">
+        <header className="agore-social-header sticky top-0 z-40 border-b border-[var(--border)] bg-[color:var(--background)]/95 backdrop-blur">
           <div className="flex min-h-[72px] items-center justify-between gap-3">
             <Link
               href="/home"
@@ -113,6 +150,15 @@ export default async function SocialLayout({
                   >
                     Help & support
                   </Link>
+
+                  {hasAdminAccess ? (
+                    <Link
+                      href="/admin"
+                      className="block rounded-xl px-3 py-2.5 text-sm font-semibold text-[var(--accent)] transition hover:bg-[var(--accent-soft)]"
+                    >
+                      Administration
+                    </Link>
+                  ) : null}
 
                   <form action={signOut}>
                     <button
