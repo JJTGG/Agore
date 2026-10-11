@@ -1,6 +1,9 @@
+
 import type { Metadata, Viewport } from "next";
+import { Suspense } from "react";
 
 import "./globals.css";
+import AnalyticsTracker from "@/components/analytics-tracker";
 import { createClient } from "@/lib/supabase/server";
 
 const appName = "Agoré";
@@ -109,7 +112,12 @@ export default async function RootLayout({
 
   return (
     <html lang="en" data-theme={theme}>
-      <body>{children}</body>
+      <body>
+        {children}
+        <Suspense fallback={null}>
+          <AnalyticsTracker />
+        </Suspense>
+      </body>
     </html>
   );
 }
