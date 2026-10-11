@@ -1,7 +1,9 @@
+
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { createClient } from "@/lib/supabase/server";
+import { notifyPostMentions } from "@/lib/post-mentions";
 
 const createPostSchema = z.object({
   content: z
@@ -550,6 +552,12 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
+
+  await notifyPostMentions({
+    actorId: user.id,
+    postId: post.id,
+    content: parsedBody.data.content,
+  });
 
   return NextResponse.json(
     {
