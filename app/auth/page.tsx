@@ -1,11 +1,33 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/browser";
 
 type Mode = "signin" | "signup" | "recovery";
 type OAuthProvider = "google";
+
+function AgoreBrandLogo() {
+  return (
+    <Link
+      href="/"
+      className="inline-flex items-center"
+      aria-label="Agoré home"
+    >
+      <img
+        src="/agore-logo.svg"
+        alt="Agoré"
+        className="agore-brand-logo-primary h-9 w-auto"
+      />
+      <img
+        src="/agore-logo-inverse.svg"
+        alt="Agoré"
+        className="agore-brand-logo-inverse h-9 w-auto"
+      />
+    </Link>
+  );
+}
 
 export default function AuthPage() {
   const router = useRouter();
@@ -221,13 +243,7 @@ export default function AuthPage() {
   return (
     <main className="flex min-h-screen items-center bg-[var(--background)] px-4 py-8 text-[var(--foreground)] sm:px-6">
       <div className="mx-auto w-full max-w-md">
-        <a
-          href="/"
-          className="text-xl font-semibold tracking-[-0.03em]"
-          aria-label="Agoré home"
-        >
-          Agoré
-        </a>
+        <AgoreBrandLogo />
 
         <section className="mt-8 rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-8">
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-[var(--accent)]">
