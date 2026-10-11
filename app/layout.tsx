@@ -1,5 +1,4 @@
-
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 
 import "./globals.css";
 import { createClient } from "@/lib/supabase/server";
@@ -42,6 +41,7 @@ export const metadata: Metadata = {
       },
     ],
   },
+
   openGraph: {
     type: "website",
     siteName: appName,
@@ -56,6 +56,7 @@ export const metadata: Metadata = {
       },
     ],
   },
+
   twitter: {
     card: "summary_large_image",
     title: appName,
@@ -67,6 +68,12 @@ export const metadata: Metadata = {
       },
     ],
   },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 type Theme = "system" | "light" | "dark";
