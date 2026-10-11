@@ -57,24 +57,19 @@ export default async function HomePage() {
           <div className="flex min-h-[72px] items-center justify-between gap-3">
             <Link
               href="/home"
-              className="group flex shrink-0 items-center gap-3"
+              className="group flex shrink-0 items-center"
               aria-label="Agoré home"
             >
-              <span className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-2xl bg-[var(--foreground)] text-sm font-black tracking-[-0.04em] text-[var(--background)] transition duration-200 group-hover:bg-[var(--accent)] group-hover:text-white">
-                <span className="relative z-10">A</span>
-
-                <span className="absolute -right-3 -top-3 h-7 w-7 rounded-full bg-[var(--accent)] opacity-70 transition duration-200 group-hover:scale-150" />
-              </span>
-
-              <span className="hidden sm:block">
-                <span className="block text-base font-bold tracking-[-0.04em]">
-                  Agoré
-                </span>
-
-                <span className="block text-[10px] font-medium text-[var(--muted)]">
-                  Your social space
-                </span>
-              </span>
+              <img
+                src="/agore-logo.svg"
+                alt="Agoré"
+                className="agore-brand-logo-primary h-7 w-auto transition-opacity sm:h-9"
+              />
+              <img
+                src="/agore-logo-inverse.svg"
+                alt="Agoré"
+                className="agore-brand-logo-inverse h-7 w-auto transition-opacity sm:h-9"
+              />
             </Link>
 
             <div className="flex items-center gap-1 sm:gap-2">
