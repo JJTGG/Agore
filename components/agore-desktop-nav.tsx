@@ -8,12 +8,10 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Bell,
   Compass,
   Home,
   MessageCircle,
   Plus,
-  Settings,
   UserRound,
 } from "lucide-react";
 
@@ -31,10 +29,7 @@ export default function AgoreDesktopNav({
 }: AgoreDesktopNavProps) {
   const pathname = usePathname();
 
-  const {
-    hasUnreadMessages,
-    unreadNotifications,
-  } = useUnreadIndicators();
+  const { hasUnreadMessages } = useUnreadIndicators();
 
   const [quiet, setQuiet] = useState(false);
   const lastScrollY = useRef(0);
@@ -87,11 +82,13 @@ export default function AgoreDesktopNav({
     );
   }
 
+  const isProfileActive = pathname.startsWith("/profile/");
+
   const itemClass =
     "flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-medium text-[var(--muted)] transition hover:bg-[var(--surface)] hover:text-[var(--foreground)]";
 
   const activeItemClass =
-    "flex items-center gap-3 rounded-2xl bg-[var(--foreground)] px-3.5 py-3 text-sm font-semibold text-[var(--background)] transition hover:bg-[var(--accent)] hover:text-white";
+    "flex items-center gap-3 rounded-2xl bg-[var(--accent-soft)] px-3.5 py-3 text-sm font-semibold text-[var(--accent)] transition";
 
   function getItemClass(active: boolean) {
     return active ? activeItemClass : itemClass;
@@ -119,8 +116,8 @@ export default function AgoreDesktopNav({
           isActiveRoute("/home") ? "page" : undefined
         }
       >
-        <Home size={17} />
-        Home
+        <Home size={18} />
+        <span>Home</span>
       </Link>
 
       <Link
@@ -134,23 +131,19 @@ export default function AgoreDesktopNav({
             : undefined
         }
       >
-        <Compass size={17} />
-        Explore
+        <Compass size={18} />
+        <span>Explore</span>
       </Link>
 
       <Link
         href="/create"
-        className={getItemClass(
-          isActiveRoute("/create"),
-        )}
+        className={getItemClass(isActiveRoute("/create"))}
         aria-current={
-          isActiveRoute("/create")
-            ? "page"
-            : undefined
+          isActiveRoute("/create") ? "page" : undefined
         }
       >
-        <Plus size={17} />
-        Create
+        <Plus size={18} />
+        <span>Create</span>
       </Link>
 
       <Link
@@ -170,66 +163,24 @@ export default function AgoreDesktopNav({
         }
       >
         <span className="relative inline-flex">
-          <MessageCircle size={17} />
+          <MessageCircle size={18} />
           <UnreadBadge
             count={hasUnreadMessages ? 1 : 0}
             dotOnly
           />
         </span>
-        Messages
-      </Link>
-
-      <Link
-        href="/notifications"
-        className={getItemClass(
-          isActiveRoute("/notifications"),
-        )}
-        aria-current={
-          isActiveRoute("/notifications")
-            ? "page"
-            : undefined
-        }
-        aria-label={
-          unreadNotifications > 0
-            ? `Notifications, ${unreadNotifications} unread`
-            : "Notifications"
-        }
-      >
-        <span className="relative inline-flex">
-          <Bell size={17} />
-          <UnreadBadge count={unreadNotifications} />
-        </span>
-        Notifications
+        <span>Messages</span>
       </Link>
 
       <Link
         href={profilePath}
-        className={getItemClass(
-          isActiveRoute(profilePath),
-        )}
+        className={getItemClass(isProfileActive)}
         aria-current={
-          isActiveRoute(profilePath)
-            ? "page"
-            : undefined
+          isProfileActive ? "page" : undefined
         }
       >
-        <UserRound size={17} />
-        Profile
-      </Link>
-
-      <Link
-        href="/settings"
-        className={getItemClass(
-          isActiveRoute("/settings"),
-        )}
-        aria-current={
-          isActiveRoute("/settings")
-            ? "page"
-            : undefined
-        }
-      >
-        <Settings size={17} />
-        Settings
+        <UserRound size={18} />
+        <span>Profile</span>
       </Link>
     </nav>
   );
