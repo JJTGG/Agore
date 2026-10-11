@@ -132,7 +132,7 @@ export default function AgoreMobileNav({
         "bg-[color:var(--surface)]/95 px-2 py-2 backdrop-blur-xl",
         "transition-[opacity,transform,background-color,box-shadow]",
         "duration-300 ease-out",
-        "md:hidden",
+        "lg:hidden",
         hidden
           ? "pointer-events-none translate-y-[130%] opacity-0"
           : "translate-y-0 opacity-100 shadow-[0_18px_50px_rgba(0,0,0,0.14)]",
