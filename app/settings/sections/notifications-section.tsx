@@ -1,15 +1,28 @@
-
 "use client";
 
+import { useEffect, useState } from "react";
 import {
   AtSign,
   Bell,
+  Check,
   MessageCircle,
+  Play,
   Repeat2,
   ThumbsUp,
   Users,
   UserRoundPlus,
+  Volume2,
 } from "lucide-react";
+
+import {
+  CALL_RINGTONE_OPTIONS,
+  DEFAULT_CALL_RINGTONE_SETTINGS,
+  getCallRingtoneSettings,
+  previewCallRingtone,
+  saveCallRingtoneSettings,
+  stopCallRingtone,
+  type CallRingtoneSettings,
+} from "@/lib/audio/call-ringtones";
 
 import type {
   NotificationPreferenceKey,
@@ -32,43 +45,37 @@ const notificationOptions: {
   {
     key: "follows",
     label: "New followers",
-    description:
-      "When someone follows your account.",
+    description: "When someone follows your account.",
     icon: UserRoundPlus,
   },
   {
     key: "reactions",
     label: "Reactions",
-    description:
-      "When someone reacts to your posts.",
+    description: "When someone reacts to your posts.",
     icon: ThumbsUp,
   },
   {
     key: "comments",
     label: "Comments",
-    description:
-      "When someone comments on your posts.",
+    description: "When someone comments on your posts.",
     icon: MessageCircle,
   },
   {
     key: "reposts",
     label: "Reposts",
-    description:
-      "When someone reposts your content.",
+    description: "When someone reposts your content.",
     icon: Repeat2,
   },
   {
     key: "messages",
     label: "Direct messages",
-    description:
-      "Notifications related to your direct conversations.",
+    description: "Notifications related to your direct conversations.",
     icon: MessageCircle,
   },
   {
     key: "group_activity",
     label: "Group conversations",
-    description:
-      "Activity in group conversations you're part of.",
+    description: "Activity in group conversations you're part of.",
     icon: Users,
   },
   {
@@ -84,6 +91,24 @@ export default function NotificationsSection({
   onUpdatePreference,
   savingKey = null,
 }: NotificationsSectionProps) {
+  const [ringtoneSettings, setRingtoneSettings] =
+    useState<CallRingtoneSettings>(DEFAULT_CALL_RINGTONE_SETTINGS);
+  const [ringtoneSettingsLoaded, setRingtoneSettingsLoaded] = useState(false);
+
+  useEffect(() => {
+    setRingtoneSettings(getCallRingtoneSettings());
+    setRingtoneSettingsLoaded(true);
+  }, []);
+
+  const updateRingtoneSettings = (patch: Partial<CallRingtoneSettings>) => {
+    const next = saveCallRingtoneSettings(patch);
+    setRingtoneSettings(next);
+
+    if (!next.enabled) {
+      stopCallRingtone();
+    }
+  };
+
   return (
     <section
       aria-labelledby="settings-notifications-title"
@@ -107,8 +132,8 @@ export default function NotificationsSection({
           </h2>
 
           <p className="mt-1 text-sm leading-6 text-[var(--muted)]">
-            Control which supported activity categories
-            can generate notifications for your account.
+            Control which supported activity categories can generate
+            notifications for your account.
           </p>
         </div>
       </div>
@@ -130,10 +155,7 @@ export default function NotificationsSection({
                 </span>
 
                 <div className="min-w-0">
-                  <h3 className="text-sm font-semibold">
-                    {option.label}
-                  </h3>
-
+                  <h3 className="text-sm font-semibold">{option.label}</h3>
                   <p className="mt-1 text-sm leading-6 text-[var(--muted)]">
                     {option.description}
                   </p>
@@ -146,35 +168,26 @@ export default function NotificationsSection({
                 aria-label={option.label}
                 aria-checked={enabled}
                 disabled={isSaving}
-                onClick={() =>
-                  onUpdatePreference(
-                    option.key,
-                    !enabled,
-                  )
-                }
+                onClick={() => onUpdatePreference(option.key, !enabled)}
                 className="flex shrink-0 items-center gap-3 rounded-xl p-1 transition disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <span className="hidden text-xs font-medium text-[var(--muted)] sm:inline">
-                  {isSaving
-                    ? "Saving…"
-                    : enabled
-                      ? "On"
-                      : "Off"}
+                  {isSaving ? "Saving…" : enabled ? "On" : "Off"}
                 </span>
 
                 <span
-                  className={`relative h-6 w-11 rounded-full transition ${
-                    enabled
+                  className={
+                    "relative h-6 w-11 rounded-full transition " +
+                    (enabled
                       ? "bg-[var(--accent)]"
-                      : "bg-[var(--muted)]/40"
-                  }`}
+                      : "bg-[var(--muted)]/40")
+                  }
                 >
                   <span
-                    className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition ${
-                      enabled
-                        ? "left-6"
-                        : "left-1"
-                    }`}
+                    className={
+                      "absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition " +
+                      (enabled ? "left-6" : "left-1")
+                    }
                   />
                 </span>
               </button>
@@ -184,11 +197,162 @@ export default function NotificationsSection({
       </div>
 
       <p className="mt-6 border-t border-[var(--border)] pt-4 text-xs leading-5 text-[var(--muted)]">
-        These switches manage the notification preferences
-        available to Agoré. Delivery through browser or
-        phone push notifications depends on separate
-        delivery support.
+        These switches manage supported in-app notification preferences.
+        Browser or phone push delivery depends on separate delivery support.
       </p>
+
+      <div className="mt-8 border-t border-[var(--border)] pt-6">
+        <div className="flex items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]">
+            <Volume2 size={19} />
+          </span>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--accent)]">
+              Calls
+            </p>
+            <h2 className="mt-1.5 text-lg font-semibold tracking-tight">
+              Call ringtone
+            </h2>
+            <p className="mt-1 text-sm leading-6 text-[var(--muted)]">
+              Choose the sound for incoming Agoré audio calls. Preview each
+              tone and set its volume for this browser.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-5 space-y-3" aria-label="Call ringtone options">
+          {CALL_RINGTONE_OPTIONS.map((option) => {
+            const selected = ringtoneSettings.ringtone === option.id;
+
+            return (
+              <div
+                key={option.id}
+                className={
+                  "flex items-center gap-3 rounded-2xl border p-3 transition sm:p-4 " +
+                  (selected
+                    ? "border-[var(--accent)]/60 bg-[var(--accent-soft)]/40"
+                    : "border-[var(--border)] bg-[var(--background)]")
+                }
+              >
+                <button
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => updateRingtoneSettings({ ringtone: option.id })}
+                  className="flex min-w-0 flex-1 items-center gap-3 rounded-xl text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                >
+                  <span
+                    className={
+                      "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border " +
+                      (selected
+                        ? "border-[var(--accent)]/40 bg-[var(--accent-soft)] text-[var(--accent)]"
+                        : "border-[var(--border)] text-[var(--muted)]")
+                    }
+                    aria-hidden="true"
+                  >
+                    {selected ? <Check size={18} /> : <Volume2 size={18} />}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold">
+                      {option.name}
+                    </span>
+                    <span className="mt-0.5 block text-xs leading-5 text-[var(--muted)]">
+                      {option.description}
+                    </span>
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    previewCallRingtone(option.id, ringtoneSettings.volume)
+                  }
+                  aria-label={"Preview " + option.name}
+                  title={"Preview " + option.name}
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[var(--border)] text-[var(--foreground)] transition hover:border-[var(--accent)]/50 hover:bg-[var(--surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                >
+                  <Play size={16} fill="currentColor" />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="mt-5 rounded-2xl border border-[var(--border)] bg-[var(--background)] p-4">
+          <div className="flex items-center justify-between gap-4">
+            <label
+              htmlFor="agore-call-ringtone-volume"
+              className="text-sm font-semibold"
+            >
+              Ringtone volume
+            </label>
+            <span className="min-w-12 text-right text-sm tabular-nums text-[var(--muted)]">
+              {ringtoneSettings.volume}%
+            </span>
+          </div>
+          <input
+            id="agore-call-ringtone-volume"
+            type="range"
+            min={0}
+            max={100}
+            step={5}
+            value={ringtoneSettings.volume}
+            onChange={(event) =>
+              updateRingtoneSettings({ volume: Number(event.target.value) })
+            }
+            disabled={!ringtoneSettingsLoaded}
+            className="mt-4 w-full accent-[var(--accent)]"
+          />
+          <div className="mt-1 flex justify-between text-[11px] text-[var(--muted)]">
+            <span>Quiet</span>
+            <span>Loud</span>
+          </div>
+        </div>
+
+        <div className="mt-4 flex items-center justify-between gap-4 rounded-2xl border border-[var(--border)] bg-[var(--background)] p-4">
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold">Play call ringtones</h3>
+            <p className="mt-1 text-xs leading-5 text-[var(--muted)]">
+              Turn off to silence generated call tones in this browser.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-label="Play call ringtones"
+            aria-checked={ringtoneSettings.enabled}
+            disabled={!ringtoneSettingsLoaded}
+            onClick={() =>
+              updateRingtoneSettings({ enabled: !ringtoneSettings.enabled })
+            }
+            className="flex shrink-0 items-center gap-3 rounded-xl p-1 transition disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <span className="hidden text-xs font-medium text-[var(--muted)] sm:inline">
+              {ringtoneSettings.enabled ? "On" : "Off"}
+            </span>
+            <span
+              className={
+                "relative h-6 w-11 rounded-full transition " +
+                (ringtoneSettings.enabled
+                  ? "bg-[var(--accent)]"
+                  : "bg-[var(--muted)]/40")
+              }
+            >
+              <span
+                className={
+                  "absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition " +
+                  (ringtoneSettings.enabled ? "left-6" : "left-1")
+                }
+              />
+            </span>
+          </button>
+        </div>
+
+        <p className="mt-4 text-xs leading-5 text-[var(--muted)]">
+          Ringtone choice and volume are saved locally on this browser. Preview
+          works after you tap it; browsers may restrict sound until a user
+          gesture has occurred. App-closed ringing is not guaranteed.
+        </p>
+      </div>
     </section>
   );
 }
