@@ -1,8 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import {
   ChevronDown,
+  GripHorizontal,
   LoaderCircle,
   Maximize2,
   Mic,
@@ -153,6 +161,15 @@ function AudioCallController({
   const failureAttemptRef = useRef<string | null>(null);
   const [activeCall, setActiveCall] = useState<CallRecord | null>(null);
   const [isMinimized, setIsMinimized] = useState(false);
+  const [widgetPosition, setWidgetPosition] = useState({ x: 0, y: 0 });
+  const minimizedWidgetRef = useRef<HTMLElement | null>(null);
+  const dragStartRef = useRef<{
+    pointerId: number;
+    pointerX: number;
+    pointerY: number;
+    x: number;
+    y: number;
+  } | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [isWorking, setIsWorking] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -165,6 +182,7 @@ function AudioCallController({
 
     if (call && (!previousCall || previousCall.id !== call.id)) {
       setIsMinimized(false);
+      setWidgetPosition({ x: 0, y: 0 });
     }
 
     activeCallRef.current = call;
@@ -870,6 +888,91 @@ function AudioCallController({
     transport.setMuted(!transport.isMuted);
   }, [transport.isMuted, transport.setMuted]);
 
+  const handleWidgetPointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      event.preventDefault();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      dragStartRef.current = {
+        pointerId: event.pointerId,
+        pointerX: event.clientX,
+        pointerY: event.clientY,
+        x: widgetPosition.x,
+        y: widgetPosition.y,
+      };
+    },
+    [widgetPosition],
+  );
+
+  const handleWidgetPointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const start = dragStartRef.current;
+      const widget = minimizedWidgetRef.current;
+      if (!start || start.pointerId !== event.pointerId || !widget) return;
+
+      const rect = widget.getBoundingClientRect();
+      const baseLeft = rect.left - widgetPosition.x;
+      const baseTop = rect.top - widgetPosition.y;
+      const minX = 8 - baseLeft;
+      const maxX = window.innerWidth - rect.width - 8 - baseLeft;
+      const minY = 8 - baseTop;
+      const maxY = window.innerHeight - rect.height - 8 - baseTop;
+      const clamp = (value: number, min: number, max: number) =>
+        Math.min(Math.max(value, Math.min(min, max)), Math.max(min, max));
+
+      setWidgetPosition({
+        x: clamp(start.x + event.clientX - start.pointerX, minX, maxX),
+        y: clamp(start.y + event.clientY - start.pointerY, minY, maxY),
+      });
+    },
+    [widgetPosition],
+  );
+
+  const handleWidgetPointerEnd = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (dragStartRef.current?.pointerId !== event.pointerId) return;
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      dragStartRef.current = null;
+    },
+    [],
+  );
+
+  const handleWidgetKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      const step = event.shiftKey ? 48 : 24;
+      let dx = 0;
+      let dy = 0;
+      switch (event.key) {
+        case "ArrowLeft": dx = -step; break;
+        case "ArrowRight": dx = step; break;
+        case "ArrowUp": dy = -step; break;
+        case "ArrowDown": dy = step; break;
+        default: return;
+      }
+      event.preventDefault();
+      const widget = minimizedWidgetRef.current;
+      if (!widget) return;
+
+      const rect = widget.getBoundingClientRect();
+      const baseLeft = rect.left - widgetPosition.x;
+      const baseTop = rect.top - widgetPosition.y;
+      const minX = 8 - baseLeft;
+      const maxX = window.innerWidth - rect.width - 8 - baseLeft;
+      const minY = 8 - baseTop;
+      const maxY = window.innerHeight - rect.height - 8 - baseTop;
+      const clamp = (value: number, min: number, max: number) =>
+        Math.min(Math.max(value, Math.min(min, max)), Math.max(min, max));
+
+      setWidgetPosition({
+        x: clamp(widgetPosition.x + dx, minX, maxX),
+        y: clamp(widgetPosition.y + dy, minY, maxY),
+      });
+    },
+    [widgetPosition],
+  );
+
   if (
     !conversationId ||
     !currentUserId ||
@@ -932,11 +1035,31 @@ function AudioCallController({
       {activeCall ? (
         isMinimized ? (
           <section
-            className="fixed inset-x-3 bottom-3 z-[220] mx-auto flex max-w-lg items-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--background)] p-3 shadow-2xl"
+            ref={minimizedWidgetRef}
+            style={{
+              left: `calc(50% + ${widgetPosition.x}px)`,
+              transform: `translate(-50%, ${widgetPosition.y}px)`,
+            }}
+            className="fixed left-1/2 right-auto bottom-[calc(5rem_+_env(safe-area-inset-bottom))] z-[220] flex w-[min(320px,calc(100vw-1rem))] max-w-[320px] items-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--background)] p-3 shadow-2xl sm:bottom-3"
             role="region"
             aria-label="Minimized audio call"
             aria-live="polite"
           >
+            <div
+              className="absolute -top-7 left-1/2 flex -translate-x-1/2 cursor-move touch-none select-none items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--background)] px-3 py-1 text-[10px] font-medium text-[var(--muted)] shadow-sm"
+              role="group"
+              aria-label="Move minimized call widget"
+              tabIndex={0}
+              title="Drag to move the call widget. Use arrow keys to reposition it."
+              onPointerDown={handleWidgetPointerDown}
+              onPointerMove={handleWidgetPointerMove}
+              onPointerUp={handleWidgetPointerEnd}
+              onPointerCancel={handleWidgetPointerEnd}
+              onKeyDown={handleWidgetKeyDown}
+            >
+              <GripHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
+              Move call
+            </div>
             <button
               type="button"
               onClick={() => setIsMinimized(false)}
