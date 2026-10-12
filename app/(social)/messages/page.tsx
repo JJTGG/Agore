@@ -603,15 +603,15 @@ export default function MessagesPage() {
   }
 
   return (
-    <main className="min-w-0 py-5">
+    <main className="w-full min-w-0 px-0 py-3 sm:py-5">
       <div className="mx-auto w-full max-w-5xl px-0 pb-8 sm:px-2">
         <section className="overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--surface)]">
-          <div className="flex flex-col gap-4 border-b border-[var(--border)] px-5 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-4 border-b border-[var(--border)] px-4 py-4 sm:px-6 sm:py-5 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
                 Conversations
               </p>
-              <h1 className="mt-1 text-2xl font-semibold tracking-[-0.03em]">
+              <h1 className="mt-1 text-xl font-semibold tracking-[-0.03em] sm:text-2xl">
                 Stay in touch.
               </h1>
               <p className="mt-1 max-w-xl text-sm leading-6 text-[var(--muted)]">
@@ -857,7 +857,7 @@ export default function MessagesPage() {
           aria-modal="true"
           aria-labelledby="new-message-title"
         >
-          <div className="flex max-h-[92vh] w-full max-w-xl flex-col overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl">
+          <div className="flex max-h-[92dvh] w-full max-w-xl flex-col overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl">
             <header className="flex items-center justify-between border-b border-[var(--border)] px-5 py-4 sm:px-6">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
@@ -1002,7 +1002,7 @@ export default function MessagesPage() {
           aria-modal="true"
           aria-labelledby="create-group-title"
         >
-          <div className="flex max-h-[92vh] w-full max-w-xl flex-col overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl">
+          <div className="flex max-h-[92dvh] w-full max-w-xl flex-col overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl">
             <header className="flex items-center justify-between border-b border-[var(--border)] px-5 py-4 sm:px-6">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
