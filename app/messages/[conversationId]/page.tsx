@@ -114,6 +114,126 @@ type Message = {
   } | null;
 };
 
+type ConversationCallRecord = {
+  id: string;
+  conversation_id: string;
+  caller_id: string;
+  callee_id: string;
+  status:
+    | "ringing"
+    | "accepted"
+    | "completed"
+    | "declined"
+    | "missed"
+    | "cancelled"
+    | "failed";
+  created_at: string;
+  answered_at: string | null;
+  ended_at: string | null;
+  duration_seconds: number | null;
+};
+
+type ConversationTimelineItem =
+  | {
+      kind: "message";
+      id: string;
+      created_at: string;
+      message: Message;
+    }
+  | {
+      kind: "call";
+      id: string;
+      created_at: string;
+      call: ConversationCallRecord;
+    };
+
+function formatCallDuration(totalSeconds: number) {
+  const safeSeconds = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const seconds = safeSeconds % 60;
+
+  if (hours > 0) {
+    return (
+      hours +
+      ":" +
+      String(minutes).padStart(2, "0") +
+      ":" +
+      String(seconds).padStart(2, "0")
+    );
+  }
+
+  return minutes + ":" + String(seconds).padStart(2, "0");
+}
+
+function CallEventRow({
+  call,
+  currentUserId,
+}: {
+  call: ConversationCallRecord;
+  currentUserId: string | null;
+}) {
+  const outgoing = call.caller_id === currentUserId;
+
+  let label: string;
+
+  switch (call.status) {
+    case "completed":
+      label = (outgoing ? "Outgoing" : "Incoming") + " audio call";
+      break;
+    case "missed":
+      label = outgoing
+        ? "Outgoing call · no answer"
+        : "Missed audio call";
+      break;
+    case "declined":
+      label = outgoing
+        ? "Outgoing call · declined"
+        : "Declined incoming call";
+      break;
+    case "cancelled":
+      label = outgoing
+        ? "Cancelled outgoing call"
+        : "Incoming call cancelled";
+      break;
+    case "failed":
+      label = "Audio call failed";
+      break;
+    case "accepted":
+      label = "Connected audio call";
+      break;
+    default:
+      label = outgoing
+        ? "Outgoing audio call"
+        : "Incoming audio call";
+  }
+
+  return (
+    <div className="mx-auto flex w-fit max-w-[96%] flex-wrap items-center justify-center gap-x-2 gap-y-1 rounded-full border border-[var(--border)] bg-[var(--surface-raised)] px-3 py-2 text-center text-[11px] leading-4 text-[var(--muted-strong)] shadow-sm">
+      <span aria-hidden="true" className="text-sm">
+        {call.status === "missed"
+          ? "↙"
+          : call.status === "failed"
+            ? "×"
+            : "☎"}
+      </span>
+
+      <span className="font-semibold">{label}</span>
+
+      {call.status === "completed" &&
+      call.duration_seconds !== null ? (
+        <span>
+          · {formatCallDuration(call.duration_seconds)}
+        </span>
+      ) : null}
+
+      <span className="text-[10px] text-[var(--muted)]">
+        {formatMessageTime(call.created_at)}
+      </span>
+    </div>
+  );
+}
+
 type ReplyTarget = Pick<
   Message,
   "id" | "sender_id" | "content" | "created_at" | "sender"
@@ -650,6 +770,9 @@ export default function ConversationPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [callHistory, setCallHistory] = useState<
+    ConversationCallRecord[]
+  >([]);
   const [historyCursor, setHistoryCursor] = useState<string | null>(null);
   const [hasOlderMessages, setHasOlderMessages] = useState(false);
   const [loadingOlderMessages, setLoadingOlderMessages] = useState(false);
@@ -939,6 +1062,59 @@ export default function ConversationPage() {
     },
     [conversationId, markConversationRead, router],
   );
+
+  useEffect(() => {
+    if (!conversationId || conversation?.type !== "direct") {
+      setCallHistory([]);
+      return;
+    }
+
+    let active = true;
+
+    async function refreshCallHistory() {
+      try {
+        const response = await fetch(
+          "/api/conversations/" +
+            encodeURIComponent(conversationId) +
+            "/calls?limit=100",
+          { cache: "no-store" },
+        );
+
+        if (response.status === 401) {
+          if (active) router.push("/auth");
+          return;
+        }
+
+        if (!response.ok) return;
+
+        const data = await response.json();
+
+        if (active) {
+          setCallHistory(
+            Array.isArray(data.calls) ? data.calls : [],
+          );
+        }
+      } catch {
+        // Keep the last successful call history if refresh fails.
+      }
+    }
+
+    void refreshCallHistory();
+
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void refreshCallHistory();
+      }
+    }, 12000);
+
+    window.addEventListener("focus", refreshCallHistory);
+
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshCallHistory);
+    };
+  }, [conversationId, conversation?.type, router]);
 
   const loadOlderMessages = useCallback(async () => {
     const cursor = historyCursor;
@@ -2056,6 +2232,31 @@ export default function ConversationPage() {
     }
   }
 
+  const timelineItems = useMemo<ConversationTimelineItem[]>(() => {
+    const items: ConversationTimelineItem[] = [
+      ...messages.map((message) => ({
+        kind: "message" as const,
+        id: message.id,
+        created_at: message.created_at,
+        message,
+      })),
+      ...callHistory.map((call) => ({
+        kind: "call" as const,
+        id: call.id,
+        created_at: call.created_at,
+        call,
+      })),
+    ];
+
+    return items.sort((left, right) => {
+      const difference =
+        new Date(left.created_at).getTime() -
+        new Date(right.created_at).getTime();
+
+      return difference || left.id.localeCompare(right.id);
+    });
+  }, [messages, callHistory]);
+
   return (
     <main className="h-dvh max-h-dvh w-full min-w-0 overflow-hidden bg-[var(--background)] text-[var(--foreground)]">
       <div className="mx-auto flex h-full min-h-0 w-full min-w-0 max-w-6xl flex-col md:px-4 md:py-4">
@@ -2334,7 +2535,7 @@ export default function ConversationPage() {
                   Back to messages
                 </Link>
               </div>
-            ) : messages.length === 0 ? (
+            ) : messages.length === 0 && callHistory.length === 0 ? (
               <div className="flex min-h-[50vh] flex-col items-center justify-center px-5 text-center">
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]">
                   <MessageCircle size={22} />
@@ -2369,14 +2570,52 @@ export default function ConversationPage() {
                   </div>
                 ) : null}
 
-                {messages.map((message, index) => {
-                  const previousMessage = messages[index - 1];
-                  const isOwn = message.sender_id === currentUserId;
-                  const grouped = isSameMessageGroup(previousMessage, message);
-                  const currentDay = formatMessageDay(message.created_at);
-                  const previousDay = previousMessage
-                    ? formatMessageDay(previousMessage.created_at)
+                {timelineItems.map((item, index) => {
+                  const previousItem = timelineItems[index - 1];
+
+                  const currentDay = formatMessageDay(item.created_at);
+                  const previousDay = previousItem
+                    ? formatMessageDay(previousItem.created_at)
                     : null;
+
+                  if (item.kind === "call") {
+                    return (
+                      <div
+                        key={"call-event-" + item.call.id}
+                        className="mt-3 first:mt-0"
+                      >
+                        {currentDay !== previousDay ? (
+                          <div className="mb-5 mt-2 flex items-center gap-3">
+                            <div className="h-px flex-1 bg-[var(--border)]" />
+
+                            <span className="rounded-full border border-[var(--border)] bg-[var(--surface-raised)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--muted)]">
+                              {currentDay}
+                            </span>
+
+                            <div className="h-px flex-1 bg-[var(--border)]" />
+                          </div>
+                        ) : null}
+
+                        <CallEventRow
+                          call={item.call}
+                          currentUserId={currentUserId}
+                        />
+                      </div>
+                    );
+                  }
+
+                  const message = item.message;
+
+                  const previousMessage =
+                    previousItem?.kind === "message"
+                      ? previousItem.message
+                      : undefined;
+
+                  const isOwn = message.sender_id === currentUserId;
+
+                  const grouped = previousMessage
+                    ? isSameMessageGroup(previousMessage, message)
+                    : false;
 
                   const replyTarget =
                     message.reply_to_message ??
