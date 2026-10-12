@@ -1,4 +1,3 @@
-
 "use client";
 
 import {
@@ -332,6 +331,7 @@ export default function PostFeed({
 
   function handleMediaChange(
     event: React.ChangeEvent<HTMLInputElement>,
+    expectedKind: "image" | "video" | "file",
   ) {
     const files = Array.from(event.target.files ?? []);
 
@@ -343,6 +343,33 @@ export default function PostFeed({
 
     setError("");
     setNotice("");
+
+    const invalidFile = files.find((file) => {
+      const mimeType = file.type.toLowerCase();
+      const isImage = mimeType.startsWith("image/");
+      const isVideo = mimeType.startsWith("video/");
+
+      if (expectedKind === "image") {
+        return !isImage;
+      }
+
+      if (expectedKind === "video") {
+        return !isVideo;
+      }
+
+      return isImage || isVideo;
+    });
+
+    if (invalidFile) {
+      setError(
+        expectedKind === "image"
+          ? "Select image files using the Images option."
+          : expectedKind === "video"
+            ? "Select video files using the Videos option."
+            : "Use the Images or Videos option for photos and videos.",
+      );
+      return;
+    }
 
     if (
       selectedFiles.length + files.length >
@@ -881,32 +908,73 @@ export default function PostFeed({
 
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                     <div className="flex flex-wrap items-center gap-2">
-                      <label
-                        htmlFor="agore-post-media"
-                        className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-[var(--background)] px-3 py-1.5 text-xs font-medium text-[var(--muted)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)] ${
-                          publishing
-                            ? "pointer-events-none opacity-50"
-                            : ""
-                        }`}
-                      >
-                        <Paperclip size={13} />
-                        Add media
-                      </label>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <label
+                          htmlFor="agore-post-images"
+                          className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-[var(--background)] px-3 py-2 text-xs font-medium text-[var(--muted)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)] ${
+                            publishing ? "pointer-events-none opacity-50" : ""
+                          }`}
+                        >
+                          <ImageIcon size={14} />
+                          Images
+                        </label>
 
-                      <input
-                        id="agore-post-media"
-                        type="file"
-                        multiple
-                        accept="*/*"
-                        className="sr-only"
-                        onChange={handleMediaChange}
-                        disabled={publishing}
-                      />
+                        <input
+                          id="agore-post-images"
+                          type="file"
+                          multiple
+                          accept="image/*"
+                          className="sr-only"
+                          onChange={(event) =>
+                            handleMediaChange(event, "image")
+                          }
+                          disabled={publishing}
+                        />
 
-                      <span className="hidden items-center gap-1.5 rounded-full bg-[var(--background)] px-3 py-1.5 text-xs font-medium text-[var(--muted)] sm:inline-flex">
-                        <ImageIcon size={13} />
-                        Images, video, audio, documents & more
-                      </span>
+                        <label
+                          htmlFor="agore-post-videos"
+                          className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-[var(--background)] px-3 py-2 text-xs font-medium text-[var(--muted)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)] ${
+                            publishing ? "pointer-events-none opacity-50" : ""
+                          }`}
+                        >
+                          <Film size={14} />
+                          Videos
+                        </label>
+
+                        <input
+                          id="agore-post-videos"
+                          type="file"
+                          multiple
+                          accept="video/*"
+                          className="sr-only"
+                          onChange={(event) =>
+                            handleMediaChange(event, "video")
+                          }
+                          disabled={publishing}
+                        />
+
+                        <label
+                          htmlFor="agore-post-files"
+                          className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border)] px-3 py-2 text-xs font-medium text-[var(--muted)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)] ${
+                            publishing ? "pointer-events-none opacity-50" : ""
+                          }`}
+                        >
+                          <Paperclip size={14} />
+                          Files
+                        </label>
+
+                        <input
+                          id="agore-post-files"
+                          type="file"
+                          multiple
+                          accept="*/*"
+                          className="sr-only"
+                          onChange={(event) =>
+                            handleMediaChange(event, "file")
+                          }
+                          disabled={publishing}
+                        />
+                      </div>
                     </div>
 
                     <div className="flex items-center gap-3">
