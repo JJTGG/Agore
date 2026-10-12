@@ -2,9 +2,27 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { createNotification } from "@/lib/notifications";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 const uuidSchema = z.string().uuid();
+const MAX_COMMENT_IMAGES = 4;
+const MAX_COMMENT_IMAGE_SIZE = 10 * 1024 * 1024;
+const COMMENT_IMAGE_MIME_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "image/avif",
+] as const;
+
+const commentImageSchema = z.object({
+  storage_path: z.string().trim().min(1).max(500),
+  mime_type: z.enum(COMMENT_IMAGE_MIME_TYPES),
+  size_bytes: z.number().int().positive().max(MAX_COMMENT_IMAGE_SIZE),
+  width: z.number().int().positive().nullable().optional(),
+  height: z.number().int().positive().nullable().optional(),
+});
 
 const createCommentSchema = z.object({
   content: z
@@ -16,6 +34,16 @@ const createCommentSchema = z.object({
       "Comment content must be 1000 characters or fewer.",
     ),
   parentCommentId: z.string().uuid().nullable().optional(),
+  images: z.array(commentImageSchema).max(MAX_COMMENT_IMAGES).optional(),
+}).superRefine((value, context) => {
+  const paths = (value.images ?? []).map((image) => image.storage_path);
+  if (new Set(paths).size !== paths.length) {
+    context.addIssue({
+      code: "custom",
+      message: "Each attached image must have a unique storage path.",
+      path: ["images"],
+    });
+  }
 });
 
 const listCommentsSchema = z
@@ -47,6 +75,18 @@ const commentSelect = `
   content,
   created_at,
   updated_at,
+  comment_media (
+    id,
+    comment_id,
+    author_id,
+    storage_path,
+    mime_type,
+    size_bytes,
+    width,
+    height,
+    sort_order,
+    created_at
+  ),
   profiles!comments_author_id_fkey!inner (
     display_name,
     username,
@@ -277,6 +317,7 @@ export async function POST(
   }
 
   const parentCommentId = parsedBody.data.parentCommentId ?? null;
+  const images = parsedBody.data.images ?? [];
   let parentCommentAuthorId: string | null = null;
 
   if (parentCommentId) {
@@ -328,6 +369,82 @@ export async function POST(
     parentCommentAuthorId = parentComment.author_id;
   }
 
+  if (images.length > 0) {
+    const mediaAdmin = createAdminClient();
+    const extensionByMime: Record<(typeof COMMENT_IMAGE_MIME_TYPES)[number], string> = {
+      "image/jpeg": "jpg",
+      "image/png": "png",
+      "image/webp": "webp",
+      "image/gif": "gif",
+      "image/avif": "avif",
+    };
+
+    for (const image of images) {
+      const segments = image.storage_path.split("/");
+      const fileName = segments[1] ?? "";
+      const expectedExtension = extensionByMime[image.mime_type];
+
+      if (
+        segments.length !== 2 ||
+        segments[0] !== user.id ||
+        !/^[0-9a-f-]{36}\.(jpg|png|webp|gif|avif)$/.test(fileName) ||
+        !fileName.toLowerCase().endsWith("." + expectedExtension)
+      ) {
+        return NextResponse.json(
+          { error: "One of the selected images has an invalid storage path." },
+          { status: 400 },
+        );
+      }
+
+      const {
+        data: storedFiles,
+        error: storageCheckError,
+      } = await mediaAdmin.storage
+        .from("comment-media")
+        .list(user.id, { limit: 100, search: fileName });
+
+      if (storageCheckError) {
+        console.error("Failed to verify Agore comment image upload:", storageCheckError);
+        return NextResponse.json(
+          { error: "Unable to verify an uploaded image. Please try again." },
+          { status: 500 },
+        );
+      }
+
+      const storedFile = (storedFiles ?? []).find(
+        (file) => file.name === fileName && file.id !== null,
+      );
+
+      if (!storedFile) {
+        return NextResponse.json(
+          { error: "One of the selected images has not finished uploading." },
+          { status: 400 },
+        );
+      }
+
+      const storageMetadata = storedFile.metadata as
+        | { size?: unknown; mimetype?: unknown }
+        | null;
+      const actualSize = Number(storageMetadata?.size);
+      if (Number.isFinite(actualSize) && actualSize > 0 && actualSize !== image.size_bytes) {
+        return NextResponse.json(
+          { error: "An uploaded image's size did not match its metadata." },
+          { status: 400 },
+        );
+      }
+
+      if (
+        typeof storageMetadata?.mimetype === "string" &&
+        storageMetadata.mimetype.toLowerCase() !== image.mime_type
+      ) {
+        return NextResponse.json(
+          { error: "An uploaded image's type did not match its metadata." },
+          { status: 400 },
+        );
+      }
+    }
+  }
+
   const {
     data: comment,
     error: commentError,
@@ -364,6 +481,70 @@ export async function POST(
     );
   }
 
+  let commentMedia: Array<{
+    id: string;
+    comment_id: string;
+    author_id: string;
+    storage_path: string;
+    mime_type: string;
+    size_bytes: number;
+    width: number | null;
+    height: number | null;
+    sort_order: number;
+    created_at: string;
+  }> = [];
+
+  if (images.length > 0) {
+    const mediaAdmin = createAdminClient();
+    const {
+      data: insertedMedia,
+      error: mediaInsertError,
+    } = await mediaAdmin
+      .from("comment_media")
+      .insert(
+        images.map((image, index) => ({
+          comment_id: comment.id,
+          author_id: user.id,
+          storage_path: image.storage_path,
+          mime_type: image.mime_type,
+          size_bytes: image.size_bytes,
+          width: image.width ?? null,
+          height: image.height ?? null,
+          sort_order: index,
+        })),
+      )
+      .select(`
+        id,
+        comment_id,
+        author_id,
+        storage_path,
+        mime_type,
+        size_bytes,
+        width,
+        height,
+        sort_order,
+        created_at
+      `);
+
+    if (mediaInsertError || !insertedMedia) {
+      console.error("Failed to attach Agore comment images:", mediaInsertError);
+      await mediaAdmin
+        .from("comments")
+        .update({ deleted_at: new Date().toISOString() })
+        .eq("id", comment.id)
+        .eq("author_id", user.id);
+      await mediaAdmin.storage
+        .from("comment-media")
+        .remove(images.map((image) => image.storage_path));
+      return NextResponse.json(
+        { error: "The comment could not finish attaching its images. Please try again." },
+        { status: 500 },
+      );
+    }
+
+    commentMedia = insertedMedia as typeof commentMedia;
+  }
+
   // Resolve the authoritative event through the existing notification
   // pipeline. Do not insert a second notification implementation here.
   await createNotification({
@@ -395,7 +576,7 @@ export async function POST(
   }
 
   return NextResponse.json(
-    { comment },
+    { comment: { ...comment, comment_media: commentMedia } },
     { status: 201 },
   );
 }
