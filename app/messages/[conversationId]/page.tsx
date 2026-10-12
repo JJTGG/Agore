@@ -1929,8 +1929,8 @@ export default function ConversationPage() {
   }
 
   return (
-    <main className="h-dvh max-h-dvh overflow-hidden bg-[var(--background)] text-[var(--foreground)]">
-      <div className="mx-auto flex h-full min-h-0 w-full max-w-6xl flex-col md:px-4 md:py-4">
+    <main className="h-dvh max-h-dvh w-full min-w-0 overflow-hidden bg-[var(--background)] text-[var(--foreground)]">
+      <div className="mx-auto flex h-full min-h-0 w-full min-w-0 max-w-6xl flex-col md:px-4 md:py-4">
         <header className="flex h-14 shrink-0 items-center justify-between px-3 md:px-1">
           <button
             type="button"
@@ -1951,7 +1951,7 @@ export default function ConversationPage() {
           <div className="w-20 sm:w-28" />
         </header>
 
-        <section className="flex h-full min-h-0 flex-1 flex-col overflow-hidden border-y border-[var(--border)] bg-[var(--surface)] md:min-h-0 md:rounded-[1.75rem] md:border md:shadow-[0_12px_40px_rgba(0,0,0,0.05)]">
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-y border-[var(--border)] bg-[var(--surface)] md:rounded-[1.75rem] md:border md:shadow-[0_12px_40px_rgba(0,0,0,0.05)]">
           <header className="flex shrink-0 items-center gap-3 border-b border-[var(--border)] px-4 py-3 sm:px-5">
             <AgoreAvatar
               avatarPath={
@@ -2036,7 +2036,7 @@ export default function ConversationPage() {
 
           <div
             ref={messagesViewportRef}
-            className="relative min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-3 py-5 sm:px-5 sm:py-6"
+            className="relative min-h-0 min-w-0 flex-1 touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain px-3 py-5 sm:px-5 sm:py-6"
           >
             {loading ? (
               <div className="flex min-h-[50vh] items-center justify-center">
@@ -2192,9 +2192,9 @@ export default function ConversationPage() {
 
           <form
             onSubmit={handleSend}
-            className="shrink-0 border-t border-[var(--border)] bg-[var(--surface-raised)] p-3 sm:p-4"
+            className="shrink-0 border-t border-[var(--border)] bg-[var(--surface-raised)] p-2 sm:p-4"
           >
-            <div className="mx-auto max-w-4xl">
+            <div className="mx-auto min-w-0 max-w-4xl">
               {replyingTo ? (
                 <div className="mb-3 flex items-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-3 py-3">
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent)]">
@@ -2242,7 +2242,7 @@ export default function ConversationPage() {
                 </div>
               ) : null}
 
-              <div className="flex items-end gap-2">
+              <div className="flex min-w-0 items-end gap-1 sm:gap-2">
                 <MediaMessageComposer
                   conversationId={conversationId}
                   disabled={sending || !conversation}
@@ -2260,7 +2260,7 @@ export default function ConversationPage() {
                     disabled={sending || !conversation}
                     placeholder="Write a message…"
                     aria-label="Write a message"
-                    className="max-h-36 min-h-11 w-full resize-none overflow-y-auto bg-transparent px-4 py-3 text-sm leading-5 outline-none placeholder:text-[var(--muted)] disabled:cursor-not-allowed disabled:opacity-50"
+                    className="max-h-36 min-h-10 w-full resize-none overflow-y-auto bg-transparent px-3 py-2.5 text-sm leading-5 outline-none placeholder:text-[var(--muted)] disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-11 sm:px-4 sm:py-3"
                   />
                 </div>
 
@@ -2275,7 +2275,7 @@ export default function ConversationPage() {
                   type="submit"
                   disabled={sending || !conversation || !draft.trim()}
                   aria-label={replyingTo ? "Send reply" : "Send message"}
-                  className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-white shadow-sm transition hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-40"
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-white shadow-sm transition hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-40 sm:h-11 sm:w-11"
                 >
                   {sending ? (
                     <Loader2 size={17} className="animate-spin" />
@@ -2300,7 +2300,7 @@ export default function ConversationPage() {
           aria-modal="true"
           aria-labelledby="forward-message-title"
         >
-          <div className="flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-[1.75rem] border border-[var(--border)] bg-[var(--surface)] shadow-2xl">
+          <div className="flex max-h-[88dvh] w-full max-w-xl flex-col overflow-hidden rounded-[1.75rem] border border-[var(--border)] bg-[var(--surface)] shadow-2xl">
             <header className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-5 py-4">
               <div className="min-w-0">
                 <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--accent)]">
@@ -2511,7 +2511,7 @@ export default function ConversationPage() {
           aria-modal="true"
           aria-labelledby="group-settings-title"
         >
-          <div className="flex max-h-[94vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[1.75rem] border border-[var(--border)] bg-[var(--surface)] shadow-2xl sm:rounded-[1.75rem]">
+          <div className="flex max-h-[94dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[1.75rem] border border-[var(--border)] bg-[var(--surface)] shadow-2xl sm:rounded-[1.75rem]">
             <header className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-5 py-4 sm:px-6">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--accent)]">
