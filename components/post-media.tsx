@@ -37,9 +37,7 @@ type PostMediaProps = {
 const supabase = createClient();
 
 function getFileName(storagePath: string) {
-  const rawName =
-    storagePath.split("/").pop() ??
-    "Attachment";
+  const rawName = storagePath.split("/").pop() ?? "Attachment";
 
   const withoutId = rawName.replace(
     /^[0-9a-f-]{36}-/,
@@ -54,9 +52,7 @@ function getFileName(storagePath: string) {
 }
 
 function formatFileSize(bytes: number) {
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
+  if (bytes < 1024) return `${bytes} B`;
 
   if (bytes < 1024 * 1024) {
     return `${(bytes / 1024).toFixed(1)} KB`;
@@ -92,21 +88,8 @@ function getFileIcon(mimeType: string) {
 }
 
 function getMediaLabel(mimeType: string) {
-  if (mimeType.startsWith("image/")) {
-    return "Image";
-  }
-
-  if (mimeType.startsWith("video/")) {
-    return "Video";
-  }
-
-  if (mimeType.startsWith("audio/")) {
-    return "Audio";
-  }
-
-  if (mimeType === "application/pdf") {
-    return "PDF";
-  }
+  if (mimeType.startsWith("audio/")) return "Audio";
+  if (mimeType === "application/pdf") return "PDF";
 
   if (
     mimeType.includes("zip") ||
@@ -119,17 +102,12 @@ function getMediaLabel(mimeType: string) {
   return "File";
 }
 
-export default function PostMedia({
-  media,
-}: PostMediaProps) {
-  const [urls, setUrls] = useState<
-    Record<string, string>
-  >({});
-
+export default function PostMedia({ media }: PostMediaProps) {
+  const [urls, setUrls] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
-
-  const [activeImageId, setActiveImageId] =
-    useState<string | null>(null);
+  const [activeImageId, setActiveImageId] = useState<string | null>(
+    null,
+  );
 
   const imageMedia = media.filter(
     (item) =>
@@ -160,13 +138,9 @@ export default function PostMedia({
       try {
         const entries = await Promise.all(
           media.map(async (item) => {
-            const { data, error } =
-              await supabase.storage
-                .from("post-media")
-                .createSignedUrl(
-                  item.storage_path,
-                  60 * 60,
-                );
+            const { data, error } = await supabase.storage
+              .from("post-media")
+              .createSignedUrl(item.storage_path, 60 * 60);
 
             if (error || !data?.signedUrl) {
               console.error(
@@ -177,26 +151,19 @@ export default function PostMedia({
               return null;
             }
 
-            return [
-              item.id,
-              data.signedUrl,
-            ] as const;
+            return [item.id, data.signedUrl] as const;
           }),
         );
 
-        if (!active) {
-          return;
-        }
+        if (!active) return;
 
         setUrls(
           Object.fromEntries(
             entries.filter(
               (
                 entry,
-              ): entry is readonly [
-                string,
-                string,
-              ] => entry !== null,
+              ): entry is readonly [string, string] =>
+                entry !== null,
             ),
           ),
         );
@@ -206,13 +173,9 @@ export default function PostMedia({
           error,
         );
 
-        if (active) {
-          setUrls({});
-        }
+        if (active) setUrls({});
       } finally {
-        if (active) {
-          setLoading(false);
-        }
+        if (active) setLoading(false);
       }
     }
 
@@ -224,13 +187,9 @@ export default function PostMedia({
   }, [media]);
 
   useEffect(() => {
-    if (!activeImageId) {
-      return;
-    }
+    if (!activeImageId) return;
 
-    const previousOverflow =
-      document.body.style.overflow;
-
+    const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
     function handleKeyDown(event: KeyboardEvent) {
@@ -248,107 +207,98 @@ export default function PostMedia({
 
       const availableImages = media.filter(
         (item) =>
-          item.mime_type
-            .toLowerCase()
-            .startsWith("image/") &&
+          item.mime_type.toLowerCase().startsWith("image/") &&
           Boolean(urls[item.id]),
       );
 
-      if (availableImages.length < 2) {
-        return;
-      }
+      if (availableImages.length < 2) return;
 
-      const currentIndex =
-        availableImages.findIndex(
-          (item) => item.id === activeImageId,
-        );
+      const currentIndex = availableImages.findIndex(
+        (item) => item.id === activeImageId,
+      );
 
-      if (currentIndex < 0) {
-        return;
-      }
-
-      const direction =
-        event.key === "ArrowRight" ? 1 : -1;
-
-      const nextIndex =
-        (currentIndex +
-          direction +
-          availableImages.length) %
-        availableImages.length;
+      if (currentIndex < 0) return;
 
       event.preventDefault();
 
-      setActiveImageId(
-        availableImages[nextIndex].id,
-      );
+      const direction = event.key === "ArrowRight" ? 1 : -1;
+      const nextIndex =
+        (currentIndex + direction + availableImages.length) %
+        availableImages.length;
+
+      setActiveImageId(availableImages[nextIndex].id);
     }
 
-    window.addEventListener(
-      "keydown",
-      handleKeyDown,
-    );
+    window.addEventListener("keydown", handleKeyDown);
 
     return () => {
-      document.body.style.overflow =
-        previousOverflow;
-
-      window.removeEventListener(
-        "keydown",
-        handleKeyDown,
-      );
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
     };
   }, [activeImageId, media, urls]);
 
   function moveImage(direction: -1 | 1) {
-    if (!activeImage || imageMedia.length < 2) {
-      return;
-    }
+    if (!activeImage || imageMedia.length < 2) return;
 
     const currentIndex = imageMedia.findIndex(
       (item) => item.id === activeImage.id,
     );
 
-    if (currentIndex < 0) {
-      return;
-    }
+    if (currentIndex < 0) return;
 
     const nextIndex =
-      (currentIndex +
-        direction +
-        imageMedia.length) %
+      (currentIndex + direction + imageMedia.length) %
       imageMedia.length;
 
     setActiveImageId(imageMedia[nextIndex].id);
   }
 
-  if (media.length === 0) {
-    return null;
-  }
+  if (media.length === 0) return null;
 
   if (loading) {
     return (
-      <div className="mt-5 flex items-center justify-center rounded-[1.5rem] border border-[var(--border)] bg-[var(--background)] px-5 py-8">
-        <div className="flex items-center gap-2 text-sm text-[var(--muted)]">
-          <Loader2
-            size={16}
-            className="animate-spin"
-          />
-          Loading attachments…
-        </div>
+      <div className="mt-4 flex items-center justify-center py-6">
+        <Loader2
+          size={18}
+          className="animate-spin text-[var(--muted)]"
+          aria-label="Loading post media"
+        />
       </div>
     );
   }
 
   return (
     <>
-      <div className="mt-5 space-y-3">
+      <div className="mt-4 space-y-3">
         {media.map((item) => {
           const url = urls[item.id];
-
-          const mimeType =
-            item.mime_type.toLowerCase();
+          const mimeType = item.mime_type.toLowerCase();
+          const isImage = mimeType.startsWith("image/");
+          const isVideo = mimeType.startsWith("video/");
+          const isAudio = mimeType.startsWith("audio/");
 
           if (!url) {
+            if (isImage || isVideo) {
+              return (
+                <div
+                  key={item.id}
+                  role="status"
+                  className="flex min-h-24 items-center justify-center gap-2 rounded-2xl bg-[var(--surface-muted)] px-4 text-sm text-[var(--muted)]"
+                >
+                  {isImage ? (
+                    <ImageIcon size={17} />
+                  ) : (
+                    <Film size={17} />
+                  )}
+                  <span>
+                    {isImage
+                      ? "Photo unavailable"
+                      : "Video unavailable"}
+                  </span>
+                </div>
+              );
+            }
+
             return (
               <div
                 key={item.id}
@@ -360,108 +310,62 @@ export default function PostMedia({
 
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold">
-                    {getFileName(item.storage_path)}
+                    Attachment
                   </p>
-
                   <p className="mt-1 text-xs text-[var(--muted)]">
-                    Attachment unavailable
+                    This file could not be loaded.
                   </p>
                 </div>
               </div>
             );
           }
 
-          if (mimeType.startsWith("image/")) {
+          // Photos appear directly in the post.
+          // No storage filename or separate "View image" footer.
+          if (isImage) {
             return (
-              <div
+              <button
                 key={item.id}
-                className="overflow-hidden rounded-[1.5rem] border border-[var(--border)] bg-[var(--background)]"
+                type="button"
+                onClick={() => setActiveImageId(item.id)}
+                aria-label="Open photo"
+                aria-haspopup="dialog"
+                className="group block w-full cursor-zoom-in overflow-hidden rounded-2xl bg-[var(--surface-muted)] text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
               >
-                <button
-                  type="button"
-                  onClick={() =>
-                    setActiveImageId(item.id)
-                  }
-                  aria-label={`View image: ${getFileName(item.storage_path)}`}
-                  aria-haspopup="dialog"
-                  className="group block w-full cursor-zoom-in text-left focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-[var(--accent)]"
-                >
-                  <img
-                    src={url}
-                    alt={getFileName(item.storage_path)}
-                    width={item.width ?? undefined}
-                    height={item.height ?? undefined}
-                    className="max-h-[620px] w-full object-contain transition duration-200 group-hover:opacity-90"
-                    loading="lazy"
-                    decoding="async"
-                  />
-
-                  <div className="flex items-center justify-between gap-3 border-t border-[var(--border)] px-4 py-3">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <ImageIcon
-                        size={15}
-                        className="shrink-0 text-[var(--accent)]"
-                      />
-
-                      <span className="truncate text-xs font-medium text-[var(--muted)]">
-                        {getFileName(item.storage_path)}
-                      </span>
-                    </div>
-
-                    <span className="shrink-0 text-xs font-semibold text-[var(--accent)]">
-                      View image
-                    </span>
-                  </div>
-                </button>
-              </div>
-            );
-          }
-
-          if (mimeType.startsWith("video/")) {
-            return (
-              <div
-                key={item.id}
-                className="overflow-hidden rounded-[1.5rem] border border-[var(--border)] bg-black"
-              >
-                <video
+                <img
                   src={url}
-                  controls
-                  playsInline
-                  preload="metadata"
-                  className="max-h-[620px] w-full"
+                  alt="Photo attached to post"
+                  width={item.width ?? undefined}
+                  height={item.height ?? undefined}
+                  loading="lazy"
+                  decoding="async"
+                  className="block max-h-[620px] w-full object-contain transition-opacity duration-200 group-hover:opacity-95"
                 />
-
-                <div className="flex items-center justify-between gap-3 bg-[var(--surface)] px-4 py-3">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <Film
-                      size={15}
-                      className="shrink-0 text-[var(--accent)]"
-                    />
-
-                    <div className="min-w-0">
-                      <p className="truncate text-xs font-semibold">
-                        {getFileName(item.storage_path)}
-                      </p>
-
-                      <p className="mt-0.5 text-[11px] text-[var(--muted)]">
-                        {formatFileSize(item.size_bytes)}
-                      </p>
-                    </div>
-                  </div>
-
-                  <span className="shrink-0 text-xs text-[var(--muted)]">
-                    Video
-                  </span>
-                </div>
-              </div>
+              </button>
             );
           }
 
-          if (mimeType.startsWith("audio/")) {
+          // Videos are also rendered as native post media,
+          // without filename or file-information panels.
+          if (isVideo) {
+            return (
+              <video
+                key={item.id}
+                src={url}
+                controls
+                playsInline
+                preload="metadata"
+                aria-label="Video attached to post"
+                className="block max-h-[620px] w-full rounded-2xl bg-black"
+              />
+            );
+          }
+
+          if (isAudio) {
             return (
               <div
                 key={item.id}
-                className="rounded-[1.5rem] border border-[var(--border)] bg-[var(--background)] p-4"
+                className="rounded-2xl border border-[var(--border)] bg-[var(--background)] p-4"
               >
                 <div className="flex items-center gap-3">
                   <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]">
@@ -472,11 +376,8 @@ export default function PostMedia({
                     <p className="truncate text-sm font-semibold">
                       {getFileName(item.storage_path)}
                     </p>
-
                     <p className="mt-1 text-xs text-[var(--muted)]">
-                      {getMediaLabel(item.mime_type)}
-                      {" · "}
-                      {formatFileSize(item.size_bytes)}
+                      Audio · {formatFileSize(item.size_bytes)}
                     </p>
                   </div>
                 </div>
@@ -495,7 +396,7 @@ export default function PostMedia({
             return (
               <div
                 key={item.id}
-                className="overflow-hidden rounded-[1.5rem] border border-[var(--border)] bg-[var(--background)]"
+                className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--background)]"
               >
                 <div className="flex items-center justify-between gap-3 px-4 py-3">
                   <div className="flex min-w-0 items-center gap-3">
@@ -507,7 +408,6 @@ export default function PostMedia({
                       <p className="truncate text-sm font-semibold">
                         {getFileName(item.storage_path)}
                       </p>
-
                       <p className="mt-1 text-xs text-[var(--muted)]">
                         PDF · {formatFileSize(item.size_bytes)}
                       </p>
@@ -529,12 +429,12 @@ export default function PostMedia({
             );
           }
 
-          const Icon = getFileIcon(item.mime_type);
+          const Icon = getFileIcon(mimeType);
 
           return (
             <div
               key={item.id}
-              className="flex items-center justify-between gap-4 rounded-[1.5rem] border border-[var(--border)] bg-[var(--background)] p-4"
+              className="flex items-center justify-between gap-4 rounded-2xl border border-[var(--border)] bg-[var(--background)] p-4"
             >
               <div className="flex min-w-0 items-center gap-3">
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[var(--surface)] text-[var(--accent)]">
@@ -545,10 +445,8 @@ export default function PostMedia({
                   <p className="truncate text-sm font-semibold">
                     {getFileName(item.storage_path)}
                   </p>
-
                   <p className="mt-1 truncate text-xs text-[var(--muted)]">
-                    {getMediaLabel(item.mime_type)}
-                    {" · "}
+                    {getMediaLabel(mimeType)} ·{" "}
                     {formatFileSize(item.size_bytes)}
                   </p>
                 </div>
@@ -580,24 +478,21 @@ export default function PostMedia({
           <section
             role="dialog"
             aria-modal="true"
-            aria-label={`Image viewer: ${getFileName(activeImage.storage_path)}`}
+            aria-label="Photo viewer"
             className="flex h-[100dvh] w-full max-w-6xl flex-col overflow-hidden bg-[#08090D] text-white sm:h-[92dvh] sm:rounded-2xl sm:border sm:border-white/10 sm:shadow-2xl"
           >
             <header className="flex min-h-16 shrink-0 items-center gap-3 border-b border-white/10 px-4">
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold">
-                  {getFileName(activeImage.storage_path)}
-                </p>
-
+                <p className="text-sm font-semibold">Photo</p>
                 <p className="mt-0.5 text-xs text-white/55">
-                  Image
+                  Agoré
                 </p>
               </div>
 
               <button
                 type="button"
                 onClick={() => setActiveImageId(null)}
-                aria-label="Close image viewer"
+                aria-label="Close photo viewer"
                 className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white/75 transition hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-white"
               >
                 <X size={21} />
@@ -608,7 +503,7 @@ export default function PostMedia({
               <img
                 key={activeImage.id}
                 src={activeImageUrl}
-                alt={getFileName(activeImage.storage_path)}
+                alt="Photo"
                 draggable={false}
                 className="max-h-full max-w-full select-none object-contain"
               />
@@ -618,7 +513,7 @@ export default function PostMedia({
                   <button
                     type="button"
                     onClick={() => moveImage(-1)}
-                    aria-label="Previous image"
+                    aria-label="Previous photo"
                     className="absolute left-3 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/55 text-white transition hover:bg-black/80 focus-visible:outline-2 focus-visible:outline-white"
                   >
                     <ChevronLeft size={25} />
@@ -627,7 +522,7 @@ export default function PostMedia({
                   <button
                     type="button"
                     onClick={() => moveImage(1)}
-                    aria-label="Next image"
+                    aria-label="Next photo"
                     className="absolute right-3 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/55 text-white transition hover:bg-black/80 focus-visible:outline-2 focus-visible:outline-white"
                   >
                     <ChevronRight size={25} />
@@ -636,19 +531,15 @@ export default function PostMedia({
               ) : null}
             </div>
 
-            <footer className="flex min-h-12 shrink-0 items-center justify-between gap-3 border-t border-white/10 px-4 text-xs text-white/60">
-              <span>Agoré image viewer</span>
-
-              {imageMedia.length > 1 ? (
-                <span className="tabular-nums">
-                  {imageMedia.findIndex(
-                    (item) => item.id === activeImage.id,
-                  ) + 1}
-                  {" / "}
-                  {imageMedia.length}
-                </span>
-              ) : null}
-            </footer>
+            {imageMedia.length > 1 ? (
+              <footer className="flex min-h-12 shrink-0 items-center justify-end border-t border-white/10 px-4 text-xs tabular-nums text-white/60">
+                {imageMedia.findIndex(
+                  (item) => item.id === activeImage.id,
+                ) + 1}
+                {" / "}
+                {imageMedia.length}
+              </footer>
+            ) : null}
           </section>
         </div>
       ) : null}
