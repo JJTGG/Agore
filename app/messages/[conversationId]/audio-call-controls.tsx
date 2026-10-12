@@ -40,6 +40,18 @@ type AudioCallControlsProps = {
   peerDisplayName: string;
 };
 
+type AudioCallControllerProps = AudioCallControlsProps & {
+  globalHost?: boolean;
+  autoStart?: boolean;
+  onSessionActiveChange?: (active: boolean) => void;
+};
+
+type AudioCallContextEvent = CustomEvent<AudioCallControlsProps>;
+
+const AUDIO_CALL_CONTEXT_EVENT = "agore:audio-call-context";
+const AUDIO_CALL_START_EVENT = "agore:audio-call-start";
+const AUDIO_CALL_CONTEXT_CLEAR_EVENT = "agore:audio-call-context-clear";
+
 type SignalHandler = (signal: AudioCallSignal) => void;
 
 const TERMINAL_STATUSES: AudioCallStatus[] = [
@@ -104,12 +116,15 @@ function callStatusMessage(
   }
 }
 
-export default function AudioCallControls({
+function AudioCallController({
   conversationId,
   currentUserId,
   peerUserId,
   peerDisplayName,
-}: AudioCallControlsProps) {
+  globalHost = false,
+  autoStart = false,
+  onSessionActiveChange,
+}: AudioCallControllerProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const activeCallRef = useRef<CallRecord | null>(null);
   const acceptedCallIdRef = useRef<string | null>(null);
@@ -119,6 +134,7 @@ export default function AudioCallControls({
   const [activeCall, setActiveCall] = useState<CallRecord | null>(null);
   const [isWorking, setIsWorking] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const autoStartAttemptedRef = useRef(false);
 
   const transport = useAudioCallWebRTC();
 
@@ -580,6 +596,10 @@ export default function AudioCallControls({
     };
   }, [transport.remoteStream]);
 
+  useEffect(() => {
+    onSessionActiveChange?.(Boolean(activeCall));
+  }, [activeCall, onSessionActiveChange]);
+
   const startCall = useCallback(async () => {
     if (
       !currentUserId ||
@@ -644,6 +664,29 @@ export default function AudioCallControls({
     signaling.connectionStatus,
     signaling.sendInvite,
     updateActiveCall,
+  ]);
+
+  useEffect(() => {
+    if (
+      !globalHost ||
+      !autoStart ||
+      autoStartAttemptedRef.current ||
+      activeCall ||
+      isWorking ||
+      signaling.connectionStatus !== "connected"
+    ) {
+      return;
+    }
+
+    autoStartAttemptedRef.current = true;
+    void startCall();
+  }, [
+    activeCall,
+    autoStart,
+    globalHost,
+    isWorking,
+    signaling.connectionStatus,
+    startCall,
   ]);
 
   const acceptCall = useCallback(async () => {
@@ -778,29 +821,31 @@ export default function AudioCallControls({
     <>
       <audio ref={audioRef} autoPlay playsInline className="hidden" />
 
-      <button
-        type="button"
-        onClick={() => void startCall()}
-        disabled={
-          callIsActive ||
-          isWorking ||
-          signaling.connectionStatus !== "connected"
-        }
-        title={
-          signaling.connectionStatus === "connected"
-            ? "Start an audio call"
-            : "Connecting call service…"
-        }
-        aria-label={`Audio call with ${peerDisplayName}`}
-        className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-[var(--border)] px-3 text-sm font-medium text-[var(--foreground)] transition hover:bg-[var(--surface)] disabled:cursor-not-allowed disabled:opacity-45"
-      >
-        {isWorking && !activeCall ? (
-          <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
-        ) : (
-          <Phone className="h-4 w-4" aria-hidden="true" />
-        )}
-        <span className="hidden sm:inline">Audio call</span>
-      </button>
+      {!globalHost ? (
+        <button
+          type="button"
+          onClick={() => void startCall()}
+          disabled={
+            callIsActive ||
+            isWorking ||
+            signaling.connectionStatus !== "connected"
+          }
+          title={
+            signaling.connectionStatus === "connected"
+              ? "Start an audio call"
+              : "Connecting call service…"
+          }
+          aria-label={`Audio call with ${peerDisplayName}`}
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-[var(--border)] px-3 text-sm font-medium text-[var(--foreground)] transition hover:bg-[var(--surface)] disabled:cursor-not-allowed disabled:opacity-45"
+        >
+          {isWorking && !activeCall ? (
+            <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+          ) : (
+            <Phone className="h-4 w-4" aria-hidden="true" />
+          )}
+          <span className="hidden sm:inline">Audio call</span>
+        </button>
+      ) : null}
 
       {activeCall ? (
         <div
@@ -924,3 +969,103 @@ export default function AudioCallControls({
   );
 }
 
+/**
+ * Persistent host scaffold. The conversation page will publish context/start
+ * events; the root layout will mount this host so the WebRTC controller
+ * remains alive while route content changes.
+ */
+export function AudioCallHost() {
+  const [context, setContext] = useState<AudioCallControlsProps | null>(null);
+  const [autoStart, setAutoStart] = useState(false);
+  const [launchId, setLaunchId] = useState(0);
+  const callActiveRef = useRef(false);
+
+  const handleSessionActiveChange = useCallback((active: boolean) => {
+    callActiveRef.current = active;
+  }, []);
+
+  useEffect(() => {
+    const handleContext = (event: Event) => {
+      const next = (event as AudioCallContextEvent).detail;
+
+      if (
+        !next ||
+        !next.conversationId ||
+        !next.currentUserId ||
+        !next.peerUserId ||
+        next.currentUserId === next.peerUserId ||
+        callActiveRef.current
+      ) {
+        return;
+      }
+
+      setContext(next);
+      setAutoStart(false);
+    };
+
+    const handleStart = (event: Event) => {
+      const next = (event as AudioCallContextEvent).detail;
+
+      if (
+        !next ||
+        !next.conversationId ||
+        !next.currentUserId ||
+        !next.peerUserId ||
+        next.currentUserId === next.peerUserId ||
+        callActiveRef.current
+      ) {
+        return;
+      }
+
+      setContext(next);
+      setAutoStart(true);
+      setLaunchId((value) => value + 1);
+    };
+
+    const handleContextClear = (event: Event) => {
+      const detail = (event as AudioCallContextEvent).detail;
+
+      if (
+        callActiveRef.current ||
+        (detail?.conversationId &&
+          detail.conversationId !== context?.conversationId)
+      ) {
+        return;
+      }
+
+      setContext(null);
+      setAutoStart(false);
+    };
+
+    window.addEventListener(AUDIO_CALL_CONTEXT_EVENT, handleContext);
+    window.addEventListener(AUDIO_CALL_START_EVENT, handleStart);
+    window.addEventListener(AUDIO_CALL_CONTEXT_CLEAR_EVENT, handleContextClear);
+
+    return () => {
+      window.removeEventListener(AUDIO_CALL_CONTEXT_EVENT, handleContext);
+      window.removeEventListener(AUDIO_CALL_START_EVENT, handleStart);
+      window.removeEventListener(
+        AUDIO_CALL_CONTEXT_CLEAR_EVENT,
+        handleContextClear,
+      );
+    };
+  }, [context?.conversationId]);
+
+  if (!context) {
+    return null;
+  }
+
+  return (
+    <AudioCallController
+      key={`${context.conversationId}:${context.currentUserId}:${context.peerUserId}:${launchId}`}
+      {...context}
+      globalHost
+      autoStart={autoStart}
+      onSessionActiveChange={handleSessionActiveChange}
+    />
+  );
+}
+
+export default function AudioCallControls(props: AudioCallControlsProps) {
+  return <AudioCallController {...props} />;
+}
