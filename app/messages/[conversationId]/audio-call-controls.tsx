@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ChevronDown,
   LoaderCircle,
+  Maximize2,
   Mic,
   MicOff,
   Phone,
@@ -86,6 +88,20 @@ async function readResponse<T>(response: Response): Promise<T> {
   return body as T;
 }
 
+function formatCallDuration(totalSeconds: number): string {
+  const safeSeconds = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const seconds = safeSeconds % 60;
+  const two = (value: number) => String(value).padStart(2, "0");
+
+  if (hours > 0) {
+    return two(hours) + ":" + two(minutes) + ":" + two(seconds);
+  }
+
+  return two(Math.floor(safeSeconds / 60)) + ":" + two(seconds);
+}
+
 function callStatusMessage(
   call: CallRecord,
   currentUserId: string,
@@ -132,6 +148,8 @@ function AudioCallController({
   const signalHandlerRef = useRef<SignalHandler>(() => undefined);
   const failureAttemptRef = useRef<string | null>(null);
   const [activeCall, setActiveCall] = useState<CallRecord | null>(null);
+  const [isMinimized, setIsMinimized] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [isWorking, setIsWorking] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const autoStartAttemptedRef = useRef(false);
@@ -139,6 +157,12 @@ function AudioCallController({
   const transport = useAudioCallWebRTC();
 
   const updateActiveCall = useCallback((call: CallRecord | null) => {
+    const previousCall = activeCallRef.current;
+
+    if (call && (!previousCall || previousCall.id !== call.id)) {
+      setIsMinimized(false);
+    }
+
     activeCallRef.current = call;
     setActiveCall(call);
   }, []);
@@ -597,6 +621,37 @@ function AudioCallController({
   }, [transport.remoteStream]);
 
   useEffect(() => {
+    if (!activeCall || activeCall.status !== "accepted") {
+      setElapsedSeconds(0);
+      return;
+    }
+
+    const startTime = Date.parse(
+      activeCall.answered_at ?? activeCall.created_at,
+    );
+
+    const updateElapsed = () => {
+      setElapsedSeconds(
+        Number.isFinite(startTime)
+          ? Math.max(0, Math.floor((Date.now() - startTime) / 1000))
+          : 0,
+      );
+    };
+
+    updateElapsed();
+    const interval = window.setInterval(updateElapsed, 1_000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [
+    activeCall?.id,
+    activeCall?.status,
+    activeCall?.answered_at,
+    activeCall?.created_at,
+  ]);
+
+  useEffect(() => {
     onSessionActiveChange?.(Boolean(activeCall));
   }, [activeCall, onSessionActiveChange]);
 
@@ -848,45 +903,44 @@ function AudioCallController({
       ) : null}
 
       {activeCall ? (
-        <div
-          className="fixed inset-x-3 bottom-3 z-[120] mx-auto max-w-md rounded-2xl border border-[var(--border)] bg-[var(--background)] p-4 shadow-2xl sm:bottom-5"
-          role="dialog"
-          aria-label="Audio call controls"
-          aria-live="polite"
-        >
-          <div className="flex items-start gap-3">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[var(--surface)] text-lg font-semibold">
-              {peerDisplayName.trim().charAt(0).toUpperCase() || "A"}
-            </div>
-            <div className="min-w-0 flex-1 pt-0.5">
-              <p className="truncate text-sm font-semibold text-[var(--foreground)]">
-                {peerDisplayName}
-              </p>
-              <p className="mt-1 text-sm text-[var(--muted)]">
-                {isConnectedCall ? connectionLabel : callStatusMessage(activeCall, currentUserId)}
-              </p>
-              {transport.error ? (
-                <p className="mt-2 text-xs text-red-500">{transport.error}</p>
-              ) : null}
-              {notice ? (
-                <p className="mt-2 text-xs text-[var(--muted)]">{notice}</p>
-              ) : null}
-            </div>
+        isMinimized ? (
+          <section
+            className="fixed inset-x-3 bottom-3 z-[220] mx-auto flex max-w-lg items-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--background)] p-3 shadow-2xl"
+            role="region"
+            aria-label="Minimized audio call"
+            aria-live="polite"
+          >
             <button
               type="button"
-              onClick={() => clearActiveCall()}
-              className="rounded-full p-1.5 text-[var(--muted)] transition hover:bg-[var(--surface)]"
-              aria-label="Dismiss call panel"
-              title="Dismiss"
-              disabled={isConnectedCall || isIncoming || isOutgoing}
+              onClick={() => setIsMinimized(false)}
+              className="flex min-w-0 flex-1 items-center gap-3 rounded-xl text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+              aria-label="Return to audio call"
             >
-              <X className="h-4 w-4" aria-hidden="true" />
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--surface)] text-base font-semibold">
+                {peerDisplayName.trim().charAt(0).toUpperCase() || "A"}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-semibold text-[var(--foreground)]">
+                  {peerDisplayName}
+                </span>
+                <span className="mt-0.5 block truncate text-xs text-[var(--muted)]">
+                  {isConnectedCall
+                    ? transport.connectionStatus === "connected"
+                      ? "In call · " + formatCallDuration(elapsedSeconds)
+                      : connectionLabel
+                    : isIncoming
+                      ? "Incoming audio call"
+                      : "Calling…"}
+                </span>
+              </span>
+              <Maximize2
+                className="h-4 w-4 shrink-0 text-[var(--muted)]"
+                aria-hidden="true"
+              />
             </button>
-          </div>
 
-          <div className="mt-4 flex items-center justify-center gap-3">
-            {isIncoming ? (
-              <>
+            <div className="flex shrink-0 items-center gap-2">
+              {isIncoming ? (
                 <button
                   type="button"
                   onClick={() => void acceptCall()}
@@ -894,59 +948,197 @@ function AudioCallController({
                     isWorking ||
                     signaling.connectionStatus !== "connected"
                   }
-                  className="inline-flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-emerald-600 text-white transition hover:bg-emerald-700 disabled:opacity-50"
+                  aria-label="Accept audio call"
+                  title="Accept"
                 >
                   {isWorking ? (
                     <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
                   ) : (
                     <PhoneCall className="h-4 w-4" aria-hidden="true" />
                   )}
-                  Accept
                 </button>
+              ) : isConnectedCall ? (
                 <button
                   type="button"
-                  onClick={() => void finishCall()}
-                  disabled={isWorking}
-                  className="inline-flex items-center justify-center gap-2 rounded-full bg-red-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
+                  onClick={toggleMute}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] text-[var(--foreground)] transition hover:bg-[var(--surface)]"
+                  aria-label={transport.isMuted ? "Unmute microphone" : "Mute microphone"}
+                  title={transport.isMuted ? "Unmute" : "Mute"}
                 >
-                  <PhoneOff className="h-4 w-4" aria-hidden="true" />
-                  Decline
-                </button>
-              </>
-            ) : (
-              <>
-                {isConnectedCall ? (
-                  <button
-                    type="button"
-                    onClick={toggleMute}
-                    className="inline-flex h-12 w-12 items-center justify-center rounded-full border border-[var(--border)] text-[var(--foreground)] transition hover:bg-[var(--surface)]"
-                    aria-label={transport.isMuted ? "Unmute microphone" : "Mute microphone"}
-                    title={transport.isMuted ? "Unmute" : "Mute"}
-                  >
-                    {transport.isMuted ? (
-                      <MicOff className="h-5 w-5" aria-hidden="true" />
-                    ) : (
-                      <Mic className="h-5 w-5" aria-hidden="true" />
-                    )}
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={() => void finishCall()}
-                  disabled={isWorking}
-                  className="inline-flex items-center justify-center gap-2 rounded-full bg-red-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
-                >
-                  {isWorking ? (
-                    <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  {transport.isMuted ? (
+                    <MicOff className="h-4 w-4" aria-hidden="true" />
                   ) : (
-                    <PhoneOff className="h-4 w-4" aria-hidden="true" />
+                    <Mic className="h-4 w-4" aria-hidden="true" />
                   )}
-                  {isOutgoing ? "Cancel call" : "End call"}
                 </button>
-              </>
-            )}
-          </div>
-        </div>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => void finishCall()}
+                disabled={isWorking}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-red-600 text-white transition hover:bg-red-700 disabled:opacity-50"
+                aria-label={isIncoming ? "Decline audio call" : isOutgoing ? "Cancel audio call" : "End audio call"}
+                title={isIncoming ? "Decline" : isOutgoing ? "Cancel" : "End call"}
+              >
+                {isWorking ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <PhoneOff className="h-4 w-4" aria-hidden="true" />
+                )}
+              </button>
+            </div>
+          </section>
+        ) : (
+          <section
+            className="fixed inset-0 z-[200] flex min-h-[100dvh] flex-col bg-[var(--background)] text-[var(--foreground)]"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Audio call"
+            aria-live="polite"
+          >
+            <header className="flex items-center justify-between gap-4 border-b border-[var(--border)] px-4 py-4 sm:px-7">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                  Agoré · Audio call
+                </p>
+                <p className="mt-1 truncate text-sm font-semibold">
+                  {isIncoming
+                    ? "Incoming call"
+                    : isOutgoing
+                      ? "Calling"
+                      : transport.connectionStatus === "connected"
+                        ? "Connected"
+                        : connectionLabel}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsMinimized(true)}
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[var(--border)] text-[var(--foreground)] transition hover:bg-[var(--surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                aria-label="Minimize audio call"
+                title="Minimize call"
+              >
+                <ChevronDown className="h-5 w-5" aria-hidden="true" />
+              </button>
+            </header>
+
+            <main className="flex flex-1 flex-col items-center justify-center px-6 py-10 text-center">
+              <div className="relative flex h-36 w-36 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] sm:h-44 sm:w-44">
+                <div className="flex h-28 w-28 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--background)] text-4xl font-semibold sm:h-36 sm:w-36 sm:text-5xl">
+                  {peerDisplayName.trim().charAt(0).toUpperCase() || "A"}
+                </div>
+                {isConnectedCall && transport.connectionStatus === "connected" ? (
+                  <span className="absolute bottom-1 right-1 h-4 w-4 rounded-full border-2 border-[var(--background)] bg-emerald-500" aria-label="Connected" />
+                ) : null}
+              </div>
+
+              <h2 className="mt-8 max-w-full truncate text-2xl font-semibold tracking-tight sm:text-3xl">
+                {peerDisplayName}
+              </h2>
+              <p className="mt-3 text-sm text-[var(--muted)]">
+                {isConnectedCall
+                  ? transport.connectionStatus === "connected"
+                    ? "Connected · " + formatCallDuration(elapsedSeconds)
+                    : connectionLabel
+                  : isIncoming
+                    ? "They’re calling you"
+                    : "Waiting for them to answer"}
+              </p>
+              {transport.isMuted && isConnectedCall ? (
+                <p className="mt-2 text-xs font-medium text-[var(--muted)]">
+                  Your microphone is muted
+                </p>
+              ) : null}
+              {transport.error ? (
+                <p className="mt-4 max-w-md rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-500">
+                  {transport.error}
+                </p>
+              ) : null}
+              {notice ? (
+                <p className="mt-3 max-w-md text-sm text-[var(--muted)]">
+                  {notice}
+                </p>
+              ) : null}
+            </main>
+
+            <footer className="border-t border-[var(--border)] px-5 pb-[max(2rem,env(safe-area-inset-bottom))] pt-6 sm:px-8">
+              <div className="mx-auto flex max-w-sm items-center justify-center gap-4">
+                {isIncoming ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void finishCall()}
+                      disabled={isWorking}
+                      className="flex min-w-28 flex-col items-center gap-2 rounded-2xl px-5 py-3 text-xs font-medium text-[var(--muted-strong)] transition hover:bg-[var(--surface)] disabled:opacity-50"
+                    >
+                      <span className="flex h-14 w-14 items-center justify-center rounded-full bg-red-600 text-white">
+                        <PhoneOff className="h-5 w-5" aria-hidden="true" />
+                      </span>
+                      Decline
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void acceptCall()}
+                      disabled={
+                        isWorking ||
+                        signaling.connectionStatus !== "connected"
+                      }
+                      className="flex min-w-28 flex-col items-center gap-2 rounded-2xl px-5 py-3 text-xs font-medium text-[var(--muted-strong)] transition hover:bg-[var(--surface)] disabled:opacity-50"
+                    >
+                      <span className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-600 text-white">
+                        {isWorking ? (
+                          <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <PhoneCall className="h-5 w-5" aria-hidden="true" />
+                        )}
+                      </span>
+                      Accept
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {isConnectedCall ? (
+                      <button
+                        type="button"
+                        onClick={toggleMute}
+                        className="flex min-w-28 flex-col items-center gap-2 rounded-2xl px-5 py-3 text-xs font-medium text-[var(--muted-strong)] transition hover:bg-[var(--surface)]"
+                        aria-label={transport.isMuted ? "Unmute microphone" : "Mute microphone"}
+                      >
+                        <span className="flex h-14 w-14 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--foreground)]">
+                          {transport.isMuted ? (
+                            <MicOff className="h-5 w-5" aria-hidden="true" />
+                          ) : (
+                            <Mic className="h-5 w-5" aria-hidden="true" />
+                          )}
+                        </span>
+                        {transport.isMuted ? "Unmute" : "Mute"}
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => void finishCall()}
+                      disabled={isWorking}
+                      className="flex min-w-28 flex-col items-center gap-2 rounded-2xl px-5 py-3 text-xs font-medium text-[var(--muted-strong)] transition hover:bg-[var(--surface)] disabled:opacity-50"
+                    >
+                      <span className="flex h-14 w-14 items-center justify-center rounded-full bg-red-600 text-white">
+                        {isWorking ? (
+                          <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <PhoneOff className="h-5 w-5" aria-hidden="true" />
+                        )}
+                      </span>
+                      {isOutgoing ? "Cancel call" : "End call"}
+                    </button>
+                  </>
+                )}
+              </div>
+              <p className="mt-5 text-center text-[11px] text-[var(--muted)]">
+                Your call stays active while you move around Agoré. Minimize to keep it within reach.
+              </p>
+            </footer>
+          </section>
+        )
       ) : null}
 
       {!activeCall && notice ? (
