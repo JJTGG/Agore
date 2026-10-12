@@ -1,4 +1,3 @@
-
 "use client";
 
 import {
@@ -12,6 +11,7 @@ import {
   Compass,
   Home,
   MessageCircle,
+  Phone,
   Plus,
 } from "lucide-react";
 
@@ -230,6 +230,28 @@ export default function AgoreMobileNav({
 
         <span className="text-[10px] font-semibold">
           Messages
+        </span>
+      </Link>
+
+      <Link
+        href="/call-history"
+        className={getItemClass(
+          isActiveRoute("/call-history"),
+        )}
+        aria-current={
+          isActiveRoute("/call-history")
+            ? "page"
+            : undefined
+        }
+      >
+        <Phone
+          size={19}
+          className={getIconClass(
+            isActiveRoute("/call-history"),
+          )}
+        />
+        <span className="text-[10px] font-semibold">
+          Calls
         </span>
       </Link>
 
