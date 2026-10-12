@@ -2,6 +2,7 @@
 
 import {
   FormEvent,
+  type ChangeEvent,
   useCallback,
   useEffect,
   useMemo,
@@ -13,6 +14,7 @@ import {
   ChevronDown,
   Edit3,
   Heart,
+  ImagePlus,
   Loader2,
   MessageCircle,
   MoreHorizontal,
@@ -53,6 +55,24 @@ type CommentProfile =
     }>
   | null;
 
+type CommentMedia = {
+  id: string;
+  comment_id: string;
+  author_id: string;
+  storage_path: string;
+  mime_type: string;
+  size_bytes: number;
+  width: number | null;
+  height: number | null;
+  sort_order: number;
+  created_at: string;
+};
+
+type SelectedCommentImage = {
+  file: File;
+  previewUrl: string;
+};
+
 type Comment = {
   id: string;
   post_id: string;
@@ -62,6 +82,7 @@ type Comment = {
   created_at: string;
   updated_at: string;
   profiles: CommentProfile;
+  comment_media?: CommentMedia[];
 };
 
 type CommentCursor = {
@@ -104,6 +125,26 @@ const REACTIONS: Array<{
 ];
 
 const supabase = createClient();
+const MAX_COMMENT_IMAGES = 4;
+const MAX_COMMENT_IMAGE_SIZE = 10 * 1024 * 1024;
+const COMMENT_IMAGE_MIME_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "image/avif",
+] as const;
+
+function getCommentImageExtension(mimeType: string) {
+  switch (mimeType.toLowerCase()) {
+    case "image/jpeg": return "jpg";
+    case "image/png": return "png";
+    case "image/webp": return "webp";
+    case "image/gif": return "gif";
+    case "image/avif": return "avif";
+    default: return null;
+  }
+}
 
 function getReaction(type: ReactionType) {
   return REACTIONS.find((reaction) => reaction.type === type);
@@ -207,6 +248,10 @@ export default function PostInteractions({
   const [commentPublishing, setCommentPublishing] =
     useState(false);
   const [commentContent, setCommentContent] = useState("");
+  const [commentImages, setCommentImages] = useState<SelectedCommentImage[]>([]);
+  const [commentMediaUrls, setCommentMediaUrls] = useState<Record<string, string>>({});
+  const commentImageInputRef = useRef<HTMLInputElement | null>(null);
+  const selectedCommentImagesRef = useRef<SelectedCommentImage[]>([]);
   const [replyingTo, setReplyingTo] = useState<Comment | null>(null);
 
   const [commentEditingId, setCommentEditingId] =
@@ -397,6 +442,60 @@ export default function PostInteractions({
   useEffect(() => {
     void loadInteractionState();
   }, [loadInteractionState]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCommentImageUrls() {
+      const availablePaths = new Set(Object.keys(commentMediaUrls));
+      const paths = Array.from(
+        new Set(
+          comments.flatMap((comment) =>
+            (comment.comment_media ?? []).map((media) => media.storage_path),
+          ),
+        ),
+      ).filter((imagePath) => !availablePaths.has(imagePath));
+
+      if (paths.length === 0) return;
+
+      const nextUrls: Record<string, string> = {};
+      for (let index = 0; index < paths.length; index += 50) {
+        const batch = paths.slice(index, index + 50);
+        const { data, error: urlError } = await supabase.storage
+          .from("comment-media")
+          .createSignedUrls(batch, 60 * 60);
+
+        if (urlError) {
+          console.error("Failed to sign Agore comment image URLs:", urlError);
+          continue;
+        }
+
+        for (const item of data ?? []) {
+          if (item.path && item.signedUrl) {
+            nextUrls[item.path] = item.signedUrl;
+          }
+        }
+      }
+
+      if (!cancelled && Object.keys(nextUrls).length > 0) {
+        setCommentMediaUrls((current) => ({ ...current, ...nextUrls }));
+      }
+    }
+
+    void loadCommentImageUrls();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [comments, commentMediaUrls]);
+
+  useEffect(() => {
+    return () => {
+      for (const image of selectedCommentImagesRef.current) {
+        URL.revokeObjectURL(image.previewUrl);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     setEditContent(initialContent);
@@ -619,6 +718,54 @@ export default function PostInteractions({
     }
   }
 
+  function handleCommentImageChange(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    if (files.length === 0) return;
+
+    setError("");
+
+    if (commentImages.length + files.length > MAX_COMMENT_IMAGES) {
+      setError(`You can attach up to ${MAX_COMMENT_IMAGES} images to a comment or reply.`);
+      return;
+    }
+
+    const unsupported = files.find(
+      (file) => !(COMMENT_IMAGE_MIME_TYPES as readonly string[]).includes(file.type.toLowerCase()),
+    );
+    if (unsupported) {
+      setError("Choose JPEG, PNG, WebP, GIF, or AVIF images.");
+      return;
+    }
+
+    const oversized = files.find(
+      (file) => file.size <= 0 || file.size > MAX_COMMENT_IMAGE_SIZE,
+    );
+    if (oversized) {
+      setError("Each comment image must be between 1 byte and 10 MB.");
+      return;
+    }
+
+    const nextImages = [
+      ...commentImages,
+      ...files.map((file) => ({
+        file,
+        previewUrl: URL.createObjectURL(file),
+      })),
+    ];
+    selectedCommentImagesRef.current = nextImages;
+    setCommentImages(nextImages);
+  }
+
+  function removeCommentImage(index: number) {
+    const removed = commentImages[index];
+    if (!removed) return;
+    URL.revokeObjectURL(removed.previewUrl);
+    const nextImages = commentImages.filter((_, imageIndex) => imageIndex !== index);
+    selectedCommentImagesRef.current = nextImages;
+    setCommentImages(nextImages);
+  }
+
   async function handleCommentSubmit(
     event: FormEvent<HTMLFormElement>,
   ) {
@@ -633,7 +780,58 @@ export default function PostInteractions({
     setCommentPublishing(true);
     setError("");
 
+    const uploadedPaths: string[] = [];
+
     try {
+      const uploadedImages: Array<{
+        storage_path: string;
+        mime_type: string;
+        size_bytes: number;
+        width: number | null;
+        height: number | null;
+      }> = [];
+
+      if (commentImages.length > 0) {
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError || !user) {
+          throw new Error("Sign in again before attaching images.");
+        }
+
+        for (const selected of commentImages) {
+          const mimeType = selected.file.type.toLowerCase();
+          const extension = getCommentImageExtension(mimeType);
+          if (!extension) {
+            throw new Error("One of the selected image types is not supported.");
+          }
+
+          const storagePath = `${user.id}/${crypto.randomUUID()}.${extension}`;
+          const { error: uploadError } = await supabase.storage
+            .from("comment-media")
+            .upload(storagePath, selected.file, {
+              contentType: mimeType,
+              cacheControl: "3600",
+              upsert: false,
+            });
+
+          if (uploadError) {
+            throw new Error(uploadError.message || "Unable to upload a comment image.");
+          }
+
+          uploadedPaths.push(storagePath);
+          uploadedImages.push({
+            storage_path: storagePath,
+            mime_type: mimeType,
+            size_bytes: selected.file.size,
+            width: null,
+            height: null,
+          });
+        }
+      }
+
       const response = await fetch(
         `/api/posts/${encodeURIComponent(postId)}/comments`,
         {
@@ -642,31 +840,45 @@ export default function PostInteractions({
           body: JSON.stringify({
             content: trimmedContent,
             parentCommentId: replyingTo?.id ?? null,
+            ...(uploadedImages.length > 0 ? { images: uploadedImages } : {}),
           }),
         },
       );
 
-      const data = await response.json();
+      const data = (await response.json().catch(() => null)) as
+        | { comment?: Comment; error?: string }
+        | null;
 
       if (!response.ok) {
-        throw new Error(
-          data.error ?? "Unable to add your comment.",
-        );
+        throw new Error(data?.error ?? "Unable to add your comment.");
       }
 
-      if (!data.comment) {
+      if (!data?.comment) {
         throw new Error("The comment response was invalid.");
       }
 
-      setComments((current) =>
-        mergeComments(current, [data.comment as Comment]),
-      );
-
+      setComments((current) => mergeComments(current, [data.comment as Comment]));
       setCommentContent("");
       setReplyingTo(null);
       setCommentsOpen(true);
       setCommentCount((current) => current + 1);
+
+      for (const image of selectedCommentImagesRef.current) {
+        URL.revokeObjectURL(image.previewUrl);
+      }
+      selectedCommentImagesRef.current = [];
+      setCommentImages([]);
     } catch (requestError) {
+      if (uploadedPaths.length > 0) {
+        const { error: cleanupError } = await supabase.storage
+          .from("comment-media")
+          .remove(uploadedPaths);
+
+        if (cleanupError) {
+          console.error("Failed to clean up rejected Agore comment images:", cleanupError);
+        }
+      }
+
       setError(
         requestError instanceof Error
           ? requestError.message
@@ -1092,6 +1304,44 @@ export default function PostInteractions({
                   {comment.content}
                 </p>
 
+                {(comment.comment_media ?? []).length > 0 ? (
+                  <div className="mt-3 grid max-w-md grid-cols-2 gap-2">
+                    {[...(comment.comment_media ?? [])]
+                      .sort((a, b) => a.sort_order - b.sort_order)
+                      .map((media) => {
+                        const url = commentMediaUrls[media.storage_path];
+                        return url ? (
+                          <a
+                            key={media.id}
+                            href={url}
+                            target="_blank"
+                            rel="noreferrer"
+                            aria-label="Open attached comment image"
+                            className="block overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--background)] focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
+                          >
+                            <img
+                              src={url}
+                              alt="Image attached to comment"
+                              width={media.width ?? undefined}
+                              height={media.height ?? undefined}
+                              loading="lazy"
+                              decoding="async"
+                              className="block max-h-72 w-full object-contain"
+                            />
+                          </a>
+                        ) : (
+                          <div
+                            key={media.id}
+                            role="status"
+                            className="flex aspect-square items-center justify-center rounded-xl bg-[var(--surface)] text-xs text-[var(--muted)]"
+                          >
+                            Loading image…
+                          </div>
+                        );
+                      })}
+                  </div>
+                ) : null}
+
                 {!isReply ? (
                   <div className="mt-3 flex items-center gap-2">
                     <button
@@ -1451,7 +1701,53 @@ export default function PostInteractions({
               </div>
             ) : null}
 
+            {commentImages.length > 0 ? (
+              <div className="mb-3 grid grid-cols-4 gap-2 sm:grid-cols-6">
+                {commentImages.map((image, index) => (
+                  <div
+                    key={image.previewUrl}
+                    className="relative aspect-square overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]"
+                  >
+                    <img
+                      src={image.previewUrl}
+                      alt={`Selected comment image ${index + 1}`}
+                      className="h-full w-full object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeCommentImage(index)}
+                      disabled={commentPublishing}
+                      aria-label={`Remove selected image ${index + 1}`}
+                      className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-black/75 text-white disabled:opacity-50"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
             <div className="flex items-end gap-2">
+              <input
+                ref={commentImageInputRef}
+                type="file"
+                accept={COMMENT_IMAGE_MIME_TYPES.join(",")}
+                multiple
+                disabled={commentPublishing || commentImages.length >= MAX_COMMENT_IMAGES}
+                onChange={handleCommentImageChange}
+                className="hidden"
+                aria-label="Choose comment images"
+              />
+              <button
+                type="button"
+                onClick={() => commentImageInputRef.current?.click()}
+                disabled={commentPublishing || commentImages.length >= MAX_COMMENT_IMAGES}
+                aria-label="Attach images to comment"
+                title="Attach images"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--muted)] transition hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                <ImagePlus size={17} />
+              </button>
               <textarea
                 value={commentContent}
                 onChange={(event) =>
@@ -1485,6 +1781,7 @@ export default function PostInteractions({
             <div className="mt-2 flex justify-end">
               <span className="text-[11px] tabular-nums text-[var(--muted)]">
                 {commentContent.length}/1000
+                {commentImages.length > 0 ? ` · ${commentImages.length}/${MAX_COMMENT_IMAGES} images` : ""}
               </span>
             </div>
           </form>
