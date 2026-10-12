@@ -317,6 +317,40 @@ export async function DELETE(
       )
     : [parsedCommentId.data];
 
+  const affectedCommentIds = deletedCommentIds.length > 0
+    ? deletedCommentIds
+    : [parsedCommentId.data];
+
+  const {
+    data: relatedMedia,
+    error: relatedMediaError,
+  } = await admin
+    .from("comment_media")
+    .select("id, storage_path")
+    .in("comment_id", affectedCommentIds);
+
+  if (relatedMediaError) {
+    console.error("Failed to load Agore comment images for cleanup:", relatedMediaError);
+  } else if (relatedMedia && relatedMedia.length > 0) {
+    const storagePaths = relatedMedia.map((item) => item.storage_path);
+    const { error: storageCleanupError } = await admin.storage
+      .from("comment-media")
+      .remove(storagePaths);
+
+    if (storageCleanupError) {
+      console.error("Failed to remove Agore comment image objects:", storageCleanupError);
+    }
+
+    const { error: mediaMetadataCleanupError } = await admin
+      .from("comment_media")
+      .delete()
+      .in("comment_id", affectedCommentIds);
+
+    if (mediaMetadataCleanupError) {
+      console.error("Failed to remove Agore comment image metadata:", mediaMetadataCleanupError);
+    }
+  }
+
   // Count only rows visible to this viewer. A count failure must not turn
   // a successful database deletion into a reported deletion failure.
   const {
