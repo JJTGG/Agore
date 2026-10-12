@@ -4,6 +4,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText,
+  Film,
   Image as ImageIcon,
   Loader2,
   X,
@@ -51,6 +52,13 @@ function formatFileSize(bytes: number) {
   }
 
   return `${(megabytes / 1024).toFixed(1)} GB`;
+}
+
+function isVideoMedia(item: MessageMedia) {
+  return (
+    item.media_type === "file" &&
+    Boolean(item.mime_type?.toLowerCase().startsWith("video/"))
+  );
 }
 
 export default function MessageMediaContent({
@@ -200,10 +208,11 @@ export default function MessageMediaContent({
         event.key === "ArrowRight" ? 1 : -1;
 
       const nextIndex =
-        (currentIndex +
+        (
+          currentIndex +
           direction +
-          availableImages.length) %
-        availableImages.length;
+          availableImages.length
+        ) % availableImages.length;
 
       event.preventDefault();
 
@@ -212,21 +221,18 @@ export default function MessageMediaContent({
       );
     }
 
-    window.addEventListener(
-      "keydown",
-      handleKeyDown,
-    );
+    window.addEventListener("keydown", handleKeyDown);
 
     return () => {
-      window.removeEventListener(
-        "keydown",
-        handleKeyDown,
-      );
+      window.removeEventListener("keydown", handleKeyDown);
     };
   }, [activeViewerId, media, signedUrls]);
 
   function moveViewer(direction: -1 | 1) {
-    if (!activeMedia || activeMedia.media_type !== "image") {
+    if (
+      !activeMedia ||
+      activeMedia.media_type !== "image"
+    ) {
       return;
     }
 
@@ -243,10 +249,11 @@ export default function MessageMediaContent({
     }
 
     const nextIndex =
-      (currentIndex +
+      (
+        currentIndex +
         direction +
-        imageMedia.length) %
-      imageMedia.length;
+        imageMedia.length
+      ) % imageMedia.length;
 
     setActiveViewerId(imageMedia[nextIndex].id);
   }
@@ -257,12 +264,14 @@ export default function MessageMediaContent({
 
   return (
     <>
-      <div className="space-y-2">
+      <div className="space-y-3">
         {visualMedia.map((item) => {
           const signedUrl = signedUrls[item.id];
 
           const isImage =
             item.media_type === "image";
+
+          const isVideo = isVideoMedia(item);
 
           if (!signedUrl) {
             return (
@@ -288,6 +297,8 @@ export default function MessageMediaContent({
                     />
                   ) : isImage ? (
                     <ImageIcon size={18} />
+                  ) : isVideo ? (
+                    <Film size={18} />
                   ) : (
                     <FileText size={18} />
                   )}
@@ -340,6 +351,39 @@ export default function MessageMediaContent({
                   className="max-h-[26rem] w-auto max-w-full object-contain transition duration-200 group-hover/media:opacity-90"
                 />
               </button>
+            );
+          }
+
+          if (isVideo) {
+            return (
+              <div
+                key={item.id}
+                className="max-w-full overflow-hidden rounded-2xl border border-black/5 bg-black"
+              >
+                <video
+                  src={signedUrl}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  className="max-h-[26rem] w-full bg-black object-contain"
+                  aria-label={`Play ${item.file_name}`}
+                />
+
+                <div className="flex items-center gap-2 px-3 py-2">
+                  <Film
+                    size={14}
+                    className="shrink-0 text-[var(--muted)]"
+                  />
+
+                  <p className="truncate text-[11px] text-[var(--muted)]">
+                    {item.file_name}
+                  </p>
+
+                  <span className="ml-auto shrink-0 text-[10px] text-[var(--muted)]">
+                    {formatFileSize(item.size_bytes)}
+                  </span>
+                </div>
+              </div>
             );
           }
 
@@ -431,10 +475,12 @@ export default function MessageMediaContent({
                 <p className="mt-0.5 text-xs text-white/55">
                   {activeMedia.media_type === "image"
                     ? "Image"
-                    : activeMedia.mime_type ===
-                        "application/pdf"
-                      ? "PDF document"
-                      : "Attachment"}
+                    : isVideoMedia(activeMedia)
+                      ? "Video"
+                      : activeMedia.mime_type ===
+                          "application/pdf"
+                        ? "PDF document"
+                        : "Attachment"}
                 </p>
               </div>
 
@@ -481,6 +527,16 @@ export default function MessageMediaContent({
                     </>
                   ) : null}
                 </>
+              ) : isVideoMedia(activeMedia) ? (
+                <video
+                  key={activeMedia.id}
+                  src={activeUrl}
+                  controls
+                  playsInline
+                  autoPlay={false}
+                  preload="metadata"
+                  className="max-h-full max-w-full"
+                />
               ) : activeMedia.mime_type ===
                 "application/pdf" ? (
                 <iframe
@@ -519,9 +575,11 @@ export default function MessageMediaContent({
 
             <footer className="flex min-h-12 shrink-0 items-center justify-between gap-3 border-t border-white/10 px-4 text-xs text-white/60">
               <span>
-                {activeMedia.media_type === "image"
-                  ? "Agoré media viewer"
-                  : "Attachment preview"}
+                {isVideoMedia(activeMedia)
+                  ? "Agoré video player"
+                  : activeMedia.media_type === "image"
+                    ? "Agoré media viewer"
+                    : "Attachment preview"}
               </span>
 
               {activeMedia.media_type === "image" &&
