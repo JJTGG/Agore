@@ -2173,34 +2173,51 @@ export default function ConversationPage() {
                 mobileSelectedMessage ? "hidden sm:flex" : ""
               }`}
             >
-            <AgoreAvatar
-              avatarPath={
-                conversation?.type === "group"
-                  ? conversation.image_path
-                  : participantAvatar
-              }
-              name={title}
-              bucketName={
-                conversation?.type === "group"
-                  ? "group-media"
-                  : "avatars"
-              }
-              refreshKey={conversation?.updated_at}
-              className="h-11 w-11"
-              textClassName="text-xs"
-            />
+            {conversation?.type === "direct" ? (
+              <Link
+                href={`/messages/${encodeURIComponent(conversationId)}/profile`}
+                aria-label={`Open ${title}'s message profile`}
+                title="Contact info"
+                className="shrink-0 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
+              >
+                <AgoreAvatar
+                  avatarPath={participantAvatar}
+                  name={title}
+                  bucketName="avatars"
+                  refreshKey={conversation.updated_at}
+                  className="h-11 w-11"
+                  textClassName="text-xs"
+                />
+              </Link>
+            ) : (
+              <AgoreAvatar
+                avatarPath={conversation?.image_path ?? null}
+                name={title}
+                bucketName="group-media"
+                refreshKey={conversation?.updated_at}
+                className="h-11 w-11"
+                textClassName="text-xs"
+              />
+            )}
 
             <div className="min-w-0 flex-1">
               <h1 className="min-w-0 truncate text-[15px] font-bold tracking-[-0.01em]">
                 {conversation?.type === "direct" &&
                 conversation.participant ? (
-                  <UserIdentity
-                    userId={conversation.participant.id}
-                    displayName={title}
-                    className="max-w-full"
-                    nameClassName="min-w-0 truncate text-[15px] font-bold tracking-[-0.01em]"
-                    badgeSize={15}
-                  />
+                  <Link
+                    href={`/messages/${encodeURIComponent(conversationId)}/profile`}
+                    aria-label={`Open ${title}'s message profile`}
+                    title="Contact info"
+                    className="inline-flex min-w-0 max-w-full rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                  >
+                    <UserIdentity
+                      userId={conversation.participant.id}
+                      displayName={title}
+                      className="max-w-full"
+                      nameClassName="min-w-0 truncate text-[15px] font-bold tracking-[-0.01em]"
+                      badgeSize={15}
+                    />
+                  </Link>
                 ) : (
                   title
                 )}
