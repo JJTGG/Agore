@@ -1066,6 +1066,85 @@ export function AudioCallHost() {
   );
 }
 
-export default function AudioCallControls(props: AudioCallControlsProps) {
-  return <AudioCallController {...props} />;
+export default function AudioCallControls({
+  conversationId,
+  currentUserId,
+  peerUserId,
+  peerDisplayName,
+}: AudioCallControlsProps) {
+  useEffect(() => {
+    let cancelled = false;
+    const detail: AudioCallControlsProps = {
+      conversationId,
+      currentUserId,
+      peerUserId,
+      peerDisplayName,
+    };
+
+    // Let the root host attach its listeners before publishing the first context.
+    const timer = window.setTimeout(() => {
+      if (!cancelled) {
+        window.dispatchEvent(
+          new CustomEvent<AudioCallControlsProps>(AUDIO_CALL_CONTEXT_EVENT, {
+            detail,
+          }),
+        );
+      }
+    }, 0);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      window.dispatchEvent(
+        new CustomEvent<AudioCallControlsProps>(AUDIO_CALL_CONTEXT_CLEAR_EVENT, {
+          detail,
+        }),
+      );
+    };
+  }, [conversationId, currentUserId, peerUserId, peerDisplayName]);
+
+  const canCall = Boolean(
+    conversationId &&
+      currentUserId &&
+      peerUserId &&
+      currentUserId !== peerUserId,
+  );
+
+  const startCall = () => {
+    if (!canCall) {
+      return;
+    }
+
+    const detail: AudioCallControlsProps = {
+      conversationId,
+      currentUserId,
+      peerUserId,
+      peerDisplayName,
+    };
+
+    window.dispatchEvent(
+      new CustomEvent<AudioCallControlsProps>(AUDIO_CALL_CONTEXT_EVENT, {
+        detail,
+      }),
+    );
+    window.dispatchEvent(
+      new CustomEvent<AudioCallControlsProps>(AUDIO_CALL_START_EVENT, {
+        detail,
+      }),
+    );
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={startCall}
+      disabled={!canCall}
+      title={canCall ? "Start an audio call" : "Audio calling is unavailable"}
+      aria-label={`Audio call with ${peerDisplayName}`}
+      className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-[var(--border)] px-3 text-sm font-medium text-[var(--foreground)] transition hover:bg-[var(--surface)] disabled:cursor-not-allowed disabled:opacity-45"
+    >
+      <Phone className="h-4 w-4" aria-hidden="true" />
+      <span className="hidden sm:inline">Audio call</span>
+    </button>
+  );
 }
