@@ -11,6 +11,7 @@ import {
   Compass,
   Home,
   MessageCircle,
+  Phone,
   Plus,
   UserRound,
 } from "lucide-react";
@@ -170,6 +171,19 @@ export default function AgoreDesktopNav({
           />
         </span>
         <span>Messages</span>
+      </Link>
+
+      <Link
+        href="/call-history"
+        className={getItemClass(
+          isActiveRoute("/call-history"),
+        )}
+        aria-current={
+          isActiveRoute("/call-history") ? "page" : undefined
+        }
+      >
+        <Phone size={18} />
+        <span>Calls</span>
       </Link>
 
       <Link
