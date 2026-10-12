@@ -683,7 +683,7 @@ export default function MediaMessageComposer({
           <div
             role="menu"
             aria-label="Choose an attachment"
-            className="absolute bottom-full left-0 z-30 mb-3 w-[min(82vw,300px)] overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)] p-2 shadow-[0_16px_44px_rgba(0,0,0,0.16)]"
+            className="absolute bottom-full left-0 z-30 mb-3 max-h-[min(60dvh,420px)] w-[min(82vw,300px)] overflow-x-hidden overflow-y-auto rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)] p-2 shadow-[0_16px_44px_rgba(0,0,0,0.16)]"
           >
             <div className="px-3 pb-2 pt-2">
               <p className="text-xs font-semibold text-[var(--foreground)]">
@@ -783,7 +783,7 @@ export default function MediaMessageComposer({
       ) : null}
 
       {selectedFile ? (
-        <div className="absolute bottom-full left-0 z-20 mb-3 w-[min(88vw,360px)] rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)] p-3 shadow-[0_12px_36px_rgba(0,0,0,0.1)] sm:left-auto sm:w-[360px]">
+        <div className="absolute bottom-full left-0 z-20 mb-3 max-h-[min(55dvh,420px)] w-[min(88vw,360px)] overflow-y-auto rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)] p-3 shadow-[0_12px_36px_rgba(0,0,0,0.1)] sm:left-auto sm:w-[360px]">
           <div className="flex items-center gap-3">
             {selectedIsImage && selectedFile.previewUrl ? (
               <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface-muted)]">
@@ -861,7 +861,7 @@ export default function MediaMessageComposer({
         type="button"
         onClick={openPicker}
         disabled={disabled || uploading}
-        className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface-raised)] text-[var(--muted-strong)] transition hover:border-[var(--accent)]/45 hover:bg-[var(--accent-soft)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
+        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface-raised)] text-[var(--muted-strong)] transition hover:border-[var(--accent)]/45 hover:bg-[var(--accent-soft)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50 sm:h-11 sm:w-11"
         aria-label="Open attachment menu"
         aria-haspopup="menu"
         aria-expanded={attachmentMenuOpen}
