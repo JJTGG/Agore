@@ -3,6 +3,7 @@
 import {
   Camera,
   FileText,
+  Film,
   Image as ImageIcon,
   Loader2,
   Paperclip,
@@ -29,12 +30,20 @@ const ACCEPTED_MIME_TYPES = [
   "image/webp",
   "image/gif",
   "application/pdf",
+  "video/mp4",
+  "video/webm",
+  "video/quicktime",
+  "video/3gpp",
 ] as const;
 
 type SupportedMimeType =
   (typeof ACCEPTED_MIME_TYPES)[number];
 
-type AttachmentSource = "gallery" | "camera" | "document";
+type AttachmentSource =
+  | "gallery"
+  | "camera"
+  | "video"
+  | "document";
 
 type SelectedFile = {
   file: File;
@@ -85,6 +94,14 @@ function getFileExtension(file: File) {
       return "gif";
     case "application/pdf":
       return "pdf";
+    case "video/mp4":
+      return "mp4";
+    case "video/webm":
+      return "webm";
+    case "video/quicktime":
+      return "mov";
+    case "video/3gpp":
+      return "3gp";
     default:
       return "bin";
   }
@@ -234,6 +251,7 @@ export default function MediaMessageComposer({
 
     let cancelled = false;
     let cleanup: (() => void) | undefined;
+    let retryTimer: number | undefined;
 
     function attachTypingListener() {
       if (cancelled) {
@@ -246,10 +264,11 @@ export default function MediaMessageComposer({
         );
 
       if (!textarea) {
-        window.setTimeout(
+        retryTimer = window.setTimeout(
           attachTypingListener,
           100,
         );
+
         return;
       }
 
@@ -274,6 +293,11 @@ export default function MediaMessageComposer({
 
     return () => {
       cancelled = true;
+
+      if (retryTimer !== undefined) {
+        window.clearTimeout(retryTimer);
+      }
+
       cleanup?.();
       stopTyping();
     };
@@ -296,14 +320,10 @@ export default function MediaMessageComposer({
     onError?.(message);
   }
 
-  /**
-   * Shared validation and selection logic for device
-   * attachments, GIF search results, and stickers.
-   */
   function selectFile(file: File): boolean {
     if (!isSupportedMimeType(file.type)) {
       reportError(
-        "That file type is not supported. Use an image, GIF, or PDF.",
+        "Unsupported file type. Choose an image, GIF, supported video, or PDF.",
       );
 
       return false;
@@ -319,13 +339,17 @@ export default function MediaMessageComposer({
 
     if (file.size > MAX_FILE_SIZE) {
       reportError(
-        "That file is larger than the 15 MB message limit.",
+        "That file exceeds the 15 MB message attachment limit.",
       );
 
       return false;
     }
 
-    const previewUrl = file.type.startsWith("image/")
+    const needsPreview =
+      file.type.startsWith("image/") ||
+      file.type.startsWith("video/");
+
+    const previewUrl = needsPreview
       ? URL.createObjectURL(file)
       : null;
 
@@ -361,7 +385,10 @@ export default function MediaMessageComposer({
     const input = inputRef.current;
 
     if (!input) {
-      reportError("The attachment picker is unavailable.");
+      reportError(
+        "The attachment picker is unavailable.",
+      );
+
       return;
     }
 
@@ -380,6 +407,13 @@ export default function MediaMessageComposer({
       case "camera":
         input.accept = "image/*";
         input.setAttribute("capture", "environment");
+        break;
+
+      case "video":
+        input.accept = ACCEPTED_MIME_TYPES
+          .filter((type) => type.startsWith("video/"))
+          .join(",");
+
         break;
 
       case "document":
@@ -476,6 +510,7 @@ export default function MediaMessageComposer({
         reportError(
           "Your session has expired. Please sign in again.",
         );
+
         return;
       }
 
@@ -484,6 +519,7 @@ export default function MediaMessageComposer({
           prepareData.error ??
             "Unable to prepare the attachment.",
         );
+
         return;
       }
 
@@ -497,6 +533,7 @@ export default function MediaMessageComposer({
         reportError(
           "The attachment could not be prepared correctly.",
         );
+
         return;
       }
 
@@ -596,6 +633,12 @@ export default function MediaMessageComposer({
       setUploading(false);
     }
   }
+
+  const selectedIsImage =
+    selectedFile?.file.type.startsWith("image/") ?? false;
+
+  const selectedIsVideo =
+    selectedFile?.file.type.startsWith("video/") ?? false;
 
   return (
     <div className="relative flex shrink-0 items-center gap-1">
@@ -697,6 +740,27 @@ export default function MediaMessageComposer({
             <button
               type="button"
               role="menuitem"
+              onClick={() => chooseAttachment("video")}
+              className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-[var(--surface-muted)]"
+            >
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent)]">
+                <Film size={19} />
+              </span>
+
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold text-[var(--foreground)]">
+                  Video
+                </span>
+
+                <span className="mt-0.5 block text-xs text-[var(--muted)]">
+                  Share an MP4, WebM, MOV, or 3GP video
+                </span>
+              </span>
+            </button>
+
+            <button
+              type="button"
+              role="menuitem"
               onClick={() => chooseAttachment("document")}
               className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-[var(--surface-muted)]"
             >
@@ -721,13 +785,28 @@ export default function MediaMessageComposer({
       {selectedFile ? (
         <div className="absolute bottom-full left-0 z-20 mb-3 w-[min(88vw,360px)] rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)] p-3 shadow-[0_12px_36px_rgba(0,0,0,0.1)] sm:left-auto sm:w-[360px]">
           <div className="flex items-center gap-3">
-            {selectedFile.previewUrl ? (
+            {selectedIsImage && selectedFile.previewUrl ? (
               <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface-muted)]">
                 <img
                   src={selectedFile.previewUrl}
                   alt=""
                   className="h-full w-full object-cover"
                 />
+              </div>
+            ) : selectedIsVideo && selectedFile.previewUrl ? (
+              <div className="relative h-16 w-24 shrink-0 overflow-hidden rounded-xl border border-[var(--border)] bg-black">
+                <video
+                  src={selectedFile.previewUrl}
+                  muted
+                  playsInline
+                  preload="metadata"
+                  className="h-full w-full object-contain"
+                  aria-label="Selected video preview"
+                />
+
+                <span className="absolute bottom-1 right-1 rounded-md bg-black/70 p-1 text-white">
+                  <Film size={12} />
+                </span>
               </div>
             ) : (
               <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] text-[var(--accent)]">
@@ -742,6 +821,7 @@ export default function MediaMessageComposer({
 
               <p className="mt-1 text-xs text-[var(--muted)]">
                 {formatFileSize(selectedFile.file.size)}
+                {selectedIsVideo ? " · Video" : ""}
               </p>
             </div>
 
