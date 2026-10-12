@@ -380,7 +380,7 @@ export default function GifStickerPicker({
         aria-haspopup="dialog"
         aria-expanded={open}
         title="GIFs and stickers"
-        className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface-raised)] text-[var(--muted-strong)] transition hover:border-[var(--accent)]/45 hover:bg-[var(--accent-soft)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
+        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface-raised)] text-[var(--muted-strong)] transition hover:border-[var(--accent)]/45 hover:bg-[var(--accent-soft)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50 sm:h-11 sm:w-11"
       >
         <Smile size={19} />
       </button>
@@ -399,7 +399,7 @@ export default function GifStickerPicker({
             role="dialog"
             aria-modal="false"
             aria-label="GIF and sticker picker"
-            className="absolute bottom-full left-0 z-50 mb-3 flex max-h-[min(72vh,560px)] w-[min(92vw,390px)] flex-col overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--surface-raised)] shadow-[0_20px_60px_rgba(0,0,0,0.2)] sm:w-[390px]"
+            className="absolute bottom-full left-0 z-50 mb-3 flex max-h-[min(68dvh,520px)] w-[min(92vw,390px)] flex-col overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--surface-raised)] shadow-[0_20px_60px_rgba(0,0,0,0.2)] sm:w-[390px]"
           >
             <header className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
               <div className="flex items-center gap-2.5">
