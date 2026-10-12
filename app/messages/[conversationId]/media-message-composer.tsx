@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Camera,
   FileText,
   Image as ImageIcon,
   Loader2,
@@ -13,13 +14,13 @@ import {
   useRef,
   useState,
 } from "react";
+
 import { createClient } from "@/lib/supabase/browser";
 import { useConversationTyping } from "./conversation-typing";
 
 const supabase = createClient();
 
-const MAX_FILE_SIZE =
-  15 * 1024 * 1024;
+const MAX_FILE_SIZE = 15 * 1024 * 1024;
 
 const ACCEPTED_MIME_TYPES = [
   "image/jpeg",
@@ -31,6 +32,8 @@ const ACCEPTED_MIME_TYPES = [
 
 type SupportedMimeType =
   (typeof ACCEPTED_MIME_TYPES)[number];
+
+type AttachmentSource = "gallery" | "camera" | "document";
 
 type SelectedFile = {
   file: File;
@@ -49,68 +52,55 @@ function isSupportedMimeType(
 ): value is SupportedMimeType {
   return (
     ACCEPTED_MIME_TYPES as readonly string[]
-  ).includes(value);
+  ).includes(value.toLowerCase());
 }
 
 function getFileExtension(file: File) {
-  const rawName =
-    file.name.trim();
-
-  const dotIndex =
-    rawName.lastIndexOf(".");
+  const rawName = file.name.trim();
+  const dotIndex = rawName.lastIndexOf(".");
 
   if (
-    dotIndex <= 0 ||
-    dotIndex ===
-      rawName.length - 1
+    dotIndex > 0 &&
+    dotIndex < rawName.length - 1
   ) {
-    return file.type.startsWith(
-      "image/",
-    )
-      ? "jpg"
-      : "pdf";
+    const extension = rawName
+      .slice(dotIndex + 1)
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "");
+
+    if (extension) {
+      return extension;
+    }
   }
 
-  const extension = rawName
-    .slice(dotIndex + 1)
-    .toLowerCase()
-    .replace(
-      /[^a-z0-9]/g,
-      "",
-    );
-
-  return (
-    extension ||
-    (file.type.startsWith(
-      "image/",
-    )
-      ? "jpg"
-      : "pdf")
-  );
+  switch (file.type.toLowerCase()) {
+    case "image/jpeg":
+      return "jpg";
+    case "image/png":
+      return "png";
+    case "image/webp":
+      return "webp";
+    case "image/gif":
+      return "gif";
+    case "application/pdf":
+      return "pdf";
+    default:
+      return "bin";
+  }
 }
 
-function formatFileSize(
-  bytes: number,
-) {
+function formatFileSize(bytes: number) {
   if (bytes < 1024) {
     return `${bytes} B`;
   }
 
-  const kilobytes =
-    bytes / 1024;
+  const kilobytes = bytes / 1024;
 
   if (kilobytes < 1024) {
-    return `${kilobytes.toFixed(
-      0,
-    )} KB`;
+    return `${kilobytes.toFixed(0)} KB`;
   }
 
-  const megabytes =
-    kilobytes / 1024;
-
-  return `${megabytes.toFixed(
-    1,
-  )} MB`;
+  return `${(kilobytes / 1024).toFixed(1)} MB`;
 }
 
 async function getImageDimensions(
@@ -119,51 +109,39 @@ async function getImageDimensions(
   width: number | null;
   height: number | null;
 }> {
-  if (
-    !file.type.startsWith(
-      "image/",
-    )
-  ) {
+  if (!file.type.startsWith("image/")) {
     return {
       width: null,
       height: null,
     };
   }
 
-  const objectUrl =
-    URL.createObjectURL(
-      file,
-    );
+  const objectUrl = URL.createObjectURL(file);
 
   try {
-    const dimensions =
-      await new Promise<{
-        width: number;
-        height: number;
-      }>((resolve, reject) => {
-        const image =
-          new Image();
+    const dimensions = await new Promise<{
+      width: number;
+      height: number;
+    }>((resolve, reject) => {
+      const image = new Image();
 
-        image.onload = () => {
-          resolve({
-            width:
-              image.naturalWidth,
-            height:
-              image.naturalHeight,
-          });
-        };
+      image.onload = () => {
+        resolve({
+          width: image.naturalWidth,
+          height: image.naturalHeight,
+        });
+      };
 
-        image.onerror = () => {
-          reject(
-            new Error(
-              "Unable to read image dimensions.",
-            ),
-          );
-        };
+      image.onerror = () => {
+        reject(
+          new Error(
+            "Unable to read image dimensions.",
+          ),
+        );
+      };
 
-        image.src =
-          objectUrl;
-      });
+      image.src = objectUrl;
+    });
 
     return dimensions;
   } catch {
@@ -172,9 +150,7 @@ async function getImageDimensions(
       height: null,
     };
   } finally {
-    URL.revokeObjectURL(
-      objectUrl,
-    );
+    URL.revokeObjectURL(objectUrl);
   }
 }
 
@@ -184,57 +160,39 @@ export default function MediaMessageComposer({
   onSent,
   onError,
 }: MediaMessageComposerProps) {
-  const inputRef =
-    useRef<HTMLInputElement | null>(
-      null,
-    );
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
-  const [
-    selectedFile,
-    setSelectedFile,
-  ] = useState<SelectedFile | null>(
-    null,
-  );
+  const [selectedFile, setSelectedFile] =
+    useState<SelectedFile | null>(null);
 
-  const [
-    uploading,
-    setUploading,
-  ] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  const [attachmentMenuOpen, setAttachmentMenuOpen] =
+    useState(false);
 
   const [
     conversationIdRef,
     setConversationIdRef,
   ] = useState(conversationId);
 
-  const [
-    currentUserId,
-    setCurrentUserId,
-  ] = useState<string | null>(
-    null,
-  );
+  const [currentUserId, setCurrentUserId] =
+    useState<string | null>(null);
 
-  const [
-    currentUserName,
-    setCurrentUserName,
-  ] = useState<string | null>(
-    null,
-  );
+  const [currentUserName, setCurrentUserName] =
+    useState<string | null>(null);
 
   const {
     typingText,
     notifyTyping,
     stopTyping,
   } = useConversationTyping({
-    conversationId:
-      conversationIdRef,
+    conversationId: conversationIdRef,
     currentUserId,
     currentUserName,
   });
 
   useEffect(() => {
-    setConversationIdRef(
-      conversationId,
-    );
+    setConversationIdRef(conversationId);
   }, [conversationId]);
 
   useEffect(() => {
@@ -243,29 +201,21 @@ export default function MediaMessageComposer({
     async function loadCurrentUser() {
       const {
         data: { user },
-      } =
-        await supabase.auth.getUser();
+      } = await supabase.auth.getUser();
 
       if (!active) {
         return;
       }
 
-      setCurrentUserId(
-        user?.id ?? null,
-      );
+      setCurrentUserId(user?.id ?? null);
 
       const displayName =
-        typeof user
-          ?.user_metadata
-          ?.display_name ===
-        "string"
+        typeof user?.user_metadata?.display_name === "string"
           ? user.user_metadata.display_name.trim()
           : "";
 
       setCurrentUserName(
-        displayName ||
-          user?.email ||
-          null,
+        displayName || user?.email || null,
       );
     }
 
@@ -277,80 +227,52 @@ export default function MediaMessageComposer({
   }, []);
 
   useEffect(() => {
-    if (
-      !conversationIdRef ||
-      !currentUserId
-    ) {
+    if (!conversationIdRef || !currentUserId) {
       return;
     }
 
     let cancelled = false;
+    let cleanup: (() => void) | undefined;
 
-    const attachTypingListener =
-      () => {
-        if (cancelled) {
-          return;
-        }
+    function attachTypingListener() {
+      if (cancelled) {
+        return;
+      }
 
-        const textarea =
-          document.querySelector<HTMLTextAreaElement>(
-            'textarea[placeholder="Write a message…"]',
-          );
-
-        if (!textarea) {
-          window.setTimeout(
-            attachTypingListener,
-            100,
-          );
-          return;
-        }
-
-        const handleInput =
-          () => {
-            notifyTyping(
-              textarea.value.trim()
-                .length > 0,
-            );
-          };
-
-        const handleBlur =
-          () => {
-            stopTyping();
-          };
-
-        textarea.addEventListener(
-          "input",
-          handleInput,
+      const textarea =
+        document.querySelector<HTMLTextAreaElement>(
+          'textarea[placeholder="Write a message…"]',
         );
 
-        textarea.addEventListener(
-          "blur",
-          handleBlur,
+      if (!textarea) {
+        window.setTimeout(
+          attachTypingListener,
+          100,
         );
+        return;
+      }
 
-        return () => {
-          textarea.removeEventListener(
-            "input",
-            handleInput,
-          );
-
-          textarea.removeEventListener(
-            "blur",
-            handleBlur,
-          );
-        };
+      const handleInput = () => {
+        notifyTyping(textarea.value.trim().length > 0);
       };
 
-    let cleanup:
-      | (() => void)
-      | undefined;
+      const handleBlur = () => {
+        stopTyping();
+      };
 
-    cleanup =
-      attachTypingListener();
+      textarea.addEventListener("input", handleInput);
+      textarea.addEventListener("blur", handleBlur);
+
+      cleanup = () => {
+        textarea.removeEventListener("input", handleInput);
+        textarea.removeEventListener("blur", handleBlur);
+      };
+    }
+
+    attachTypingListener();
 
     return () => {
       cancelled = true;
-
       cleanup?.();
       stopTyping();
     };
@@ -363,31 +285,59 @@ export default function MediaMessageComposer({
 
   useEffect(() => {
     return () => {
-      if (
-        selectedFile?.previewUrl
-      ) {
-        URL.revokeObjectURL(
-          selectedFile.previewUrl,
-        );
+      if (selectedFile?.previewUrl) {
+        URL.revokeObjectURL(selectedFile.previewUrl);
       }
     };
   }, [selectedFile]);
 
-  function reportError(
-    message: string,
-  ) {
+  function reportError(message: string) {
     onError?.(message);
   }
 
   function openPicker() {
-    if (
-      disabled ||
-      uploading
-    ) {
+    if (disabled || uploading) {
       return;
     }
 
-    inputRef.current?.click();
+    setAttachmentMenuOpen((current) => !current);
+  }
+
+  function chooseAttachment(source: AttachmentSource) {
+    if (disabled || uploading) {
+      return;
+    }
+
+    const input = inputRef.current;
+
+    if (!input) {
+      reportError("The attachment picker is unavailable.");
+      return;
+    }
+
+    setAttachmentMenuOpen(false);
+
+    input.removeAttribute("capture");
+
+    switch (source) {
+      case "gallery":
+        input.accept = ACCEPTED_MIME_TYPES
+          .filter((type) => type.startsWith("image/"))
+          .join(",");
+
+        break;
+
+      case "camera":
+        input.accept = "image/*";
+        input.setAttribute("capture", "environment");
+        break;
+
+      case "document":
+        input.accept = "application/pdf";
+        break;
+    }
+
+    input.click();
   }
 
   function clearSelection() {
@@ -398,28 +348,22 @@ export default function MediaMessageComposer({
     setSelectedFile(null);
 
     if (inputRef.current) {
-      inputRef.current.value =
-        "";
+      inputRef.current.value = "";
     }
   }
 
   function handleFileChange(
     event: ChangeEvent<HTMLInputElement>,
   ) {
-    const file =
-      event.target.files?.[0];
+    const file = event.target.files?.[0];
 
     if (!file) {
       return;
     }
 
-    if (
-      !isSupportedMimeType(
-        file.type,
-      )
-    ) {
+    if (!isSupportedMimeType(file.type)) {
       reportError(
-        "That file type is not supported. Use an image or PDF.",
+        "That file type is not supported. Use an image, GIF, or PDF.",
       );
 
       event.target.value = "";
@@ -435,10 +379,7 @@ export default function MediaMessageComposer({
       return;
     }
 
-    if (
-      file.size >
-      MAX_FILE_SIZE
-    ) {
+    if (file.size > MAX_FILE_SIZE) {
       reportError(
         "That file is larger than the 15 MB message limit.",
       );
@@ -447,19 +388,16 @@ export default function MediaMessageComposer({
       return;
     }
 
-    const previewUrl =
-      file.type.startsWith(
-        "image/",
-      )
-        ? URL.createObjectURL(
-            file,
-          )
-        : null;
+    const previewUrl = file.type.startsWith("image/")
+      ? URL.createObjectURL(file)
+      : null;
 
     setSelectedFile({
       file,
       previewUrl,
     });
+
+    event.target.value = "";
   }
 
   async function cleanupPreparedMessage(
@@ -491,57 +429,42 @@ export default function MediaMessageComposer({
       return;
     }
 
-    const file =
-      selectedFile.file;
+    const file = selectedFile.file;
 
     setUploading(true);
 
-    let preparedMessageId:
-      | string
-      | null = null;
+    let preparedMessageId: string | null = null;
 
     try {
-      const extension =
-        getFileExtension(file);
+      const extension = getFileExtension(file);
 
-      const prepareResponse =
-        await fetch(
-          `/api/conversations/${encodeURIComponent(
-            conversationIdRef,
-          )}/media`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-            body: JSON.stringify({
-              action:
-                "prepare",
-              mime_type:
-                file.type,
-              file_name:
-                file.name,
-            }),
+      const prepareResponse = await fetch(
+        `/api/conversations/${encodeURIComponent(
+          conversationIdRef,
+        )}/media`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
           },
-        );
+          body: JSON.stringify({
+            action: "prepare",
+            mime_type: file.type,
+            file_name: file.name,
+          }),
+        },
+      );
 
-      const prepareData =
-        await prepareResponse.json();
+      const prepareData = await prepareResponse.json();
 
-      if (
-        prepareResponse.status ===
-        401
-      ) {
+      if (prepareResponse.status === 401) {
         reportError(
           "Your session has expired. Please sign in again.",
         );
         return;
       }
 
-      if (
-        !prepareResponse.ok
-      ) {
+      if (!prepareResponse.ok) {
         reportError(
           prepareData.error ??
             "Unable to prepare the attachment.",
@@ -550,55 +473,31 @@ export default function MediaMessageComposer({
       }
 
       const messageId =
-        prepareData.message
-          ?.id as
-          | string
-          | undefined;
+        prepareData.message?.id as string | undefined;
 
       const storagePath =
-        prepareData.storage_path as
-          | string
-          | undefined;
+        prepareData.storage_path as string | undefined;
 
-      if (
-        !messageId ||
-        !storagePath
-      ) {
+      if (!messageId || !storagePath) {
         reportError(
           "The attachment could not be prepared correctly.",
         );
         return;
       }
 
-      preparedMessageId =
-        messageId;
+      preparedMessageId = messageId;
 
-      const {
-        width,
-        height,
-      } =
-        await getImageDimensions(
-          file,
-        );
+      const { width, height } =
+        await getImageDimensions(file);
 
-      const {
-        error: uploadError,
-      } =
+      const { error: uploadError } =
         await supabase.storage
-          .from(
-            "message-media",
-          )
-          .upload(
-            storagePath,
-            file,
-            {
-              contentType:
-                file.type,
-              cacheControl:
-                "3600",
-              upsert: false,
-            },
-          );
+          .from("message-media")
+          .upload(storagePath, file, {
+            contentType: file.type,
+            cacheControl: "3600",
+            upsert: false,
+          });
 
       if (uploadError) {
         console.error(
@@ -610,84 +509,58 @@ export default function MediaMessageComposer({
           "The attachment could not be uploaded.",
         );
 
-        await cleanupPreparedMessage(
-          messageId,
-        );
-
+        await cleanupPreparedMessage(messageId);
         return;
       }
 
-      const finalizeResponse =
-        await fetch(
-          `/api/conversations/${encodeURIComponent(
-            conversationIdRef,
-          )}/media`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-            body: JSON.stringify({
-              action:
-                "finalize",
-              message_id:
-                messageId,
-              storage_path:
-                storagePath,
-              file_name:
-                file.name,
-              mime_type:
-                file.type,
-              size_bytes:
-                file.size,
-              width,
-              height,
-              extension,
-            }),
+      const finalizeResponse = await fetch(
+        `/api/conversations/${encodeURIComponent(
+          conversationIdRef,
+        )}/media`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
           },
-        );
+          body: JSON.stringify({
+            action: "finalize",
+            message_id: messageId,
+            storage_path: storagePath,
+            file_name: file.name,
+            mime_type: file.type,
+            size_bytes: file.size,
+            width,
+            height,
+            extension,
+          }),
+        },
+      );
 
-      const finalizeData =
-        await finalizeResponse.json();
+      const finalizeData = await finalizeResponse.json();
 
-      if (
-        finalizeResponse.status ===
-        401
-      ) {
+      if (finalizeResponse.status === 401) {
         reportError(
           "Your session has expired. Please sign in again.",
         );
 
-        await cleanupPreparedMessage(
-          messageId,
-        );
-
+        await cleanupPreparedMessage(messageId);
         return;
       }
 
-      if (
-        !finalizeResponse.ok
-      ) {
+      if (!finalizeResponse.ok) {
         reportError(
           finalizeData.error ??
             "Unable to finish the attachment.",
         );
 
-        await cleanupPreparedMessage(
-          messageId,
-        );
-
+        await cleanupPreparedMessage(messageId);
         return;
       }
 
-      setSelectedFile(
-        null,
-      );
+      setSelectedFile(null);
 
       if (inputRef.current) {
-        inputRef.current.value =
-          "";
+        inputRef.current.value = "";
       }
 
       onSent?.();
@@ -701,12 +574,8 @@ export default function MediaMessageComposer({
         "Something went wrong while sending the attachment.",
       );
 
-      if (
-        preparedMessageId
-      ) {
-        await cleanupPreparedMessage(
-          preparedMessageId,
-        );
+      if (preparedMessageId) {
+        await cleanupPreparedMessage(preparedMessageId);
       }
     } finally {
       setUploading(false);
@@ -724,9 +593,7 @@ export default function MediaMessageComposer({
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--accent)] [animation-delay:240ms]" />
             </span>
 
-            <span className="truncate">
-              {typingText}
-            </span>
+            <span className="truncate">{typingText}</span>
           </div>
         </div>
       ) : null}
@@ -734,18 +601,101 @@ export default function MediaMessageComposer({
       <input
         ref={inputRef}
         type="file"
-        accept={ACCEPTED_MIME_TYPES.join(
-          ",",
-        )}
+        accept={ACCEPTED_MIME_TYPES.join(",")}
         className="hidden"
-        onChange={
-          handleFileChange
-        }
-        disabled={
-          disabled ||
-          uploading
-        }
+        onChange={handleFileChange}
+        disabled={disabled || uploading}
       />
+
+      {attachmentMenuOpen ? (
+        <>
+          <button
+            type="button"
+            aria-label="Close attachment menu"
+            className="fixed inset-0 z-20 cursor-default"
+            onClick={() => setAttachmentMenuOpen(false)}
+          />
+
+          <div
+            role="menu"
+            aria-label="Choose an attachment"
+            className="absolute bottom-full left-0 z-30 mb-3 w-[min(82vw,300px)] overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)] p-2 shadow-[0_16px_44px_rgba(0,0,0,0.16)]"
+          >
+            <div className="px-3 pb-2 pt-2">
+              <p className="text-xs font-semibold text-[var(--foreground)]">
+                Attach to conversation
+              </p>
+
+              <p className="mt-1 text-[11px] leading-5 text-[var(--muted)]">
+                Choose what you want to share.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => chooseAttachment("gallery")}
+              className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-[var(--surface-muted)]"
+            >
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent)]">
+                <ImageIcon size={19} />
+              </span>
+
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold text-[var(--foreground)]">
+                  Photos & GIFs
+                </span>
+
+                <span className="mt-0.5 block text-xs text-[var(--muted)]">
+                  Choose an image from your device
+                </span>
+              </span>
+            </button>
+
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => chooseAttachment("camera")}
+              className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-[var(--surface-muted)]"
+            >
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent)]">
+                <Camera size={19} />
+              </span>
+
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold text-[var(--foreground)]">
+                  Camera
+                </span>
+
+                <span className="mt-0.5 block text-xs text-[var(--muted)]">
+                  Capture a new photo
+                </span>
+              </span>
+            </button>
+
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => chooseAttachment("document")}
+              className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-[var(--surface-muted)]"
+            >
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent)]">
+                <FileText size={19} />
+              </span>
+
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold text-[var(--foreground)]">
+                  Document (PDF)
+                </span>
+
+                <span className="mt-0.5 block text-xs text-[var(--muted)]">
+                  Share a PDF document
+                </span>
+              </span>
+            </button>
+          </div>
+        </>
+      ) : null}
 
       {selectedFile ? (
         <div className="absolute bottom-full left-0 right-0 z-20 mb-3 rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)] p-3 shadow-[0_12px_36px_rgba(0,0,0,0.1)] sm:left-auto sm:w-[360px]">
@@ -753,49 +703,30 @@ export default function MediaMessageComposer({
             {selectedFile.previewUrl ? (
               <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface-muted)]">
                 <img
-                  src={
-                    selectedFile.previewUrl
-                  }
+                  src={selectedFile.previewUrl}
                   alt=""
                   className="h-full w-full object-cover"
                 />
               </div>
             ) : (
               <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] text-[var(--accent)]">
-                {selectedFile.file.type ===
-                "application/pdf" ? (
-                  <FileText
-                    size={24}
-                  />
-                ) : (
-                  <ImageIcon
-                    size={24}
-                  />
-                )}
+                <FileText size={24} />
               </div>
             )}
 
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold text-[var(--foreground)]">
-                {
-                  selectedFile
-                    .file.name
-                }
+                {selectedFile.file.name}
               </p>
 
               <p className="mt-1 text-xs text-[var(--muted)]">
-                {formatFileSize(
-                  selectedFile.file
-                    .size,
-                )}
+                {formatFileSize(selectedFile.file.size)}
               </p>
             </div>
 
             <button
               type="button"
-              onClick={
-                clearSelection
-              }
+              onClick={clearSelection}
               disabled={uploading}
               className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[var(--muted)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-40"
               aria-label="Remove attachment"
@@ -806,13 +737,8 @@ export default function MediaMessageComposer({
 
           <button
             type="button"
-            onClick={() =>
-              void sendSelectedFile()
-            }
-            disabled={
-              uploading ||
-              disabled
-            }
+            onClick={() => void sendSelectedFile()}
+            disabled={uploading || disabled}
             className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-4 text-sm font-semibold text-white transition hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {uploading ? (
@@ -833,13 +759,12 @@ export default function MediaMessageComposer({
       <button
         type="button"
         onClick={openPicker}
-        disabled={
-          disabled ||
-          uploading
-        }
+        disabled={disabled || uploading}
         className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface-raised)] text-[var(--muted-strong)] transition hover:border-[var(--accent)]/45 hover:bg-[var(--accent-soft)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
-        aria-label="Attach image or file"
-        title="Attach image or file"
+        aria-label="Open attachment menu"
+        aria-haspopup="menu"
+        aria-expanded={attachmentMenuOpen}
+        title="Attach media"
       >
         {uploading ? (
           <Loader2
