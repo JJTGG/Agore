@@ -2175,8 +2175,8 @@ export default function ConversationPage() {
             >
             {conversation?.type === "direct" ? (
               <Link
-                href={`/messages/${encodeURIComponent(conversationId)}/profile`}
-                aria-label={`Open ${title}'s message profile`}
+                href={"/messages/" + encodeURIComponent(conversationId) + "/profile"}
+                aria-label={"Open " + title + "'s message profile"}
                 title="Contact info"
                 className="shrink-0 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
               >
@@ -2189,11 +2189,27 @@ export default function ConversationPage() {
                   textClassName="text-xs"
                 />
               </Link>
+            ) : conversation?.type === "group" ? (
+              <Link
+                href={"/messages/" + encodeURIComponent(conversationId) + "/group"}
+                aria-label={"Open " + title + " group info"}
+                title="Group info"
+                className="shrink-0 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
+              >
+                <AgoreAvatar
+                  avatarPath={conversation.image_path}
+                  name={title}
+                  bucketName="group-media"
+                  refreshKey={conversation.updated_at}
+                  className="h-11 w-11"
+                  textClassName="text-xs"
+                />
+              </Link>
             ) : (
               <AgoreAvatar
-                avatarPath={conversation?.image_path ?? null}
+                avatarPath={participantAvatar}
                 name={title}
-                bucketName="group-media"
+                bucketName="avatars"
                 refreshKey={conversation?.updated_at}
                 className="h-11 w-11"
                 textClassName="text-xs"
@@ -2202,11 +2218,10 @@ export default function ConversationPage() {
 
             <div className="min-w-0 flex-1">
               <h1 className="min-w-0 truncate text-[15px] font-bold tracking-[-0.01em]">
-                {conversation?.type === "direct" &&
-                conversation.participant ? (
+                {conversation?.type === "direct" && conversation.participant ? (
                   <Link
-                    href={`/messages/${encodeURIComponent(conversationId)}/profile`}
-                    aria-label={`Open ${title}'s message profile`}
+                    href={"/messages/" + encodeURIComponent(conversationId) + "/profile"}
+                    aria-label={"Open " + title + "'s message profile"}
                     title="Contact info"
                     className="inline-flex min-w-0 max-w-full rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
                   >
@@ -2217,6 +2232,15 @@ export default function ConversationPage() {
                       nameClassName="min-w-0 truncate text-[15px] font-bold tracking-[-0.01em]"
                       badgeSize={15}
                     />
+                  </Link>
+                ) : conversation?.type === "group" ? (
+                  <Link
+                    href={"/messages/" + encodeURIComponent(conversationId) + "/group"}
+                    aria-label={"Open " + title + " group info"}
+                    title="Group info"
+                    className="inline-flex min-w-0 max-w-full rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] hover:underline"
+                  >
+                    {title}
                   </Link>
                 ) : (
                   title
