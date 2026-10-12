@@ -42,6 +42,7 @@ import MessageActionMenu from "./message-action-menu";
 import MessageReactions from "./message-reactions";
 import MessageStatus from "./message-status";
 import ConversationPresence from "./conversation-presence";
+import AudioCallControls from "./audio-call-controls";
 import MessageMediaContent from "./message-media-content";
 import MediaMessageComposer from "./media-message-composer";
 import VoiceMessagePlayer from "./voice-message-player";
@@ -2271,6 +2272,15 @@ export default function ConversationPage() {
                 >
                   <Settings size={17} />
                 </button>
+              ) : null}
+
+              {conversation?.type === "direct" && conversation.participant ? (
+                <AudioCallControls
+                  conversationId={conversation.id}
+                  currentUserId={currentUserId}
+                  peerUserId={conversation.participant.id}
+                  peerDisplayName={title}
+                />
               ) : null}
 
               <MessageSearch
