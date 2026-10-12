@@ -1041,33 +1041,42 @@ export default function ConversationPage() {
   }, [loadConversation, loadMessages]);
 
   /*
-   * Realtime recovery:
-   * - Refresh on message INSERT / UPDATE.
-   * - Reconcile server state after a successful subscription.
-   * - Refresh when the network returns or the tab becomes visible again.
-   * - Clean up listeners and the channel on unmount.
+   * Realtime updates:
+   * - Initial data is loaded by the initialization effect.
+   * - Incoming message events are debounced.
+   * - Own message events are handled by local send/upload handlers.
+   * - Conversation details are not reloaded for every message event.
+   * - Reconnects and returning to the tab trigger reconciliation.
    */
   useEffect(() => {
-    if (!conversationId) return;
+    if (!conversationId || !currentUserId) return;
 
     let active = true;
+    let hasSubscribed = false;
+    let refreshTimer: number | null = null;
     let wasVisible = document.visibilityState === "visible";
 
-    const refreshAfterRecovery = () => {
-      if (!active) return;
-
-      if (!navigator.onLine) {
-        setError(
-          "You appear to be offline. Messages will refresh when your connection returns.",
-        );
+    function scheduleMessagesRefresh() {
+      if (
+        !active ||
+        !navigator.onLine ||
+        document.visibilityState !== "visible"
+      ) {
         return;
       }
 
-      if (document.visibilityState !== "visible") return;
+      if (refreshTimer !== null) {
+        window.clearTimeout(refreshTimer);
+      }
 
-      void loadMessages();
-      void loadConversation();
-    };
+      refreshTimer = window.setTimeout(() => {
+        refreshTimer = null;
+
+        if (active) {
+          void loadMessages();
+        }
+      }, 300);
+    }
 
     const channel = supabase
       .channel(`messages:${conversationId}`)
@@ -1079,10 +1088,27 @@ export default function ConversationPage() {
           table: "messages",
           filter: `conversation_id=eq.${conversationId}`,
         },
-        () => {
+        (payload) => {
           if (!active) return;
-          void loadMessages();
-          void loadConversation();
+
+          const message = payload.new as {
+            sender_id?: unknown;
+            content?: unknown;
+          };
+
+          // Our local send/upload handlers reconcile our own messages.
+          if (message.sender_id === currentUserId) return;
+
+          // Media-only sends initially create an empty placeholder.
+          // The UPDATE below refreshes when that upload is finalized.
+          if (
+            typeof message.content !== "string" ||
+            !message.content.trim()
+          ) {
+            return;
+          }
+
+          scheduleMessagesRefresh();
         },
       )
       .on(
@@ -1093,18 +1119,56 @@ export default function ConversationPage() {
           table: "messages",
           filter: `conversation_id=eq.${conversationId}`,
         },
-        () => {
+        (payload) => {
           if (!active) return;
-          void loadMessages();
-          void loadConversation();
+
+          const message = payload.new as {
+            sender_id?: unknown;
+            content?: unknown;
+            created_at?: unknown;
+            updated_at?: unknown;
+          };
+
+          // Local edits, deletes and uploads are handled by action handlers.
+          if (message.sender_id === currentUserId) return;
+
+          const hasText =
+            typeof message.content === "string" &&
+            Boolean(message.content.trim());
+
+          const createdAt =
+            typeof message.created_at === "string"
+              ? Date.parse(message.created_at)
+              : Number.NaN;
+
+          const updatedAt =
+            typeof message.updated_at === "string"
+              ? Date.parse(message.updated_at)
+              : Number.NaN;
+
+          // Finalizing an incoming media-only message updates its timestamp.
+          const finalizedMedia =
+            !hasText &&
+            Number.isFinite(createdAt) &&
+            Number.isFinite(updatedAt) &&
+            updatedAt > createdAt;
+
+          if (!hasText && !finalizedMedia) return;
+
+          scheduleMessagesRefresh();
         },
       )
       .subscribe((status, subscriptionError) => {
         if (!active) return;
 
         if (status === "SUBSCRIBED") {
-          // Reconcile state instead of assuming no events were missed.
-          refreshAfterRecovery();
+          // Do not duplicate the initial page load just because the
+          // subscription came online. Only reconcile after a reconnect.
+          if (hasSubscribed) {
+            scheduleMessagesRefresh();
+          }
+
+          hasSubscribed = true;
           return;
         }
 
@@ -1118,15 +1182,11 @@ export default function ConversationPage() {
             status,
             subscriptionError,
           );
-
-          setError(
-            "Live updates are reconnecting. Your messages will refresh when the connection returns.",
-          );
         }
       });
 
     const handleOnline = () => {
-      refreshAfterRecovery();
+      scheduleMessagesRefresh();
     };
 
     const handleOffline = () => {
@@ -1141,7 +1201,7 @@ export default function ConversationPage() {
       const isVisible = document.visibilityState === "visible";
 
       if (isVisible && !wasVisible) {
-        refreshAfterRecovery();
+        scheduleMessagesRefresh();
       }
 
       wasVisible = isVisible;
@@ -1149,6 +1209,7 @@ export default function ConversationPage() {
 
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
+
     document.addEventListener(
       "visibilitychange",
       handleVisibilityChange,
@@ -1157,8 +1218,13 @@ export default function ConversationPage() {
     return () => {
       active = false;
 
+      if (refreshTimer !== null) {
+        window.clearTimeout(refreshTimer);
+      }
+
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
+
       document.removeEventListener(
         "visibilitychange",
         handleVisibilityChange,
@@ -1166,7 +1232,7 @@ export default function ConversationPage() {
 
       void supabase.removeChannel(channel);
     };
-  }, [conversationId, loadConversation, loadMessages]);
+  }, [conversationId, currentUserId, loadMessages]);
 
   useEffect(() => {
     if (groupOpen && conversation?.type === "group") {
