@@ -15,17 +15,20 @@ import { useParams, useRouter } from "next/navigation";
 import {
   ArrowDown,
   ArrowLeft,
+  Copy,
   CornerUpLeft,
   Edit3,
   Forward,
   Loader2,
   MessageCircle,
+  MoreHorizontal,
   Plus,
   RefreshCw,
   Search,
   Settings,
   Shield,
   ShieldOff,
+  Trash2,
   UserMinus,
   Users,
   X,
@@ -251,6 +254,7 @@ type MessageBubbleProps = {
   onSaveEdit: (messageId: string) => Promise<void>;
   onCancelEdit: () => void;
   onDelete: (messageId: string) => Promise<void>;
+  onMobileSelect: (message: Message) => void;
 };
 
 function MessageBubble({
@@ -271,6 +275,7 @@ function MessageBubble({
   onSaveEdit,
   onCancelEdit,
   onDelete,
+  onMobileSelect,
 }: MessageBubbleProps) {
   const hasText = Boolean(message.content?.trim());
 
@@ -285,6 +290,25 @@ function MessageBubble({
   );
 
   const senderName = message.sender?.display_name ?? "Agoré user";
+  const longPressTimerRef = useRef<number | null>(null);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (longPressTimerRef.current !== null) {
+        window.clearTimeout(longPressTimerRef.current);
+      }
+    };
+  }, []);
+
+  function cancelLongPress() {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+
+    touchStartRef.current = null;
+  }
 
   if (editing) {
     return (
@@ -339,7 +363,56 @@ function MessageBubble({
   }
 
   return (
-    <div className={`flex ${isOwn ? "justify-end" : "justify-start"}`}>
+    <div
+      className={`flex select-none sm:select-text ${isOwn ? "justify-end" : "justify-start"}`}
+      onTouchStart={(event) => {
+        if (
+          !window.matchMedia("(max-width: 639px)").matches ||
+          editing
+        ) {
+          return;
+        }
+
+        if (
+          event.target instanceof Element &&
+          event.target.closest("button, a, input, textarea, video, audio")
+        ) {
+          return;
+        }
+
+        const touch = event.touches[0];
+        if (!touch) return;
+
+        cancelLongPress();
+        touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+
+        longPressTimerRef.current = window.setTimeout(() => {
+          longPressTimerRef.current = null;
+          touchStartRef.current = null;
+          onMobileSelect(message);
+        }, 450);
+      }}
+      onTouchMove={(event) => {
+        const start = touchStartRef.current;
+        const touch = event.touches[0];
+        if (!start || !touch) return;
+
+        if (
+          Math.abs(touch.clientX - start.x) > 12 ||
+          Math.abs(touch.clientY - start.y) > 12
+        ) {
+          cancelLongPress();
+        }
+      }}
+      onTouchEnd={cancelLongPress}
+      onTouchCancel={cancelLongPress}
+      onContextMenu={(event) => {
+        if (!window.matchMedia("(max-width: 639px)").matches) return;
+        event.preventDefault();
+        cancelLongPress();
+        onMobileSelect(message);
+      }}
+    >
       <div
         className={`group flex min-w-0 ${
           isOwn ? "max-w-[88%] flex-row-reverse" : "max-w-[92%] flex-row"
@@ -539,7 +612,7 @@ function MessageBubble({
           </div>
 
           <div
-            className={`absolute top-1/2 z-20 flex -translate-y-1/2 items-center ${
+            className={`absolute top-1/2 z-20 hidden -translate-y-1/2 items-center sm:flex ${
               isOwn ? "right-full mr-1" : "left-full ml-1"
             }`}
           >
@@ -590,6 +663,8 @@ export default function ConversationPage() {
   const [error, setError] = useState("");
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+  const [mobileSelectedMessageId, setMobileSelectedMessageId] = useState<string | null>(null);
+  const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
 
   const [forwardingMessage, setForwardingMessage] = useState<Message | null>(null);
   const [forwardConversations, setForwardConversations] = useState<Conversation[]>([]);
@@ -600,6 +675,9 @@ export default function ConversationPage() {
   const [forwardCursor, setForwardCursor] = useState<string | null>(null);
   const [forwardHasMore, setForwardHasMore] = useState(false);
   const [forwardLoadingMore, setForwardLoadingMore] = useState(false);
+
+  const mobileSelectedMessage =
+    messages.find((message) => message.id === mobileSelectedMessageId) ?? null;
 
   const [groupOpen, setGroupOpen] = useState(false);
   const [groupLoading, setGroupLoading] = useState(false);
@@ -1559,6 +1637,55 @@ export default function ConversationPage() {
     }
   }
 
+  function selectMobileMessage(message: Message) {
+    setMobileSelectedMessageId(message.id);
+    setMobileActionsOpen(false);
+  }
+
+  function clearMobileMessageSelection() {
+    setMobileSelectedMessageId(null);
+    setMobileActionsOpen(false);
+  }
+
+  async function copyMobileSelectedMessage() {
+    const content = mobileSelectedMessage?.content?.trim();
+    if (!content) return;
+
+    if (!navigator.clipboard?.writeText) {
+      setError("Copy is unavailable in this browser.");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(content);
+      clearMobileMessageSelection();
+      setError("");
+    } catch {
+      setError("Unable to copy the message.");
+    }
+  }
+
+  async function deleteMobileSelectedMessage() {
+    const message = mobileSelectedMessage;
+    if (!message || message.sender_id !== currentUserId) return;
+
+    const confirmed = window.confirm(
+      "Delete this message? It will be removed from the conversation.",
+    );
+
+    if (!confirmed) {
+      setMobileActionsOpen(false);
+      return;
+    }
+
+    try {
+      await deleteMessage(message.id);
+      clearMobileMessageSelection();
+    } catch {
+      setMobileActionsOpen(false);
+    }
+  }
+
   function cancelReply() {
     setReplyingTo(null);
   }
@@ -1952,7 +2079,100 @@ export default function ConversationPage() {
         </header>
 
         <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-y border-[var(--border)] bg-[var(--surface)] md:rounded-[1.75rem] md:border md:shadow-[0_12px_40px_rgba(0,0,0,0.05)]">
-          <header className="flex shrink-0 items-center gap-3 border-b border-[var(--border)] px-4 py-3 sm:px-5">
+          <header className="relative flex shrink-0 items-center gap-3 border-b border-[var(--border)] px-4 py-3 sm:px-5">
+            {mobileSelectedMessage ? (
+              <div className="absolute inset-0 z-30 flex items-center gap-2 bg-[var(--surface)] px-3 sm:hidden">
+                <button
+                  type="button"
+                  onClick={clearMobileMessageSelection}
+                  aria-label="Cancel message selection"
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[var(--foreground)] hover:bg-[var(--surface-muted)]"
+                >
+                  <X size={20} />
+                </button>
+                <span className="min-w-4 text-sm font-semibold">1</span>
+                <div className="ml-auto flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      startReply(mobileSelectedMessage);
+                      clearMobileMessageSelection();
+                    }}
+                    aria-label="Reply to message"
+                    title="Reply"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[var(--foreground)] hover:bg-[var(--surface-muted)]"
+                  >
+                    <CornerUpLeft size={18} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      openForwardDialog(mobileSelectedMessage);
+                      clearMobileMessageSelection();
+                    }}
+                    aria-label="Forward message"
+                    title="Forward"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[var(--foreground)] hover:bg-[var(--surface-muted)]"
+                  >
+                    <Forward size={18} />
+                  </button>
+                  {mobileSelectedMessage.content?.trim() ? (
+                    <button
+                      type="button"
+                      onClick={() => void copyMobileSelectedMessage()}
+                      aria-label="Copy message"
+                      title="Copy"
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[var(--foreground)] hover:bg-[var(--surface-muted)]"
+                    >
+                      <Copy size={18} />
+                    </button>
+                  ) : null}
+                  {mobileSelectedMessage.sender_id === currentUserId ? (
+                    <button
+                      type="button"
+                      onClick={() => setMobileActionsOpen((current) => !current)}
+                      aria-label="More message actions"
+                      aria-expanded={mobileActionsOpen}
+                      title="More actions"
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[var(--foreground)] hover:bg-[var(--surface-muted)]"
+                    >
+                      <MoreHorizontal size={20} />
+                    </button>
+                  ) : null}
+                </div>
+                {mobileActionsOpen &&
+                mobileSelectedMessage.sender_id === currentUserId ? (
+                  <div className="absolute right-2 top-full z-50 mt-2 w-48 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)] p-1.5 shadow-2xl">
+                    {mobileSelectedMessage.content?.trim() ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          beginEdit(mobileSelectedMessage);
+                          clearMobileMessageSelection();
+                        }}
+                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-[var(--foreground)] hover:bg-[var(--surface-muted)]"
+                      >
+                        <Edit3 size={15} />
+                        Edit
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => void deleteMobileSelectedMessage()}
+                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-[var(--danger)] hover:bg-[var(--danger-soft)]"
+                    >
+                      <Trash2 size={15} />
+                      Delete
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            <div
+              className={`flex min-w-0 flex-1 items-center gap-3 ${
+                mobileSelectedMessage ? "hidden sm:flex" : ""
+              }`}
+            >
             <AgoreAvatar
               avatarPath={
                 conversation?.type === "group"
@@ -2031,6 +2251,7 @@ export default function ConversationPage() {
                   className={refreshing ? "animate-spin" : undefined}
                 />
               </button>
+            </div>
             </div>
           </header>
 
@@ -2119,7 +2340,8 @@ export default function ConversationPage() {
                       id={`agore-message-${message.id}`}
                       key={message.id}
                       className={`rounded-2xl transition-all duration-300 ${
-                        highlightedMessageId === message.id
+                        highlightedMessageId === message.id ||
+                        mobileSelectedMessageId === message.id
                           ? "bg-[var(--accent-soft)]/70 ring-2 ring-[var(--accent)]/30"
                           : ""
                       } ${grouped ? "mt-0.5" : "mt-4 first:mt-0"}`}
@@ -2156,6 +2378,7 @@ export default function ConversationPage() {
                         onSaveEdit={saveEdit}
                         onCancelEdit={cancelEdit}
                         onDelete={deleteMessage}
+                        onMobileSelect={selectMobileMessage}
                       />
                     </div>
                   );
