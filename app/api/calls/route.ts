@@ -23,6 +23,35 @@ const CALL_FIELDS = [
   "updated_at",
 ].join(", ");
 
+type CallRow = {
+  id: string;
+  conversation_id: string;
+  caller_id: string;
+  callee_id: string;
+  status:
+    | "ringing"
+    | "accepted"
+    | "completed"
+    | "declined"
+    | "missed"
+    | "cancelled"
+    | "failed";
+  created_at: string;
+  answered_at: string | null;
+  ended_at: string | null;
+  duration_seconds: number | null;
+  ended_by: string | null;
+  failure_reason: string | null;
+  updated_at: string;
+};
+
+type PeerProfile = {
+  id: string;
+  display_name: string;
+  username: string;
+  avatar_path: string | null;
+};
+
 export async function GET(request: Request) {
   const supabase = await createClient();
 
@@ -39,6 +68,7 @@ export async function GET(request: Request) {
   }
 
   const url = new URL(request.url);
+
   const parsedQuery = querySchema.safeParse({
     limit: url.searchParams.get("limit") ?? undefined,
   });
@@ -55,9 +85,7 @@ export async function GET(request: Request) {
   const { data: calls, error: callsError } = await admin
     .from("conversation_calls")
     .select(CALL_FIELDS)
-    .or(
-      `caller_id.eq.${user.id},callee_id.eq.${user.id}`,
-    )
+    .or(`caller_id.eq.${user.id},callee_id.eq.${user.id}`)
     .order("created_at", { ascending: false })
     .limit(parsedQuery.data.limit);
 
@@ -70,7 +98,9 @@ export async function GET(request: Request) {
     );
   }
 
-  const records = calls ?? [];
+  // The generated Supabase types don't infer this query's row shape.
+  // Validate the local TypeScript contract explicitly instead.
+  const records = (calls ?? []) as unknown as CallRow[];
 
   const peerIds = [
     ...new Set(
@@ -82,18 +112,13 @@ export async function GET(request: Request) {
     ),
   ];
 
-  const profiles = new Map<
-    string,
-    {
-      id: string;
-      display_name: string;
-      username: string;
-      avatar_path: string | null;
-    }
-  >();
+  const profiles = new Map<string, PeerProfile>();
 
   if (peerIds.length > 0) {
-    const { data: peerProfiles, error: profilesError } = await admin
+    const {
+      data: peerProfiles,
+      error: profilesError,
+    } = await admin
       .from("profiles")
       .select("id, display_name, username, avatar_path")
       .in("id", peerIds);
