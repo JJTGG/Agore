@@ -19,6 +19,10 @@ import {
   type AudioCallStatus,
 } from "./audio-call-signaling";
 import { useAudioCallWebRTC } from "./audio-call-webrtc";
+import {
+  startCallRingtone,
+  stopCallRingtone,
+} from "@/lib/audio/call-ringtones";
 
 type CallRecord = {
   id: string;
@@ -619,6 +623,29 @@ function AudioCallController({
       element.srcObject = null;
     };
   }, [transport.remoteStream]);
+
+  useEffect(() => {
+    const isIncomingRingingCall = Boolean(
+      activeCall &&
+        activeCall.status === "ringing" &&
+        activeCall.callee_id === currentUserId,
+    );
+
+    if (isIncomingRingingCall) {
+      startCallRingtone();
+    } else {
+      stopCallRingtone();
+    }
+
+    return () => {
+      stopCallRingtone();
+    };
+  }, [
+    activeCall?.id,
+    activeCall?.status,
+    activeCall?.callee_id,
+    currentUserId,
+  ]);
 
   useEffect(() => {
     if (!activeCall || activeCall.status !== "accepted") {
