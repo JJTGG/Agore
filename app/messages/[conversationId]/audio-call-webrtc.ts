@@ -26,19 +26,113 @@ type SendIceCandidate = (
 ) => Promise<boolean>;
 
 type UseAudioCallWebRTCOptions = {
+  conversationId?: string;
   onConnectionStateChange?: (state: RTCPeerConnectionState) => void;
 };
 
 const CALL_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const PEER_CONNECTION_CONFIG: RTCConfiguration = {
-  iceServers: [
+function isRTCIceServer(value: unknown): value is RTCIceServer {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const server = value as Record<string, unknown>;
+  const urls =
+    typeof server.urls === "string"
+      ? [server.urls]
+      : Array.isArray(server.urls)
+        ? server.urls
+        : [];
+
+  if (
+    urls.length === 0 ||
+    !urls.every(
+      (url: unknown) =>
+        typeof url === "string" &&
+        (url.startsWith("stun:") ||
+          url.startsWith("turn:") ||
+          url.startsWith("turns:")),
+    )
+  ) {
+    return false;
+  }
+
+  return (
+    (server.username === undefined || typeof server.username === "string") &&
+    (server.credential === undefined || typeof server.credential === "string")
+  );
+}
+
+function getConversationIdFromLocation(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const match = window.location.pathname.match(/^\/messages\/([^/]+)(?:\/|$)/);
+
+  if (!match) {
+    return null;
+  }
+
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return null;
+  }
+}
+
+async function loadIceServers(conversationId: string): Promise<RTCIceServer[]> {
+  const response = await fetch(
+    `/api/conversations/${encodeURIComponent(conversationId)}/calls/ice-servers`,
     {
-      urls: ["stun:stun.l.google.com:19302"],
+      method: "GET",
+      cache: "no-store",
+      headers: { Accept: "application/json" },
     },
-  ],
-};
+  );
+
+  const body: unknown = await response.json().catch(() => null);
+  const payload =
+    typeof body === "object" && body !== null && !Array.isArray(body)
+      ? (body as Record<string, unknown>)
+      : null;
+
+  if (!response.ok) {
+    const message =
+      payload && typeof payload.error === "string"
+        ? payload.error
+        : "Agoré could not load audio relay settings. Please try again.";
+
+    throw new Error(message);
+  }
+
+  const rawIceServers = payload?.iceServers;
+
+  if (
+    !Array.isArray(rawIceServers) ||
+    rawIceServers.length === 0 ||
+    !rawIceServers.every(isRTCIceServer)
+  ) {
+    throw new Error("Agoré received an invalid audio relay configuration.");
+  }
+
+  const hasTurnRelay = rawIceServers.some((server) => {
+    const urls = typeof server.urls === "string" ? [server.urls] : server.urls;
+    return urls.some(
+      (url) => url.startsWith("turn:") || url.startsWith("turns:"),
+    );
+  });
+
+  if (!hasTurnRelay) {
+    throw new Error(
+      "Audio relay is unavailable. Check the Metered TURN configuration and try again.",
+    );
+  }
+
+  return rawIceServers;
+}
 
 function getMediaErrorMessage(error: unknown): string {
   if (
@@ -77,6 +171,7 @@ function getMediaErrorMessage(error: unknown): string {
 export function useAudioCallWebRTC(
   options: UseAudioCallWebRTCOptions = {},
 ) {
+  const { conversationId } = options;
   const onConnectionStateChangeRef = useRef(options.onConnectionStateChange);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const activeCallIdRef = useRef<string | null>(null);
@@ -188,13 +283,31 @@ export function useAudioCallWebRTC(
         throw new Error("An audio connection is already active.");
       }
 
+      const activeConversationId =
+        conversationId ?? getConversationIdFromLocation();
+
+      if (!activeConversationId) {
+        throw new Error(
+          "Open a direct conversation before starting an audio call.",
+        );
+      }
+
+      const iceServers = await loadIceServers(activeConversationId);
+
+      if (activeCallIdRef.current !== callId) {
+        throw new Error("The call ended before network setup finished.");
+      }
+
       const stream = await getLocalMedia();
 
       if (activeCallIdRef.current !== callId) {
         throw new Error("The call ended before media could be prepared.");
       }
 
-      const connection = new RTCPeerConnection(PEER_CONNECTION_CONFIG);
+      const connection = new RTCPeerConnection({
+        iceServers,
+        iceCandidatePoolSize: 4,
+      });
       peerConnectionRef.current = connection;
 
       stream.getAudioTracks().forEach((track) => {
@@ -282,7 +395,7 @@ export function useAudioCallWebRTC(
 
       return connection;
     },
-    [getLocalMedia],
+    [conversationId, getLocalMedia],
   );
 
   const startOutgoingCall = useCallback(
