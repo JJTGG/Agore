@@ -115,6 +115,7 @@ export default function AudioCallControls({
   const acceptedCallIdRef = useRef<string | null>(null);
   const outgoingStartedCallIdRef = useRef<string | null>(null);
   const signalHandlerRef = useRef<SignalHandler>(() => undefined);
+  const failureAttemptRef = useRef<string | null>(null);
   const [activeCall, setActiveCall] = useState<CallRecord | null>(null);
   const [isWorking, setIsWorking] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -505,6 +506,58 @@ export default function AudioCallControls({
     currentUserId,
     getCall,
     updateActiveCall,
+  ]);
+
+  useEffect(() => {
+    if (!activeCall || activeCall.status !== "accepted") {
+      failureAttemptRef.current = null;
+      return;
+    }
+
+    const callId = activeCall.id;
+
+    if (transport.connectionStatus === "connected") {
+      failureAttemptRef.current = null;
+      return;
+    }
+
+    const isHardFailure = transport.connectionStatus === "error";
+    const recoveryWindowMs =
+      transport.connectionStatus === "reconnecting" ? 20_000 : 30_000;
+
+    const timeout = window.setTimeout(() => {
+      const current = activeCallRef.current;
+
+      if (
+        !current ||
+        current.id !== callId ||
+        current.status !== "accepted" ||
+        failureAttemptRef.current === callId ||
+        transport.connectionStatus === "connected"
+      ) {
+        return;
+      }
+
+      failureAttemptRef.current = callId;
+
+      const reason =
+        transport.connectionStatus === "reconnecting"
+          ? "The audio connection was interrupted and could not recover."
+          : transport.error ??
+            "The audio connection could not be established in time.";
+
+      void markCallFailed(callId, reason);
+    }, isHardFailure ? 0 : recoveryWindowMs);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [
+    activeCall?.id,
+    activeCall?.status,
+    markCallFailed,
+    transport.connectionStatus,
+    transport.error,
   ]);
 
   useEffect(() => {
