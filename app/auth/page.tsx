@@ -1,12 +1,25 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import {
+  FormEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+
 import { createClient } from "@/lib/supabase/browser";
 
 type Mode = "signin" | "signup" | "recovery";
 type OAuthProvider = "google";
+
+type AgoreNativeWindow = Window & {
+  __AGORE_NATIVE_OAUTH_CALLBACK?: string;
+};
+
+const NATIVE_OAUTH_CALLBACK_URL =
+  "com.jayjaytgg.agore://auth-callback";
 
 function AgoreBrandLogo() {
   return (
@@ -47,6 +60,8 @@ export default function AuthPage() {
   const [verificationPending, setVerificationPending] =
     useState(false);
 
+  const handledNativeCallback = useRef<string | null>(null);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const currentError = params.get("error");
@@ -65,6 +80,175 @@ export default function AuthPage() {
     }
   }, []);
 
+  useEffect(() => {
+    let active = true;
+
+    async function completeNativeOAuth(rawUrl: string) {
+      if (!rawUrl || handledNativeCallback.current === rawUrl) {
+        return;
+      }
+
+      handledNativeCallback.current = rawUrl;
+
+      const nativeWindow =
+        window as AgoreNativeWindow;
+
+      if (
+        nativeWindow.__AGORE_NATIVE_OAUTH_CALLBACK ===
+        rawUrl
+      ) {
+        nativeWindow.__AGORE_NATIVE_OAUTH_CALLBACK =
+          undefined;
+      }
+
+      let callbackUrl: URL;
+
+      try {
+        callbackUrl = new URL(rawUrl);
+      } catch {
+        setError(
+          "The Google sign-in callback was invalid. Please try again.",
+        );
+        return;
+      }
+
+      if (
+        callbackUrl.protocol !== "com.jayjaytgg.agore:" ||
+        callbackUrl.hostname !== "auth-callback"
+      ) {
+        setError(
+          "The Google sign-in callback did not match this app.",
+        );
+        return;
+      }
+
+      const fragment = new URLSearchParams(
+        callbackUrl.hash.replace(/^#/, ""),
+      );
+
+      const callbackError =
+        callbackUrl.searchParams.get("error_description") ??
+        callbackUrl.searchParams.get("error") ??
+        fragment.get("error_description") ??
+        fragment.get("error");
+
+      if (callbackError) {
+        setError(
+          callbackError ||
+            "Google sign-in was cancelled or could not be completed.",
+        );
+        setOauthProvider(null);
+        setLoading(false);
+        return;
+      }
+
+      const code = callbackUrl.searchParams.get("code");
+
+      if (!code) {
+        setError(
+          "Google sign-in returned without an authorization code. Please try again.",
+        );
+        setOauthProvider(null);
+        setLoading(false);
+        return;
+      }
+
+      setError("");
+      setMessage("");
+      setOauthProvider("google");
+      setLoading(true);
+
+      try {
+        const {
+          data,
+          error: exchangeError,
+        } = await supabase.auth.exchangeCodeForSession(code);
+
+        if (exchangeError) {
+          throw exchangeError;
+        }
+
+        if (!data.session) {
+          throw new Error(
+            "Google sign-in finished without an active session.",
+          );
+        }
+
+        if (!active) {
+          return;
+        }
+
+        router.replace("/home");
+        router.refresh();
+      } catch (caughtError) {
+        if (!active) {
+          return;
+        }
+
+        setError(
+          caughtError instanceof Error
+            ? caughtError.message
+            : "Unable to complete Google sign-in. Please try again.",
+        );
+      } finally {
+        if (active) {
+          setOauthProvider(null);
+          setLoading(false);
+        }
+      }
+    }
+
+    function handleNativeOAuthEvent(event: Event) {
+      const nativeWindow =
+        window as AgoreNativeWindow;
+
+      const eventUrl = (
+        event as CustomEvent<string>
+      ).detail;
+
+      const callbackUrl =
+        typeof eventUrl === "string" && eventUrl
+          ? eventUrl
+          : nativeWindow.__AGORE_NATIVE_OAUTH_CALLBACK;
+
+      if (callbackUrl) {
+        nativeWindow.__AGORE_NATIVE_OAUTH_CALLBACK =
+          undefined;
+
+        void completeNativeOAuth(callbackUrl);
+      }
+    }
+
+    window.addEventListener(
+      "agore-native-oauth-callback",
+      handleNativeOAuthEvent,
+    );
+
+    // The native activity might deliver the callback before
+    // this page's React effect has mounted. Check the saved value.
+    const nativeWindow =
+      window as AgoreNativeWindow;
+
+    const pendingCallback =
+      nativeWindow.__AGORE_NATIVE_OAUTH_CALLBACK;
+
+    if (pendingCallback) {
+      nativeWindow.__AGORE_NATIVE_OAUTH_CALLBACK =
+        undefined;
+
+      void completeNativeOAuth(pendingCallback);
+    }
+
+    return () => {
+      active = false;
+
+      window.removeEventListener(
+        "agore-native-oauth-callback",
+        handleNativeOAuthEvent,
+      );
+    };
+  }, [router, supabase]);
+
   function clearFeedback() {
     setError("");
     setMessage("");
@@ -81,6 +265,16 @@ export default function AuthPage() {
     }
 
     return url.toString();
+  }
+
+  function getOAuthRedirectUrl() {
+    if (
+      window.navigator.userAgent.includes("AgoreAndroid")
+    ) {
+      return NATIVE_OAUTH_CALLBACK_URL;
+    }
+
+    return getCallbackUrl();
   }
 
   async function handleSubmit(
@@ -116,14 +310,16 @@ export default function AuthPage() {
       }
 
       if (mode === "signup") {
-        const { data, error: signupError } =
-          await supabase.auth.signUp({
-            email: normalizedEmail,
-            password,
-            options: {
-              emailRedirectTo: getCallbackUrl(),
-            },
-          });
+        const {
+          data,
+          error: signupError,
+        } = await supabase.auth.signUp({
+          email: normalizedEmail,
+          password,
+          options: {
+            emailRedirectTo: getCallbackUrl(),
+          },
+        });
 
         if (signupError) {
           throw signupError;
@@ -176,7 +372,7 @@ export default function AuthPage() {
         await supabase.auth.signInWithOAuth({
           provider,
           options: {
-            redirectTo: getCallbackUrl(),
+            redirectTo: getOAuthRedirectUrl(),
           },
         });
 
@@ -189,6 +385,7 @@ export default function AuthPage() {
           ? caughtError.message
           : "Unable to start sign-in. Please try again.",
       );
+
       setOauthProvider(null);
     }
   }
@@ -237,8 +434,10 @@ export default function AuthPage() {
   }
 
   const busy = loading || oauthProvider !== null;
+
   const showResendVerification =
-    callbackError === "verification" || verificationPending;
+    callbackError === "verification" ||
+    verificationPending;
 
   return (
     <main className="flex min-h-screen items-center bg-[var(--background)] px-4 py-8 text-[var(--foreground)] sm:px-6">
@@ -285,9 +484,11 @@ export default function AuthPage() {
 
               <div className="my-6 flex items-center gap-4">
                 <div className="h-px flex-1 bg-[var(--border)]" />
+
                 <span className="text-xs text-[var(--muted)]">
                   OR CONTINUE WITH EMAIL
                 </span>
+
                 <div className="h-px flex-1 bg-[var(--border)]" />
               </div>
             </>
@@ -301,6 +502,7 @@ export default function AuthPage() {
               <span className="mb-2 block text-sm font-medium">
                 Email
               </span>
+
               <input
                 required
                 type="email"
@@ -319,6 +521,7 @@ export default function AuthPage() {
                 <span className="mb-2 block text-sm font-medium">
                   Password
                 </span>
+
                 <input
                   required
                   type="password"
