@@ -17,6 +17,7 @@ import {
 
 import { createClient } from "@/lib/supabase/browser";
 import { useConversationTyping } from "./conversation-typing";
+import GifStickerPicker from "./gif-sticker-picker";
 
 const supabase = createClient();
 
@@ -295,6 +296,55 @@ export default function MediaMessageComposer({
     onError?.(message);
   }
 
+  /**
+   * Shared validation and selection logic for device
+   * attachments, GIF search results, and stickers.
+   */
+  function selectFile(file: File): boolean {
+    if (!isSupportedMimeType(file.type)) {
+      reportError(
+        "That file type is not supported. Use an image, GIF, or PDF.",
+      );
+
+      return false;
+    }
+
+    if (file.size <= 0) {
+      reportError(
+        "That file is empty and cannot be sent.",
+      );
+
+      return false;
+    }
+
+    if (file.size > MAX_FILE_SIZE) {
+      reportError(
+        "That file is larger than the 15 MB message limit.",
+      );
+
+      return false;
+    }
+
+    const previewUrl = file.type.startsWith("image/")
+      ? URL.createObjectURL(file)
+      : null;
+
+    setSelectedFile({
+      file,
+      previewUrl,
+    });
+
+    return true;
+  }
+
+  function handlePickerFileSelected(file: File) {
+    if (disabled || uploading) {
+      return;
+    }
+
+    selectFile(file);
+  }
+
   function openPicker() {
     if (disabled || uploading) {
       return;
@@ -355,49 +405,14 @@ export default function MediaMessageComposer({
   function handleFileChange(
     event: ChangeEvent<HTMLInputElement>,
   ) {
-    const file = event.target.files?.[0];
+    const input = event.currentTarget;
+    const file = input.files?.[0];
 
-    if (!file) {
-      return;
+    if (file) {
+      selectFile(file);
     }
 
-    if (!isSupportedMimeType(file.type)) {
-      reportError(
-        "That file type is not supported. Use an image, GIF, or PDF.",
-      );
-
-      event.target.value = "";
-      return;
-    }
-
-    if (file.size <= 0) {
-      reportError(
-        "That file is empty and cannot be sent.",
-      );
-
-      event.target.value = "";
-      return;
-    }
-
-    if (file.size > MAX_FILE_SIZE) {
-      reportError(
-        "That file is larger than the 15 MB message limit.",
-      );
-
-      event.target.value = "";
-      return;
-    }
-
-    const previewUrl = file.type.startsWith("image/")
-      ? URL.createObjectURL(file)
-      : null;
-
-    setSelectedFile({
-      file,
-      previewUrl,
-    });
-
-    event.target.value = "";
+    input.value = "";
   }
 
   async function cleanupPreparedMessage(
@@ -583,7 +598,7 @@ export default function MediaMessageComposer({
   }
 
   return (
-    <div className="relative">
+    <div className="relative flex shrink-0 items-center gap-1">
       {typingText ? (
         <div className="pointer-events-none absolute bottom-full left-0 z-30 mb-2 max-w-[min(82vw,360px)]">
           <div className="inline-flex max-w-full items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-raised)] px-3 py-2 text-xs font-medium text-[var(--muted-strong)] shadow-[0_8px_24px_rgba(0,0,0,0.08)]">
@@ -605,6 +620,12 @@ export default function MediaMessageComposer({
         className="hidden"
         onChange={handleFileChange}
         disabled={disabled || uploading}
+      />
+
+      <GifStickerPicker
+        disabled={disabled || uploading}
+        onSelect={handlePickerFileSelected}
+        onError={reportError}
       />
 
       {attachmentMenuOpen ? (
@@ -698,7 +719,7 @@ export default function MediaMessageComposer({
       ) : null}
 
       {selectedFile ? (
-        <div className="absolute bottom-full left-0 right-0 z-20 mb-3 rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)] p-3 shadow-[0_12px_36px_rgba(0,0,0,0.1)] sm:left-auto sm:w-[360px]">
+        <div className="absolute bottom-full left-0 z-20 mb-3 w-[min(88vw,360px)] rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)] p-3 shadow-[0_12px_36px_rgba(0,0,0,0.1)] sm:left-auto sm:w-[360px]">
           <div className="flex items-center gap-3">
             {selectedFile.previewUrl ? (
               <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface-muted)]">
