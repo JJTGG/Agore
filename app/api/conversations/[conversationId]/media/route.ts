@@ -16,6 +16,10 @@ const allowedMediaMimeTypes = [
   "image/webp",
   "image/gif",
   "application/pdf",
+  "video/mp4",
+  "video/webm",
+  "video/quicktime",
+  "video/3gpp",
 ] as const;
 
 const prepareSchema = z.object({
@@ -90,6 +94,14 @@ function getExtension(fileName: string, mimeType: string) {
       return "gif";
     case "application/pdf":
       return "pdf";
+    case "video/mp4":
+      return "mp4";
+    case "video/webm":
+      return "webm";
+    case "video/quicktime":
+      return "mov";
+    case "video/3gpp":
+      return "3gp";
     default:
       return "bin";
   }
@@ -116,9 +128,8 @@ async function getAuthenticatedUser() {
   return user;
 }
 
-// This membership-only check is intentionally retained for DELETE.
-// Cleanup must remain available when a block relationship changes
-// while an upload is in progress.
+// Cleanup remains membership-based so interrupted uploads can
+// still be removed if a block relationship changes mid-upload.
 async function getMembership(
   admin: ReturnType<typeof createAdminClient>,
   conversationId: string,
@@ -260,8 +271,6 @@ export async function POST(
 
   const admin = createAdminClient();
 
-  // Both prepare and finalize enforce the centralized messaging policy.
-  // A block or inactive membership prevents further media posting.
   const access = await getConversationMessagingAccess(
     conversationId,
     user.id,
@@ -642,9 +651,6 @@ export async function DELETE(
 
   const admin = createAdminClient();
 
-  // Cleanup is intentionally membership-based rather than subject to
-  // direct-message block restrictions, so an interrupted upload can
-  // still be cleaned up after a block relationship changes.
   const {
     membership,
     error: membershipError,
@@ -740,7 +746,6 @@ export async function DELETE(
     }
   }
 
-  // Discover files that reached Storage but never received metadata.
   const {
     data: storedObjects,
     error: storageListError,
