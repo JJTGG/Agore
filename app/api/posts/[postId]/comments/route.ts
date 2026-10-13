@@ -37,6 +37,7 @@ const createCommentSchema = z.object({
   images: z.array(commentImageSchema).max(MAX_COMMENT_IMAGES).optional(),
 }).superRefine((value, context) => {
   const paths = (value.images ?? []).map((image) => image.storage_path);
+
   if (new Set(paths).size !== paths.length) {
     context.addIssue({
       code: "custom",
@@ -137,12 +138,39 @@ export async function GET(
     );
   }
 
-  const { data: post, error: postError } = await supabase
-    .from("posts")
-    .select("id")
-    .eq("id", parsedPostId.data)
-    .is("deleted_at", null)
-    .maybeSingle();
+  const {
+    limit,
+    afterCreatedAt,
+    afterId,
+  } = parsedQuery.data;
+
+  let commentsQuery = supabase
+    .from("comments")
+    .select(commentSelect)
+    .eq("post_id", parsedPostId.data)
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
+
+  if (afterCreatedAt && afterId) {
+    commentsQuery = commentsQuery.or(
+      `created_at.gt.${afterCreatedAt},and(created_at.eq.${afterCreatedAt},id.gt.${afterId})`,
+    );
+  }
+
+  const [postResult, commentsResult, summaryResult] = await Promise.all([
+    supabase
+      .from("posts")
+      .select("id")
+      .eq("id", parsedPostId.data)
+      .is("deleted_at", null)
+      .maybeSingle(),
+    commentsQuery.limit(limit + 1),
+    supabase.rpc("agore_post_interaction_summaries", {
+      p_post_ids: [parsedPostId.data],
+    }),
+  ]);
+
+  const { data: post, error: postError } = postResult;
 
   if (postError) {
     console.error("Failed to verify Agore post for comments:", postError);
@@ -160,30 +188,7 @@ export async function GET(
     );
   }
 
-  const {
-    limit,
-    afterCreatedAt,
-    afterId,
-  } = parsedQuery.data;
-
-  let query = supabase
-    .from("comments")
-    .select(commentSelect, { count: "exact" })
-    .eq("post_id", parsedPostId.data)
-    .order("created_at", { ascending: true })
-    .order("id", { ascending: true });
-
-  if (afterCreatedAt && afterId) {
-    query = query.or(
-      `created_at.gt.${afterCreatedAt},and(created_at.eq.${afterCreatedAt},id.gt.${afterId})`,
-    );
-  }
-
-  const {
-    data: rows,
-    error: commentsError,
-    count,
-  } = await query.limit(limit + 1);
+  const { data: rows, error: commentsError } = commentsResult;
 
   if (commentsError) {
     console.error("Failed to load Agore comments:", commentsError);
@@ -194,38 +199,30 @@ export async function GET(
     );
   }
 
+  const { data: summaryData, error: summaryError } = summaryResult;
+
+  if (summaryError) {
+    console.error("Failed to summarize Agore post interactions:", summaryError);
+
+    return NextResponse.json(
+      { error: "Unable to load comments." },
+      { status: 500 },
+    );
+  }
+
+  const summaryRows = (summaryData ?? []) as unknown as Array<{
+    post_id: string;
+    comment_count: number | string;
+  }>;
+
+  const commentCount = Number(
+    summaryRows.find((row) => row.post_id === parsedPostId.data)?.comment_count ?? 0,
+  );
+
   const returnedRows = rows ?? [];
   const hasMore = returnedRows.length > limit;
   const comments = returnedRows.slice(0, limit);
   const lastComment = comments[comments.length - 1];
-
-  let commentCount = count ?? returnedRows.length;
-
-  // When a cursor is present, the page query's count is the number of
-  // remaining rows, not the total. Fetch the complete visible count instead.
-  if (afterCreatedAt) {
-    const {
-      count: totalCount,
-      error: countError,
-    } = await supabase
-      .from("comments")
-      .select("id", { count: "exact", head: true })
-      .eq("post_id", parsedPostId.data);
-
-    if (countError) {
-      console.error(
-        "Failed to count Agore comments:",
-        countError,
-      );
-
-      return NextResponse.json(
-        { error: "Unable to load comments." },
-        { status: 500 },
-      );
-    }
-
-    commentCount = totalCount ?? 0;
-  }
 
   return NextResponse.json({
     comments,
@@ -371,6 +368,7 @@ export async function POST(
 
   if (images.length > 0) {
     const mediaAdmin = createAdminClient();
+
     const extensionByMime: Record<(typeof COMMENT_IMAGE_MIME_TYPES)[number], string> = {
       "image/jpeg": "jpg",
       "image/png": "png",
@@ -405,6 +403,7 @@ export async function POST(
 
       if (storageCheckError) {
         console.error("Failed to verify Agore comment image upload:", storageCheckError);
+
         return NextResponse.json(
           { error: "Unable to verify an uploaded image. Please try again." },
           { status: 500 },
@@ -425,7 +424,9 @@ export async function POST(
       const storageMetadata = storedFile.metadata as
         | { size?: unknown; mimetype?: unknown }
         | null;
+
       const actualSize = Number(storageMetadata?.size);
+
       if (Number.isFinite(actualSize) && actualSize > 0 && actualSize !== image.size_bytes) {
         return NextResponse.json(
           { error: "An uploaded image's size did not match its metadata." },
@@ -496,6 +497,7 @@ export async function POST(
 
   if (images.length > 0) {
     const mediaAdmin = createAdminClient();
+
     const {
       data: insertedMedia,
       error: mediaInsertError,
@@ -528,14 +530,17 @@ export async function POST(
 
     if (mediaInsertError || !insertedMedia) {
       console.error("Failed to attach Agore comment images:", mediaInsertError);
+
       await mediaAdmin
         .from("comments")
         .update({ deleted_at: new Date().toISOString() })
         .eq("id", comment.id)
         .eq("author_id", user.id);
+
       await mediaAdmin.storage
         .from("comment-media")
         .remove(images.map((image) => image.storage_path));
+
       return NextResponse.json(
         { error: "The comment could not finish attaching its images. Please try again." },
         { status: 500 },
