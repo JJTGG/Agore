@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getConversationMessagingAccess } from "@/lib/messaging/conversation-access";
+import { sendPushNotification } from "@/lib/push";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -363,6 +364,34 @@ export async function POST(
       { error: "Unable to start this call." },
       { status: 500 },
     );
+  }
+
+  try {
+    const { data: callerProfile, error: callerProfileError } = await admin
+      .from("profiles")
+      .select("display_name, username")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (callerProfileError) {
+      console.error("Failed to load Agoré call caller profile:", callerProfileError);
+    }
+
+    const callerName =
+      callerProfile?.display_name?.trim() ||
+      (callerProfile?.username ? `@${callerProfile.username}` : "Someone");
+
+    await sendPushNotification(
+      { recipientId: otherParticipantId },
+      {
+        title: `Incoming call from ${callerName}`,
+        body: "Open Agoré to answer the call.",
+        url: `/messages/${conversationId}`,
+      },
+    );
+  } catch (pushError) {
+    // Push delivery must never prevent the call itself from starting.
+    console.error("Failed to send Agoré incoming-call push:", pushError);
   }
 
   return NextResponse.json(
