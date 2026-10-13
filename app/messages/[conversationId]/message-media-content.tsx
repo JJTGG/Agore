@@ -9,9 +9,15 @@ import {
   Loader2,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import type { SyntheticEvent } from "react";
 
 import { createClient } from "@/lib/supabase/browser";
+import { recordAgorePerformanceMetric } from "@/lib/performance/monitor";
 
 const supabase = createClient();
 
@@ -32,6 +38,10 @@ type MessageMedia = {
 type MessageMediaContentProps = {
   media: MessageMedia[];
   isOwn: boolean;
+};
+
+type ImageTiming = {
+  urlReadyAt: number;
 };
 
 function formatFileSize(bytes: number) {
@@ -75,6 +85,20 @@ export default function MessageMediaContent({
     string | null
   >(null);
 
+  // These references remain in memory only. They are not included
+  // in diagnostic reports or persisted as identifying information.
+  const imageTimingRef = useRef<
+    Record<string, ImageTiming>
+  >({});
+
+  const completedImageLoadsRef = useRef<Set<string>>(
+    new Set(),
+  );
+
+  const pendingImageLoadsRef = useRef<Set<string>>(
+    new Set(),
+  );
+
   const visualMedia = media.filter(
     (item) =>
       item.media_type === "image" ||
@@ -95,6 +119,133 @@ export default function MessageMediaContent({
     ? signedUrls[activeMedia.id]
     : undefined;
 
+  function recordSigningMetric(
+    item: MessageMedia,
+    durationMs: number,
+    success: boolean,
+  ) {
+    const isImage = item.media_type === "image";
+
+    recordAgorePerformanceMetric(
+      isImage ? "image" : "resource",
+      isImage
+        ? "Message image URL signing"
+        : "Message attachment URL signing",
+      durationMs,
+      "ms",
+      {
+        success,
+        isImage,
+      },
+    );
+  }
+
+  function recordImageLoadFailure(
+    mediaId: string,
+    stage: "load" | "decode",
+  ) {
+    const timing = imageTimingRef.current[mediaId];
+
+    if (!timing) {
+      return;
+    }
+
+    const key = `${mediaId}:inline`;
+
+    if (completedImageLoadsRef.current.has(key)) {
+      return;
+    }
+
+    completedImageLoadsRef.current.add(key);
+    pendingImageLoadsRef.current.delete(key);
+
+    recordAgorePerformanceMetric(
+      "image",
+      stage === "decode"
+        ? "Message image decode failed"
+        : "Message image failed to load",
+      Math.max(0, performance.now() - timing.urlReadyAt),
+      "ms",
+      {
+        success: false,
+        stageDecode: stage === "decode",
+        includesLazyLoadingWait: true,
+      },
+    );
+  }
+
+  async function handleImageLoad(
+    mediaId: string,
+    event: SyntheticEvent<HTMLImageElement>,
+  ) {
+    const key = `${mediaId}:inline`;
+
+    if (
+      completedImageLoadsRef.current.has(key) ||
+      pendingImageLoadsRef.current.has(key)
+    ) {
+      return;
+    }
+
+    const image = event.currentTarget;
+    const timing = imageTimingRef.current[mediaId];
+
+    if (!timing) {
+      return;
+    }
+
+    pendingImageLoadsRef.current.add(key);
+
+    try {
+      if (typeof image.decode === "function") {
+        await image.decode();
+      }
+
+      if (completedImageLoadsRef.current.has(key)) {
+        return;
+      }
+
+      completedImageLoadsRef.current.add(key);
+      pendingImageLoadsRef.current.delete(key);
+
+      // Resource entries stay in browser memory. The signed URL
+      // itself is never attached to a metric or diagnostic report.
+      const source = image.currentSrc;
+      const entries = source
+        ? performance
+            .getEntriesByName(source, "resource")
+            .filter(
+              (entry) =>
+                entry.startTime >= timing.urlReadyAt - 1,
+            )
+        : [];
+
+      const resource = entries.length > 0
+        ? entries[entries.length - 1] as PerformanceResourceTiming
+        : null;
+
+      recordAgorePerformanceMetric(
+        "image",
+        "Message image ready (load + decode)",
+        Math.max(0, performance.now() - timing.urlReadyAt),
+        "ms",
+        {
+          success: true,
+          includesLazyLoadingWait: true,
+          resourceTimingAvailable: resource !== null,
+          resourceDurationMs: resource
+            ? resource.duration
+            : 0,
+          transferSizeBytes: resource
+            ? resource.transferSize
+            : 0,
+        },
+      );
+    } catch {
+      recordImageLoadFailure(mediaId, "decode");
+    }
+  }
+
   useEffect(() => {
     let active = true;
 
@@ -102,6 +253,9 @@ export default function MessageMediaContent({
       if (visualMedia.length === 0) {
         setSignedUrls({});
         setLoading(false);
+        imageTimingRef.current = {};
+        completedImageLoadsRef.current.clear();
+        pendingImageLoadsRef.current.clear();
         return;
       }
 
@@ -110,29 +264,71 @@ export default function MessageMediaContent({
       try {
         const results = await Promise.all(
           visualMedia.map(async (item) => {
-            const {
-              data,
-              error,
-            } = await supabase.storage
-              .from("message-media")
-              .createSignedUrl(
-                item.storage_path,
-                60 * 60,
+            const startedAt = performance.now();
+
+            try {
+              const { data, error } = await supabase.storage
+                .from("message-media")
+                .createSignedUrl(
+                  item.storage_path,
+                  60 * 60,
+                );
+
+              if (error || !data?.signedUrl) {
+                recordSigningMetric(
+                  item,
+                  performance.now() - startedAt,
+                  false,
+                );
+
+                console.error(
+                  "Failed to load Agoré message media:",
+                  error,
+                );
+
+                return null;
+              }
+
+              const urlReadyAt = performance.now();
+
+              recordSigningMetric(
+                item,
+                urlReadyAt - startedAt,
+                true,
               );
 
-            if (error || !data?.signedUrl) {
+              if (item.media_type === "image") {
+                imageTimingRef.current[item.id] = {
+                  urlReadyAt,
+                };
+
+                completedImageLoadsRef.current.delete(
+                  `${item.id}:inline`,
+                );
+
+                pendingImageLoadsRef.current.delete(
+                  `${item.id}:inline`,
+                );
+              }
+
+              return {
+                id: item.id,
+                url: data.signedUrl,
+              };
+            } catch (error) {
+              recordSigningMetric(
+                item,
+                performance.now() - startedAt,
+                false,
+              );
+
               console.error(
-                "Failed to load Agoré message media:",
+                "Failed to sign Agoré message media:",
                 error,
               );
 
               return null;
             }
-
-            return {
-              id: item.id,
-              url: data.signedUrl,
-            };
           }),
         );
 
@@ -348,6 +544,12 @@ export default function MessageMediaContent({
                   alt={item.file_name}
                   loading="lazy"
                   decoding="async"
+                  onLoad={(event) => {
+                    void handleImageLoad(item.id, event);
+                  }}
+                  onError={() => {
+                    recordImageLoadFailure(item.id, "load");
+                  }}
                   className="max-h-[26rem] w-auto max-w-full object-contain transition duration-200 group-hover/media:opacity-90"
                 />
               </button>
