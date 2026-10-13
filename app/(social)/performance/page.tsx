@@ -20,6 +20,7 @@ import {
   Zap,
 } from "lucide-react";
 import {
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -71,6 +72,10 @@ const CATEGORY_LABELS: Record<
   rendering: "Rendering",
   resource: "Resource",
 };
+
+// Keep the diagnostic UI from re-rendering for every metric batch.
+// Collection remains active; only visible updates are throttled.
+const METRIC_UI_REFRESH_INTERVAL_MS = 800;
 
 function formatNumber(value: number): string {
   return value.toLocaleString(undefined, {
@@ -192,6 +197,10 @@ function MetricRow({
   );
 }
 
+// Existing rows retain their metric object references between refreshes,
+// so memoization avoids re-rendering every row when a new metric arrives.
+const MemoizedMetricRow = memo(MetricRow);
+
 export default function PerformancePage() {
   const [metrics, setMetrics] = useState<
     AgorePerformanceMetric[]
@@ -214,15 +223,30 @@ export default function PerformancePage() {
   const [copying, setCopying] = useState(false);
 
   useEffect(() => {
-    const refreshMetrics = () => {
+    let refreshTimer: number | null = null;
+
+    const refreshMetricsImmediately = () => {
       setMetrics(getAgorePerformanceMetrics());
+    };
+
+    const refreshMetrics = () => {
+      // Several samples can arrive in one burst. Schedule at most
+      // one visual refresh per interval while collection continues.
+      if (refreshTimer !== null) {
+        return;
+      }
+
+      refreshTimer = window.setTimeout(() => {
+        refreshTimer = null;
+        refreshMetricsImmediately();
+      }, METRIC_UI_REFRESH_INTERVAL_MS);
     };
 
     const refreshSession = () => {
       setSessionState(getAgorePerformanceSessionState());
     };
 
-    refreshMetrics();
+    refreshMetricsImmediately();
     refreshSession();
 
     const unsubscribeMetrics =
@@ -234,6 +258,10 @@ export default function PerformancePage() {
     return () => {
       unsubscribeMetrics();
       unsubscribeSession();
+
+      if (refreshTimer !== null) {
+        window.clearTimeout(refreshTimer);
+      }
 
       // Intentionally do not stop collection when this page unmounts.
     };
@@ -760,16 +788,16 @@ export default function PerformancePage() {
           </div>
 
           {visibleMetrics.length > 0 ? (
-            <div className="mt-2 divide-y divide-[var(--border)]">
+            <div className="mt-2 h-[60vh] min-h-56 max-h-[32rem] overflow-y-auto overscroll-contain divide-y divide-[var(--border)] rounded-xl border border-[var(--border)] px-3">
               {visibleMetrics.map((metric) => (
-                <MetricRow
+                <MemoizedMetricRow
                   key={metric.id}
                   metric={metric}
                 />
               ))}
             </div>
           ) : (
-            <div className="mt-3 rounded-2xl bg-[var(--background)] px-4 py-8 text-center">
+            <div className="mt-2 flex h-[60vh] min-h-56 max-h-[32rem] flex-col items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--background)] px-4 py-8 text-center">
               <Activity
                 size={25}
                 className="mx-auto text-[var(--muted)]"
