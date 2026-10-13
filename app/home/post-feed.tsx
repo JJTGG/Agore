@@ -33,7 +33,7 @@ import PostMedia, {
   type PostMediaItem,
 } from "@/components/post-media";
 import { createClient } from "@/lib/supabase/browser";
-import PostInteractions from "@/app/post-interactions";
+import PostInteractions, { type PostInteractionSummary } from "@/app/post-interactions";
 import {
   MentionText,
   MentionTextarea,
@@ -67,6 +67,7 @@ type Post = {
   profiles: Profile | null;
   feed_at?: string;
   feed_context?: FeedContext;
+  interactionSummary?: PostInteractionSummary | null;
 };
 
 type PostsResponse = {
@@ -1360,6 +1361,7 @@ export default function PostFeed({
                         postId={post.id}
                         initialContent={post.content}
                         isOwner={isOwner}
+                        initialInteractionSummary={post.interactionSummary}
                         onPostUpdated={handlePostUpdated}
                         onPostDeleted={handlePostDeleted}
                       />
