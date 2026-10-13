@@ -2799,7 +2799,8 @@ export default function ConversationPage() {
               </div>
 
               <p className="mt-2 px-1 text-[10px] text-[var(--muted)]">
-                Enter for a new line · Ctrl/Cmd + Enter to send
+                <span className="sm:hidden">Tap the send button to send your message</span>
+                <span className="hidden sm:inline">Enter for a new line · Ctrl/Cmd + Enter to send</span>
               </p>
             </div>
           </form>
