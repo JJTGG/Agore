@@ -128,7 +128,7 @@ export async function GET(
     );
   }
 
-  // Verifies active membership and direct-message block restrictions.
+  // Preserve the centralized membership and block-policy check.
   const access = await getConversationMessagingAccess(
     conversationId,
     user.id,
@@ -142,10 +142,48 @@ export async function GET(
   }
 
   const admin = createAdminClient();
+  const accessConversation = access.conversation;
+
+  // The access RPC already identifies both participants. Use its
+  // result to start the participant-profile request concurrently
+  // with the conversation-details and membership requests.
+  let otherUserId: string | null = null;
+
+  if (accessConversation.type === "direct") {
+    otherUserId =
+      accessConversation.direct_participant_a === user.id
+        ? accessConversation.direct_participant_b
+        : accessConversation.direct_participant_b === user.id
+          ? accessConversation.direct_participant_a
+          : null;
+
+    if (!otherUserId) {
+      return NextResponse.json(
+        { error: "Conversation not found." },
+        { status: 404 },
+      );
+    }
+  }
+
+  const participantProfilePromise = otherUserId
+    ? admin
+        .from("profiles")
+        .select("id, display_name, username, avatar_path")
+        .eq("id", otherUserId)
+        .eq("account_status", "active")
+        .maybeSingle()
+    : Promise.resolve({
+        data: null,
+        error: null,
+      });
 
   const [
     { data: conversationData, error: conversationError },
     { data: membershipData, error: membershipError },
+    {
+      data: participantProfile,
+      error: participantError,
+    },
   ] = await Promise.all([
     admin
       .from("conversations")
@@ -190,12 +228,18 @@ export async function GET(
       .eq("user_id", user.id)
       .is("left_at", null)
       .maybeSingle(),
+
+    participantProfilePromise,
   ]);
 
-  if (conversationError || membershipError) {
+  if (
+    conversationError ||
+    membershipError ||
+    participantError
+  ) {
     console.error(
       "Failed to load Agore conversation details:",
-      conversationError ?? membershipError,
+      conversationError ?? membershipError ?? participantError,
     );
 
     return NextResponse.json(
@@ -214,48 +258,19 @@ export async function GET(
   const conversation =
     conversationData as unknown as ConversationDetailRow;
 
+  if (
+    conversation.type !== accessConversation.type ||
+    conversation.id !== accessConversation.id
+  ) {
+    return NextResponse.json(
+      { error: "Conversation not found." },
+      { status: 404 },
+    );
+  }
+
   let participant: ConversationDetailProfile | null = null;
 
-  if (conversation.type === "direct") {
-    const participantA = conversation.direct_participant_a;
-    const participantB = conversation.direct_participant_b;
-
-    const otherUserId =
-      participantA === user.id
-        ? participantB
-        : participantB === user.id
-          ? participantA
-          : null;
-
-    if (!otherUserId) {
-      return NextResponse.json(
-        { error: "Conversation not found." },
-        { status: 404 },
-      );
-    }
-
-    const {
-      data: participantProfile,
-      error: participantError,
-    } = await admin
-      .from("profiles")
-      .select("id, display_name, username, avatar_path")
-      .eq("id", otherUserId)
-      .eq("account_status", "active")
-      .maybeSingle();
-
-    if (participantError) {
-      console.error(
-        "Failed to load Agore conversation participant:",
-        participantError,
-      );
-
-      return NextResponse.json(
-        { error: "Unable to load this conversation." },
-        { status: 500 },
-      );
-    }
-
+  if (otherUserId) {
     if (!participantProfile) {
       return NextResponse.json(
         { error: "Conversation not found." },
