@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import "./globals.css";
 import AnalyticsTracker from "@/components/analytics-tracker";
 import AgorePerformanceHud from "@/components/performance/live-hud";
+import ConversationReadinessTracker from "@/components/performance/conversation-readiness";
 import { AudioCallHost } from "./messages/[conversationId]/audio-call-controls";
 import { createClient } from "@/lib/supabase/server";
 
@@ -116,7 +117,12 @@ export default async function RootLayout({
       <body>
         {children}
 
-        {user ? <AgorePerformanceHud /> : null}
+        {user ? (
+          <>
+            <AgorePerformanceHud />
+            <ConversationReadinessTracker />
+          </>
+        ) : null}
 
         <AudioCallHost />
 
