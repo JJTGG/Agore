@@ -10,34 +10,65 @@ self.addEventListener("push", (event) => {
   }
 
   const title =
-    payload.title ||
-    "Agoré";
+    typeof payload.title === "string" && payload.title.trim()
+      ? payload.title
+      : "Agoré";
 
   const body =
-    payload.body ||
-    "You have a new notification.";
+    typeof payload.body === "string" && payload.body.trim()
+      ? payload.body
+      : "You have a new notification.";
 
   const url =
-    typeof payload.url ===
-      "string" &&
-    payload.url.length > 0
+    typeof payload.url === "string" && payload.url.length > 0
       ? payload.url
       : "/notifications";
+
+  const isIncomingCall =
+    title.toLowerCase().startsWith("incoming call from ");
+
+  const conversationMatch = isIncomingCall
+    ? url.match(/\/messages\/([0-9a-f-]{36})(?:\/|$)/i)
+    : null;
+
+  const options = {
+    body,
+    icon: "/agore-icon-192.png",
+    badge: "/agore-icon-192.png",
+    tag: isIncomingCall
+      ? `agore-incoming-call-${conversationMatch?.[1] ?? "active"}`
+      : typeof payload.tag === "string"
+        ? payload.tag
+        : undefined,
+    renotify: isIncomingCall,
+    requireInteraction: isIncomingCall,
+    vibrate: isIncomingCall
+      ? [250, 100, 250, 100, 450]
+      : undefined,
+    data: {
+      url,
+      kind: isIncomingCall
+        ? "incoming-call"
+        : "notification",
+    },
+    actions: isIncomingCall
+      ? [
+          {
+            action: "open-call",
+            title: "Open call",
+          },
+          {
+            action: "dismiss",
+            title: "Dismiss alert",
+          },
+        ]
+      : undefined,
+  };
 
   event.waitUntil(
     self.registration.showNotification(
       title,
-      {
-        body,
-        tag:
-          typeof payload.tag ===
-          "string"
-            ? payload.tag
-            : undefined,
-        data: {
-          url,
-        },
-      },
+      options,
     ),
   );
 });
@@ -47,10 +78,28 @@ self.addEventListener(
   (event) => {
     event.notification.close();
 
-    const url =
-      event.notification.data
-        ?.url ||
+    if (event.action === "dismiss") {
+      return;
+    }
+
+    const requestedUrl =
+      event.notification.data?.url ||
       "/notifications";
+
+    let url = "/notifications";
+
+    try {
+      const parsedUrl = new URL(
+        requestedUrl,
+        self.location.origin,
+      );
+
+      if (parsedUrl.origin === self.location.origin) {
+        url = `${parsedUrl.pathname}${parsedUrl.search}${parsedUrl.hash}`;
+      }
+    } catch {
+      url = "/notifications";
+    }
 
     event.waitUntil(
       self.clients
@@ -62,24 +111,16 @@ self.addEventListener(
           for (const client of clients) {
             if (
               "focus" in client &&
-              client.url.includes(
-                self.location.origin,
-              )
+              client.url.startsWith(self.location.origin)
             ) {
-              return client.navigate(
-                url,
-              ).then(() =>
+              return client.navigate(url).then(() =>
                 client.focus(),
               );
             }
           }
 
-          if (
-            self.clients.openWindow
-          ) {
-            return self.clients.openWindow(
-              url,
-            );
+          if (self.clients.openWindow) {
+            return self.clients.openWindow(url);
           }
 
           return undefined;
