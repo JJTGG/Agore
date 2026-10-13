@@ -281,7 +281,11 @@ export function recordAgorePerformanceMetric(
   details?: Record<string, unknown>,
   pathname?: string,
 ): AgorePerformanceMetric | null {
+  // Measurement is explicitly opt-in. Components may report
+  // events, but nothing is stored outside an active session.
   if (
+    !isBrowser() ||
+    collectionUsers <= 0 ||
     !Number.isFinite(value) ||
     value < 0 ||
     !CATEGORIES.includes(category) ||
@@ -692,6 +696,7 @@ function startObservers(): void {
 
   if (document.readyState !== "complete") {
     documentLoadHandler = recordDocumentTimings;
+
     window.addEventListener("load", documentLoadHandler, {
       once: true,
     });
@@ -799,7 +804,7 @@ export function startAgoreFrameSampling(
   let windowIntervals: number[] = [];
   let windowSlowFrames = 0;
 
-  let allIntervals: number[] = [];
+  let recentIntervals: number[] = [];
   let totalActiveDuration = 0;
   let totalFrames = 0;
   let totalSlowFrames = 0;
@@ -838,7 +843,7 @@ export function startAgoreFrameSampling(
     const interval = timestamp - lastFrameAt;
     lastFrameAt = timestamp;
 
-    // Ignore very large gaps, which may represent browser suspension.
+    // Ignore large gaps which may represent browser suspension.
     if (interval > 0 && interval <= 1_000) {
       windowIntervals.push(interval);
       totalActiveDuration += interval;
@@ -849,10 +854,10 @@ export function startAgoreFrameSampling(
         totalSlowFrames += 1;
       }
 
-      allIntervals.push(interval);
+      recentIntervals.push(interval);
 
-      if (allIntervals.length > MAX_FRAME_INTERVALS) {
-        allIntervals.shift();
+      if (recentIntervals.length > MAX_FRAME_INTERVALS) {
+        recentIntervals.shift();
       }
     }
 
@@ -897,15 +902,25 @@ export function startAgoreFrameSampling(
       return null;
     }
 
+    // Calculate overall FPS from every valid sampled frame.
+    // The bounded buffer is used only for recent p95 frame time.
     const finalSample: AgoreFrameSample = {
       ...buildFrameSample(
-        allIntervals,
+        recentIntervals,
         totalActiveDuration,
         totalSlowFrames,
         targetFrameTimeMs,
       ),
-      frameCount: totalFrames,
+      observedFps: roundValue(
+        (totalFrames * 1_000) / totalActiveDuration,
+        "fps",
+      ),
+      averageFrameTimeMs: roundValue(
+        totalActiveDuration / totalFrames,
+        "ms",
+      ),
       elapsedMs: roundValue(totalActiveDuration, "ms"),
+      frameCount: totalFrames,
       slowFrames: totalSlowFrames,
     };
 
