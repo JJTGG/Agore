@@ -35,6 +35,149 @@ type MessageMedia = {
   created_at: string;
 };
 
+type SignedUrlRequestResult = {
+  signedUrl: string | null;
+  durationMs: number;
+  error?: unknown;
+};
+
+type PendingSignedUrlRequest = {
+  item: MessageMedia;
+  startedAt: number;
+  resolve: (result: SignedUrlRequestResult) => void;
+};
+
+type SignedUrlPathResult = {
+  signedUrl: string | null;
+  error?: unknown;
+};
+
+const SIGNED_URL_BATCH_SIZE = 50;
+const SIGNED_URL_BATCH_DELAY_MS = 16;
+
+let pendingSignedUrlRequests: PendingSignedUrlRequest[] = [];
+let signedUrlBatchTimer: ReturnType<typeof setTimeout> | null = null;
+let signedUrlBatchInFlight = false;
+
+function scheduleSignedUrlBatch() {
+  if (
+    signedUrlBatchTimer !== null ||
+    signedUrlBatchInFlight ||
+    pendingSignedUrlRequests.length === 0
+  ) {
+    return;
+  }
+
+  signedUrlBatchTimer = setTimeout(() => {
+    signedUrlBatchTimer = null;
+    void flushSignedUrlBatch();
+  }, SIGNED_URL_BATCH_DELAY_MS);
+}
+
+async function flushSignedUrlBatch() {
+  if (signedUrlBatchInFlight) {
+    return;
+  }
+
+  const batch = pendingSignedUrlRequests.splice(
+    0,
+    SIGNED_URL_BATCH_SIZE,
+  );
+
+  if (batch.length === 0) {
+    return;
+  }
+
+  signedUrlBatchInFlight = true;
+
+  try {
+    const paths = [
+      ...new Set(
+        batch
+          .map((request) => request.item.storage_path)
+          .filter((path) => Boolean(path)),
+      ),
+    ];
+
+    if (paths.length === 0) {
+      throw new Error(
+        "No valid message-media paths were available to sign.",
+      );
+    }
+
+    const { data, error } = await supabase.storage
+      .from("message-media")
+      .createSignedUrls(paths, 60 * 60);
+
+    if (error) {
+      throw error;
+    }
+
+    const resultsByPath = new Map<string, SignedUrlPathResult>();
+
+    for (const result of data ?? []) {
+      if (!result.path) {
+        continue;
+      }
+
+      resultsByPath.set(result.path, {
+        signedUrl: result.error ? null : result.signedUrl || null,
+        error: result.error
+          ? new Error(result.error)
+          : result.signedUrl
+            ? undefined
+            : new Error("Storage did not return a signed URL."),
+      });
+    }
+
+    const finishedAt = performance.now();
+
+    for (const request of batch) {
+      const result = resultsByPath.get(request.item.storage_path);
+      const signedUrl = result?.signedUrl ?? null;
+
+      request.resolve({
+        signedUrl,
+        durationMs: Math.max(0, finishedAt - request.startedAt),
+        error:
+          result?.error ??
+          (signedUrl
+            ? undefined
+            : new Error(
+                "Storage did not return a signed URL for this attachment.",
+              )),
+      });
+    }
+  } catch (error) {
+    const finishedAt = performance.now();
+
+    for (const request of batch) {
+      request.resolve({
+        signedUrl: null,
+        durationMs: Math.max(0, finishedAt - request.startedAt),
+        error,
+      });
+    }
+  } finally {
+    signedUrlBatchInFlight = false;
+    scheduleSignedUrlBatch();
+  }
+}
+
+function requestSignedUrl(
+  item: MessageMedia,
+): Promise<SignedUrlRequestResult> {
+  return new Promise((resolve) => {
+    pendingSignedUrlRequests.push({
+      item,
+      startedAt: performance.now(),
+      resolve,
+    });
+
+    scheduleSignedUrlBatch();
+  });
+}
+
 type MessageMediaContentProps = {
   media: MessageMedia[];
   isOwn: boolean;
@@ -264,71 +407,45 @@ export default function MessageMediaContent({
       try {
         const results = await Promise.all(
           visualMedia.map(async (item) => {
-            const startedAt = performance.now();
+            const result = await requestSignedUrl(item);
 
-            try {
-              const { data, error } = await supabase.storage
-                .from("message-media")
-                .createSignedUrl(
-                  item.storage_path,
-                  60 * 60,
-                );
+            recordSigningMetric(
+              item,
+              result.durationMs,
+              Boolean(result.signedUrl),
+            );
 
-              if (error || !data?.signedUrl) {
-                recordSigningMetric(
-                  item,
-                  performance.now() - startedAt,
-                  false,
-                );
-
+            if (!result.signedUrl) {
+              if (result.error) {
                 console.error(
-                  "Failed to load Agoré message media:",
-                  error,
-                );
-
-                return null;
-              }
-
-              const urlReadyAt = performance.now();
-
-              recordSigningMetric(
-                item,
-                urlReadyAt - startedAt,
-                true,
-              );
-
-              if (item.media_type === "image") {
-                imageTimingRef.current[item.id] = {
-                  urlReadyAt,
-                };
-
-                completedImageLoadsRef.current.delete(
-                  `${item.id}:inline`,
-                );
-
-                pendingImageLoadsRef.current.delete(
-                  `${item.id}:inline`,
+                  "Failed to sign Agoré message media:",
+                  result.error,
                 );
               }
-
-              return {
-                id: item.id,
-                url: data.signedUrl,
-              };
-            } catch (error) {
-              recordSigningMetric(
-                item,
-                performance.now() - startedAt,
-                false,
-              );
-
-              console.error(
-                "Failed to sign Agoré message media:",
-                error,
-              );
 
               return null;
             }
+
+            const urlReadyAt = performance.now();
+
+            if (item.media_type === "image") {
+              imageTimingRef.current[item.id] = {
+                urlReadyAt,
+              };
+
+              completedImageLoadsRef.current.delete(
+                `${item.id}:inline`,
+              );
+
+              pendingImageLoadsRef.current.delete(
+                `${item.id}:inline`,
+              );
+            }
+
+            return {
+              id: item.id,
+              url: result.signedUrl,
+            };
           }),
         );
 
