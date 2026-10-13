@@ -292,17 +292,47 @@ export function useAudioCallWebRTC(
         );
       }
 
-      const iceServers = await loadIceServers(activeConversationId);
+      // Network configuration and microphone acquisition are independent.
+      // Start both together so a slow ICE-config request does not hold up
+      // the microphone prompt, and microphone startup does not hold up ICE.
+      const [iceResult, mediaResult] = await Promise.allSettled([
+        loadIceServers(activeConversationId),
+        getLocalMedia(),
+      ]);
+
+      const discardPreparedStream = (stream: MediaStream) => {
+        stream.getTracks().forEach((track) => {
+          track.stop();
+        });
+
+        if (localStreamRef.current === stream) {
+          localStreamRef.current = null;
+          setLocalStream(null);
+        }
+      };
 
       if (activeCallIdRef.current !== callId) {
+        if (mediaResult.status === "fulfilled") {
+          discardPreparedStream(mediaResult.value);
+        }
+
         throw new Error("The call ended before network setup finished.");
       }
 
-      const stream = await getLocalMedia();
+      if (iceResult.status === "rejected") {
+        if (mediaResult.status === "fulfilled") {
+          discardPreparedStream(mediaResult.value);
+        }
 
-      if (activeCallIdRef.current !== callId) {
-        throw new Error("The call ended before media could be prepared.");
+        throw iceResult.reason;
       }
+
+      if (mediaResult.status === "rejected") {
+        throw mediaResult.reason;
+      }
+
+      const iceServers = iceResult.value;
+      const stream = mediaResult.value;
 
       const connection = new RTCPeerConnection({
         iceServers,
