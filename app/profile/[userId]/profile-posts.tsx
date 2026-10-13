@@ -1,4 +1,3 @@
-
 "use client";
 
 import {
@@ -21,7 +20,9 @@ import AgoreAvatar from "@/components/agore-avatar";
 import PostMedia, {
   type PostMediaItem,
 } from "@/components/post-media";
-import PostInteractions from "@/app/post-interactions";
+import PostInteractions, {
+  type PostInteractionSummary,
+} from "@/app/post-interactions";
 import { MentionText } from "@/components/post-mentions";
 import ProfileMedia from "./profile-media";
 import ActivityTimeline from "./activity-timeline";
@@ -129,14 +130,92 @@ function normalizeProfilePosts(
   }));
 }
 
+type ProfileInteractionSummaryRow = {
+  post_id: string;
+  like_count: number | string | null;
+  love_count: number | string | null;
+  laugh_count: number | string | null;
+  care_count: number | string | null;
+  wow_count: number | string | null;
+  sad_count: number | string | null;
+  angry_count: number | string | null;
+  my_reaction: string | null;
+  repost_count: number | string | null;
+  has_reposted: boolean | null;
+  comment_count: number | string | null;
+};
+
+const PROFILE_REACTION_TYPES = [
+  "like",
+  "love",
+  "laugh",
+  "care",
+  "wow",
+  "sad",
+  "angry",
+] as const;
+
+type ProfileReactionType = (typeof PROFILE_REACTION_TYPES)[number];
+
+function createEmptyInteractionSummary(
+  viewerId: string,
+): PostInteractionSummary {
+  return {
+    viewerId,
+    reactionCounts: {
+      like: 0,
+      love: 0,
+      laugh: 0,
+      care: 0,
+      wow: 0,
+      sad: 0,
+      angry: 0,
+    },
+    myReaction: null,
+    repostCount: 0,
+    hasReposted: false,
+    commentCount: 0,
+  };
+}
+
+function mapInteractionSummary(
+  row: ProfileInteractionSummaryRow,
+  viewerId: string,
+): PostInteractionSummary {
+  const myReaction = PROFILE_REACTION_TYPES.includes(
+    row.my_reaction as ProfileReactionType,
+  )
+    ? (row.my_reaction as ProfileReactionType)
+    : null;
+
+  return {
+    viewerId,
+    reactionCounts: {
+      like: Number(row.like_count ?? 0),
+      love: Number(row.love_count ?? 0),
+      laugh: Number(row.laugh_count ?? 0),
+      care: Number(row.care_count ?? 0),
+      wow: Number(row.wow_count ?? 0),
+      sad: Number(row.sad_count ?? 0),
+      angry: Number(row.angry_count ?? 0),
+    },
+    myReaction,
+    repostCount: Number(row.repost_count ?? 0),
+    hasReposted: Boolean(row.has_reposted),
+    commentCount: Number(row.comment_count ?? 0),
+  };
+}
+
 function PostCard({
   post,
   viewerId,
+  interactionSummary,
   onPostUpdated,
   onPostDeleted,
 }: {
   post: ProfilePost;
   viewerId: string | null;
+  interactionSummary: PostInteractionSummary | null | undefined;
   onPostUpdated: (
     postId: string,
     updatedContent: string,
@@ -206,13 +285,21 @@ function PostCard({
 
           <PostMedia media={post.post_media} />
 
-          <PostInteractions
-            postId={post.id}
-            initialContent={post.content}
-            isOwner={isOwner}
-            onPostUpdated={onPostUpdated}
-            onPostDeleted={onPostDeleted}
-          />
+          {interactionSummary === undefined ? (
+            <div
+              aria-hidden="true"
+              className="mt-3 h-12 animate-pulse rounded-lg bg-[var(--surface-muted)]"
+            />
+          ) : (
+            <PostInteractions
+              postId={post.id}
+              initialContent={post.content}
+              initialInteractionSummary={interactionSummary}
+              isOwner={isOwner}
+              onPostUpdated={onPostUpdated}
+              onPostDeleted={onPostDeleted}
+            />
+          )}
 
           {post.updated_at !== post.created_at ? (
             <p className="mt-1 text-[11px] text-[var(--muted)]">
@@ -229,12 +316,14 @@ function RepostCard({
   repost,
   viewerId,
   profileId,
+  interactionSummary,
   onPostUpdated,
   onPostDeleted,
 }: {
   repost: RepostPost;
   viewerId: string | null;
   profileId: string;
+  interactionSummary: PostInteractionSummary | null | undefined;
   onPostUpdated: (
     postId: string,
     updatedContent: string,
@@ -313,16 +402,24 @@ function RepostCard({
 
           <PostMedia media={repost.post_media} />
 
-          <PostInteractions
-            postId={repost.id}
-            initialContent={repost.content}
-            isOwner={
-              viewerId !== null &&
-              viewerId === repost.author_id
-            }
-            onPostUpdated={onPostUpdated}
-            onPostDeleted={onPostDeleted}
-          />
+          {interactionSummary === undefined ? (
+            <div
+              aria-hidden="true"
+              className="mt-3 h-12 animate-pulse rounded-lg bg-[var(--surface-muted)]"
+            />
+          ) : (
+            <PostInteractions
+              postId={repost.id}
+              initialContent={repost.content}
+              initialInteractionSummary={interactionSummary}
+              isOwner={
+                viewerId !== null &&
+                viewerId === repost.author_id
+              }
+              onPostUpdated={onPostUpdated}
+              onPostDeleted={onPostDeleted}
+            />
+          )}
         </div>
       </div>
     </article>
@@ -337,6 +434,9 @@ export default function ProfilePosts({
   const [reposts, setReposts] = useState<RepostPost[]>([]);
   const [mediaPosts, setMediaPosts] = useState<MediaPost[]>([]);
   const [viewerId, setViewerId] = useState<string | null>(null);
+  const [interactionSummaries, setInteractionSummaries] = useState<
+    Partial<Record<string, PostInteractionSummary | null>>
+  >({});
 
   const [activeTab, setActiveTab] = useState<ProfileTab>("posts");
   const [loading, setLoading] = useState(true);
@@ -354,6 +454,9 @@ export default function ProfilePosts({
   const repostsLoadedForUser = useRef<string | null>(null);
   const mediaLoadedForUser = useRef<string | null>(null);
   const currentUserIdRef = useRef(userId);
+  const requestedInteractionSummaryIdsRef = useRef<Set<string>>(
+    new Set(),
+  );
 
   useEffect(() => {
     currentUserIdRef.current = userId;
@@ -364,6 +467,8 @@ export default function ProfilePosts({
     setPosts([]);
     setReposts([]);
     setMediaPosts([]);
+    setInteractionSummaries({});
+    requestedInteractionSummaryIdsRef.current.clear();
     setError("");
     setMediaError("");
     setMorePostsError("");
@@ -381,6 +486,111 @@ export default function ProfilePosts({
 
     setViewerId(user?.id ?? null);
   }, []);
+
+  const loadInteractionSummaries = useCallback(
+    async (postIds: string[], requestUserId: string) => {
+      const postIdsToLoad = [...new Set(postIds.filter(Boolean))]
+        .filter((postId) =>
+          !requestedInteractionSummaryIdsRef.current.has(postId),
+        )
+        .slice(0, 50);
+
+      if (postIdsToLoad.length === 0) {
+        return;
+      }
+
+      for (const postId of postIdsToLoad) {
+        requestedInteractionSummaryIdsRef.current.add(postId);
+      }
+
+      try {
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession();
+
+        if (currentUserIdRef.current !== requestUserId) {
+          return;
+        }
+
+        if (sessionError) {
+          throw sessionError;
+        }
+
+        const summaryViewerId = session?.user?.id ?? "";
+        const emptySummaries = Object.fromEntries(
+          postIdsToLoad.map((postId) => [
+            postId,
+            createEmptyInteractionSummary(summaryViewerId),
+          ]),
+        );
+
+        setInteractionSummaries((current) => ({
+          ...current,
+          ...emptySummaries,
+        }));
+
+        if (!session?.user) {
+          return;
+        }
+
+        const { data, error: summaryError } = await supabase.rpc(
+          "agore_post_interaction_summaries",
+          { p_post_ids: postIdsToLoad },
+        );
+
+        if (currentUserIdRef.current !== requestUserId) {
+          return;
+        }
+
+        if (summaryError) {
+          throw summaryError;
+        }
+
+        const summariesByPostId = new Map<string, PostInteractionSummary>();
+        const rows = (data ?? []) as unknown as ProfileInteractionSummaryRow[];
+
+        for (const row of rows) {
+          summariesByPostId.set(
+            row.post_id,
+            mapInteractionSummary(row, summaryViewerId),
+          );
+        }
+
+        setInteractionSummaries((current) => {
+          const next = { ...current };
+
+          for (const postId of postIdsToLoad) {
+            next[postId] =
+              summariesByPostId.get(postId) ??
+              createEmptyInteractionSummary(summaryViewerId);
+          }
+
+          return next;
+        });
+      } catch (requestError) {
+        if (currentUserIdRef.current !== requestUserId) {
+          return;
+        }
+
+        console.error(
+          "Failed to load profile post interaction summaries:",
+          requestError,
+        );
+
+        setInteractionSummaries((current) => {
+          const next = { ...current };
+
+          for (const postId of postIdsToLoad) {
+            next[postId] = null;
+          }
+
+          return next;
+        });
+      }
+    },
+    [],
+  );
 
   const loadPosts = useCallback(async () => {
     if (!userId) {
@@ -417,6 +627,10 @@ export default function ProfilePosts({
       const normalizedPosts = normalizeProfilePosts(data.posts);
 
       setPosts(normalizedPosts);
+      void loadInteractionSummaries(
+        normalizedPosts.map((post) => post.id),
+        requestUserId,
+      );
       setPostsNextOffset(
         (data.offset ?? 0) + normalizedPosts.length,
       );
@@ -442,7 +656,7 @@ export default function ProfilePosts({
         setLoading(false);
       }
     }
-  }, [userId]);
+  }, [userId, loadInteractionSummaries]);
 
   const loadMorePosts = useCallback(async () => {
     if (
@@ -479,6 +693,11 @@ export default function ProfilePosts({
       }
 
       const nextPosts = normalizeProfilePosts(data.posts);
+
+      void loadInteractionSummaries(
+        nextPosts.map((post) => post.id),
+        requestUserId,
+      );
 
       setPosts((currentPosts) => {
         const existingIds = new Set(
@@ -520,6 +739,7 @@ export default function ProfilePosts({
     postsHasMore,
     morePostsLoading,
     postsNextOffset,
+    loadInteractionSummaries,
   ]);
 
   const loadReposts = useCallback(async () => {
@@ -553,15 +773,19 @@ export default function ProfilePosts({
         throw new Error(data.error ?? "Unable to load reposts.");
       }
 
-      setReposts(
-        Array.isArray(data.reposts)
-          ? data.reposts.map((repost) => ({
-              ...repost,
-              post_media: Array.isArray(repost.post_media)
-                ? repost.post_media
-                : [],
-            }))
-          : [],
+      const normalizedReposts = Array.isArray(data.reposts)
+        ? data.reposts.map((repost) => ({
+            ...repost,
+            post_media: Array.isArray(repost.post_media)
+              ? repost.post_media
+              : [],
+          }))
+        : [];
+
+      setReposts(normalizedReposts);
+      void loadInteractionSummaries(
+        normalizedReposts.map((repost) => repost.id),
+        requestUserId,
       );
 
       repostsLoadedForUser.current = requestUserId;
@@ -581,7 +805,7 @@ export default function ProfilePosts({
         setRepostsLoading(false);
       }
     }
-  }, [userId]);
+  }, [userId, loadInteractionSummaries]);
 
   const loadMedia = useCallback(async () => {
     if (
@@ -952,6 +1176,7 @@ export default function ProfilePosts({
                     key={post.id}
                     post={post}
                     viewerId={viewerId}
+                    interactionSummary={interactionSummaries[post.id]}
                     onPostUpdated={handlePostUpdated}
                     onPostDeleted={handlePostDeleted}
                   />
@@ -962,6 +1187,7 @@ export default function ProfilePosts({
                     repost={repost}
                     viewerId={viewerId}
                     profileId={userId}
+                    interactionSummary={interactionSummaries[repost.id]}
                     onPostUpdated={handlePostUpdated}
                     onPostDeleted={handlePostDeleted}
                   />
