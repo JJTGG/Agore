@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Suspense } from "react";
+import { Analytics } from "@vercel/analytics/next";
 
 import "./globals.css";
 import AnalyticsTracker from "@/components/analytics-tracker";
@@ -129,6 +130,8 @@ export default async function RootLayout({
         <Suspense fallback={null}>
           <AnalyticsTracker />
         </Suspense>
+
+        <Analytics />
       </body>
     </html>
   );
