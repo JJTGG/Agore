@@ -1,6 +1,7 @@
+
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AudioLines,
   ChevronLeft,
@@ -18,6 +19,7 @@ import {
 } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/browser";
+import { recordAgorePerformanceMetric } from "@/lib/performance/monitor";
 
 export type PostMediaItem = {
   id: string;
@@ -109,6 +111,114 @@ export default function PostMedia({ media }: PostMediaProps) {
     null,
   );
 
+  const imageUrlReadyAtRef = useRef<Record<string, number>>({});
+
+  function handlePostImageLoad(
+    itemId: string,
+    event: React.SyntheticEvent<HTMLImageElement>,
+  ) {
+    const image = event.currentTarget;
+    const imageUrl = image.currentSrc || image.src;
+    const urlReadyAt = imageUrlReadyAtRef.current[itemId];
+
+    let resourceTiming: PerformanceResourceTiming | null = null;
+
+    try {
+      const entries = performance.getEntriesByName(
+        imageUrl,
+        "resource",
+      ) as PerformanceResourceTiming[];
+
+      const latest = entries[entries.length - 1];
+
+      // Avoid using an old timing entry from a previously cached image.
+      if (
+        latest &&
+        (urlReadyAt === undefined ||
+          latest.startTime >= urlReadyAt - 1)
+      ) {
+        resourceTiming = latest;
+      }
+    } catch {
+      // Use the URL-ready fallback timing below.
+    }
+
+    const requestStart =
+      resourceTiming?.startTime ?? urlReadyAt;
+
+    void image.decode().then(
+      () => {
+        const readyAt = performance.now();
+
+        const elapsedMs =
+          requestStart !== undefined
+            ? Math.max(0, readyAt - requestStart)
+            : null;
+
+        if (elapsedMs === null) {
+          return;
+        }
+
+        recordAgorePerformanceMetric(
+          "image",
+          "Post image ready (load + decode)",
+          elapsedMs,
+          "ms",
+          {
+            success: true,
+            resourceTimingAvailable: Boolean(resourceTiming),
+            includesLazyLoadingWait: !resourceTiming,
+            ...(resourceTiming
+              ? {
+                  resourceDurationMs: Math.max(
+                    0,
+                    resourceTiming.responseEnd -
+                      resourceTiming.startTime,
+                  ),
+                  transferSizeBytes: resourceTiming.transferSize,
+                }
+              : {}),
+          },
+        );
+      },
+      () => {
+        recordAgorePerformanceMetric(
+          "image",
+          "Post image decode failed",
+          Math.max(
+            0,
+            performance.now() -
+              (requestStart ?? performance.now()),
+          ),
+          "ms",
+          {
+            success: false,
+            resourceTimingAvailable: Boolean(resourceTiming),
+          },
+        );
+      },
+    );
+  }
+
+  function handlePostImageError(itemId: string) {
+    const urlReadyAt = imageUrlReadyAtRef.current[itemId];
+
+    if (urlReadyAt === undefined) {
+      return;
+    }
+
+    recordAgorePerformanceMetric(
+      "image",
+      "Post image failed to load",
+      Math.max(0, performance.now() - urlReadyAt),
+      "ms",
+      {
+        success: false,
+        resourceTimingAvailable: false,
+      },
+    );
+  }
+
   const imageMedia = media.filter(
     (item) =>
       item.mime_type.toLowerCase().startsWith("image/") &&
@@ -138,9 +248,30 @@ export default function PostMedia({ media }: PostMediaProps) {
       try {
         const entries = await Promise.all(
           media.map(async (item) => {
+            const isImage = item.mime_type
+              .toLowerCase()
+              .startsWith("image/");
+
+            const signingStartedAt = performance.now();
+
             const { data, error } = await supabase.storage
               .from("post-media")
               .createSignedUrl(item.storage_path, 60 * 60);
+
+            const signingDurationMs =
+              performance.now() - signingStartedAt;
+
+            if (isImage) {
+              recordAgorePerformanceMetric(
+                "image",
+                "Post-media URL signing",
+                signingDurationMs,
+                "ms",
+                {
+                  success: !error && Boolean(data?.signedUrl),
+                },
+              );
+            }
 
             if (error || !data?.signedUrl) {
               console.error(
@@ -149,6 +280,11 @@ export default function PostMedia({ media }: PostMediaProps) {
               );
 
               return null;
+            }
+
+            if (isImage) {
+              imageUrlReadyAtRef.current[item.id] =
+                performance.now();
             }
 
             return [item.id, data.signedUrl] as const;
@@ -222,6 +358,7 @@ export default function PostMedia({ media }: PostMediaProps) {
       event.preventDefault();
 
       const direction = event.key === "ArrowRight" ? 1 : -1;
+
       const nextIndex =
         (currentIndex + direction + availableImages.length) %
         availableImages.length;
@@ -339,14 +476,19 @@ export default function PostMedia({ media }: PostMediaProps) {
                   height={item.height ?? undefined}
                   loading="lazy"
                   decoding="async"
+                  onLoad={(event) =>
+                    handlePostImageLoad(item.id, event)
+                  }
+                  onError={() =>
+                    handlePostImageError(item.id)
+                  }
                   className="block max-h-[620px] w-full object-contain transition-opacity duration-200 group-hover:opacity-95"
                 />
               </button>
             );
           }
 
-          // Videos are also rendered as native post media,
-          // without filename or file-information panels.
+          // Videos remain native post media.
           if (isVideo) {
             return (
               <video
