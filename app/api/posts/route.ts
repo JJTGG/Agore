@@ -1,4 +1,3 @@
-
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -119,6 +118,104 @@ function normalizePost(post: PostRow) {
           new Date(b.created_at).getTime(),
     ),
   };
+}
+
+type SummaryReactionType = "like" | "love" | "laugh" | "care" | "wow" | "sad" | "angry";
+
+type SummaryRow = {
+  post_id: string;
+  like_count: number | string;
+  love_count: number | string;
+  laugh_count: number | string;
+  care_count: number | string;
+  wow_count: number | string;
+  sad_count: number | string;
+  angry_count: number | string;
+  my_reaction: string | null;
+  repost_count: number | string;
+  has_reposted: boolean;
+  comment_count: number | string;
+};
+
+type FeedInteractionSummary = {
+  viewerId: string;
+  reactionCounts: Record<SummaryReactionType, number>;
+  myReaction: SummaryReactionType | null;
+  repostCount: number;
+  hasReposted: boolean;
+  commentCount: number;
+};
+
+const SUMMARY_REACTIONS: SummaryReactionType[] = [
+  "like",
+  "love",
+  "laugh",
+  "care",
+  "wow",
+  "sad",
+  "angry",
+];
+
+async function attachInteractionSummaries<T extends { id: string }>(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  viewerId: string,
+  posts: T[],
+): Promise<Array<T & { interactionSummary: FeedInteractionSummary | null }>> {
+  if (posts.length === 0) return [];
+
+  const postIds = [...new Set(posts.map((post) => post.id))].slice(0, 50);
+
+  const { data, error } = await supabase.rpc(
+    "agore_post_interaction_summaries",
+    {
+      p_post_ids: postIds,
+    },
+  );
+
+  if (error) {
+    console.error(
+      "Failed to load Agore feed interaction summaries:",
+      error,
+    );
+
+    return posts.map((post) => ({
+      ...post,
+      interactionSummary: null,
+    }));
+  }
+
+  const summaries = new Map<string, FeedInteractionSummary>();
+  const rows = (data ?? []) as unknown as SummaryRow[];
+
+  for (const row of rows) {
+    const myReaction = SUMMARY_REACTIONS.includes(
+      row.my_reaction as SummaryReactionType,
+    )
+      ? row.my_reaction as SummaryReactionType
+      : null;
+
+    summaries.set(row.post_id, {
+      viewerId,
+      reactionCounts: {
+        like: Number(row.like_count ?? 0),
+        love: Number(row.love_count ?? 0),
+        laugh: Number(row.laugh_count ?? 0),
+        care: Number(row.care_count ?? 0),
+        wow: Number(row.wow_count ?? 0),
+        sad: Number(row.sad_count ?? 0),
+        angry: Number(row.angry_count ?? 0),
+      },
+      myReaction,
+      repostCount: Number(row.repost_count ?? 0),
+      hasReposted: Boolean(row.has_reposted),
+      commentCount: Number(row.comment_count ?? 0),
+    });
+  }
+
+  return posts.map((post) => ({
+    ...post,
+    interactionSummary: summaries.get(post.id) ?? null,
+  }));
 }
 
 function emptyFeed() {
@@ -260,7 +357,11 @@ export async function GET(request: Request) {
       );
 
     return NextResponse.json({
-      posts: likedFeed,
+      posts: await attachInteractionSummaries(
+        supabase,
+        user.id,
+        likedFeed,
+      ),
     });
   }
 
@@ -480,7 +581,11 @@ export async function GET(request: Request) {
     .slice(0, limit);
 
   return NextResponse.json({
-    posts: feedItems,
+    posts: await attachInteractionSummaries(
+      supabase,
+      user.id,
+      feedItems,
+    ),
   });
 }
 
