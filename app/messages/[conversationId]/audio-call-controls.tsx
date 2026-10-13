@@ -1496,9 +1496,10 @@ export function AudioCallHost() {
 
     void discoverIncomingCall();
 
+    // Push alerts are the fast path; this polling is a visibility-aware fallback.
     const interval = window.setInterval(() => {
       void discoverIncomingCall();
-    }, 4000);
+    }, 10_000);
 
     window.addEventListener("focus", discoverIncomingCall);
 
