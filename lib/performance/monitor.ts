@@ -37,9 +37,32 @@ export type AgoreFrameSample = {
   targetFrameTimeMs: number;
 };
 
+type EventTimingEntry = PerformanceEntry & {
+  interactionId?: number;
+};
+
+type PendingInteraction = {
+  interactionId: number;
+  duration: number;
+  eventCount: number;
+  eventNames: Set<string>;
+  pathname: string;
+};
+
 const STORAGE_KEY = "agore_performance_metrics_v1";
 const MAX_METRICS = 250;
 const MAX_FRAME_INTERVALS = 12_000;
+const MAX_SEEN_ENTRIES = 1_500;
+const MAX_SEEN_INTERACTIONS = 3_000;
+
+// Storage and subscribers are updated in batches instead of
+// synchronously for every individual measurement.
+const METRIC_FLUSH_DELAY_MS = 120;
+const INTERACTION_FLUSH_DELAY_MS = 180;
+
+// Short browser events are excluded from the interaction observer.
+// Related events are grouped into one measurement using interactionId.
+const EVENT_DURATION_THRESHOLD_MS = 40;
 
 const CATEGORIES: AgoreMetricCategory[] = [
   "navigation",
@@ -69,18 +92,46 @@ const DYNAMIC_ROUTE_PARENTS = new Set([
   "group",
 ]);
 
+// Prefer events that most clearly represent the completed action.
+const EVENT_NAME_PRIORITY = [
+  "click",
+  "keydown",
+  "keyup",
+  "pointerup",
+  "touchend",
+  "mouseup",
+  "pointerdown",
+  "touchstart",
+];
+
 let cachedMetrics: AgorePerformanceMetric[] | null = null;
 
 const subscribers = new Set<() => void>();
 const observers: PerformanceObserver[] = [];
+
 const seenEntrySignatures = new Set<string>();
 const seenEntryOrder: string[] = [];
+
 const recordedDocumentTimings = new Set<string>();
 const recordedPaintNames = new Set<string>();
 
+const pendingInteractions = new Map<
+  number,
+  PendingInteraction
+>();
+
+const completedInteractionIds = new Set<number>();
+const completedInteractionOrder: number[] = [];
+
 let collectionUsers = 0;
 let collectionStartedAt: number | null = null;
+
 let documentLoadHandler: (() => void) | null = null;
+let pageHideHandler: (() => void) | null = null;
+
+let metricFlushTimer: number | null = null;
+let interactionFlushTimer: number | null = null;
+let hasPendingMetricChanges = false;
 
 function isBrowser(): boolean {
   return (
@@ -105,24 +156,29 @@ function roundValue(
   unit: AgoreMetricUnit,
 ): number {
   const decimals =
-    unit === "score" ? 3 :
-    unit === "count" || unit === "bytes" ? 0 :
-    1;
+    unit === "score"
+      ? 3
+      : unit === "count" || unit === "bytes"
+        ? 0
+        : 1;
 
   const factor = 10 ** decimals;
+
   return Math.round(value * factor) / factor;
 }
 
 function sanitizeLabel(label: string): string {
-  return label
-    .replace(/https?:\/\/\S+/gi, "[URL]")
-    .replace(
-      /\b[\w.+-]+@[\w.-]+\.[a-z]{2,}\b/gi,
-      "[email]",
-    )
-    .replace(/[\u0000-\u001f]/g, " ")
-    .trim()
-    .slice(0, 80) || "Measurement";
+  return (
+    label
+      .replace(/https?:\/\/\S+/gi, "[URL]")
+      .replace(
+        /\b[\w.+-]+@[\w.-]+\.[a-z]{2,}\b/gi,
+        "[email]",
+      )
+      .replace(/[\u0000-\u001f]/g, " ")
+      .trim()
+      .slice(0, 80) || "Measurement"
+  );
 }
 
 function sanitizePath(pathname?: string): string {
@@ -154,9 +210,7 @@ function sanitizePath(pathname?: string): string {
       return ":id";
     }
 
-    return decoded
-      .replace(/[^\w.-]/g, "")
-      .slice(0, 40);
+    return decoded.replace(/[^\w.-]/g, "").slice(0, 40);
   });
 
   return `/${safeSegments.join("/")}`.slice(0, 160) || "/";
@@ -273,6 +327,40 @@ function notifySubscribers(): void {
   }
 }
 
+/**
+ * Flushes all accumulated metric changes with one storage write
+ * and one subscriber notification.
+ */
+function flushPendingMetrics(): void {
+  if (metricFlushTimer !== null && isBrowser()) {
+    window.clearTimeout(metricFlushTimer);
+  }
+
+  metricFlushTimer = null;
+
+  if (!hasPendingMetricChanges) {
+    return;
+  }
+
+  hasPendingMetricChanges = false;
+
+  persist();
+  notifySubscribers();
+}
+
+function scheduleMetricFlush(): void {
+  hasPendingMetricChanges = true;
+
+  if (!isBrowser() || metricFlushTimer !== null) {
+    return;
+  }
+
+  metricFlushTimer = window.setTimeout(
+    flushPendingMetrics,
+    METRIC_FLUSH_DELAY_MS,
+  );
+}
+
 export function recordAgorePerformanceMetric(
   category: AgoreMetricCategory,
   label: string,
@@ -281,8 +369,7 @@ export function recordAgorePerformanceMetric(
   details?: Record<string, unknown>,
   pathname?: string,
 ): AgorePerformanceMetric | null {
-  // Measurement is explicitly opt-in. Components may report
-  // events, but nothing is stored outside an active session.
+  // Collection is explicitly opt-in.
   if (
     !isBrowser() ||
     collectionUsers <= 0 ||
@@ -306,14 +393,16 @@ export function recordAgorePerformanceMetric(
   };
 
   const metrics = getCache();
+
   metrics.push(metric);
 
   if (metrics.length > MAX_METRICS) {
     metrics.splice(0, metrics.length - MAX_METRICS);
   }
 
-  persist();
-  notifySubscribers();
+  // The in-memory sample is available immediately. Only persistence
+  // and UI notifications are deferred and batched.
+  scheduleMetricFlush();
 
   return metric;
 }
@@ -332,7 +421,154 @@ export function subscribeToAgorePerformanceMetrics(
   };
 }
 
+function rememberCompletedInteraction(interactionId: number): void {
+  if (completedInteractionIds.has(interactionId)) {
+    return;
+  }
+
+  completedInteractionIds.add(interactionId);
+  completedInteractionOrder.push(interactionId);
+
+  if (completedInteractionOrder.length > MAX_SEEN_INTERACTIONS) {
+    const oldest = completedInteractionOrder.shift();
+
+    if (oldest !== undefined) {
+      completedInteractionIds.delete(oldest);
+    }
+  }
+}
+
+function cancelInteractionFlush(): void {
+  if (interactionFlushTimer !== null && isBrowser()) {
+    window.clearTimeout(interactionFlushTimer);
+  }
+
+  interactionFlushTimer = null;
+}
+
+function chooseInteractionEventName(
+  names: Set<string>,
+): string {
+  for (const preferred of EVENT_NAME_PRIORITY) {
+    if (names.has(preferred)) {
+      return preferred;
+    }
+  }
+
+  return (
+    [...names].sort()[0] ?? "event"
+  );
+}
+
+/**
+ * Consolidates the multiple Event Timing entries belonging to one
+ * browser interaction into a single duration measurement.
+ */
+function flushPendingInteractions(): void {
+  cancelInteractionFlush();
+
+  if (pendingInteractions.size === 0) {
+    return;
+  }
+
+  const pending = [...pendingInteractions.values()];
+
+  pendingInteractions.clear();
+
+  for (const interaction of pending) {
+    rememberCompletedInteraction(interaction.interactionId);
+
+    const eventName = chooseInteractionEventName(
+      interaction.eventNames,
+    );
+
+    recordAgorePerformanceMetric(
+      "interaction",
+      `Browser interaction: ${eventName}`,
+      interaction.duration,
+      "ms",
+      {
+        eventCount: interaction.eventCount,
+      },
+      interaction.pathname,
+    );
+  }
+}
+
+function scheduleInteractionFlush(): void {
+  if (interactionFlushTimer !== null) {
+    window.clearTimeout(interactionFlushTimer);
+  }
+
+  interactionFlushTimer = window.setTimeout(
+    flushPendingInteractions,
+    INTERACTION_FLUSH_DELAY_MS,
+  );
+}
+
+function collectInteractionEntry(
+  entry: PerformanceEntry,
+): void {
+  const timing = entry as EventTimingEntry;
+  const interactionId = timing.interactionId;
+
+  // interactionId === 0 or unavailable means the browser hasn't
+  // associated this entry with a qualifying user interaction.
+  // Skipping these entries avoids counting pointer/mouse/touch
+  // events as separate user actions.
+  if (
+    typeof interactionId !== "number" ||
+    !Number.isFinite(interactionId) ||
+    interactionId <= 0 ||
+    completedInteractionIds.has(interactionId)
+  ) {
+    return;
+  }
+
+  const eventName = /^[a-z-]{1,24}$/i.test(entry.name)
+    ? entry.name.toLowerCase()
+    : "event";
+
+  const existing = pendingInteractions.get(interactionId);
+
+  if (existing) {
+    existing.duration = Math.max(
+      existing.duration,
+      entry.duration,
+    );
+
+    existing.eventCount += 1;
+    existing.eventNames.add(eventName);
+  } else {
+    pendingInteractions.set(interactionId, {
+      interactionId,
+      duration: entry.duration,
+      eventCount: 1,
+      eventNames: new Set([eventName]),
+      pathname: sanitizePath(),
+    });
+  }
+
+  scheduleInteractionFlush();
+}
+
 export function clearAgorePerformanceMetrics(): void {
+  if (metricFlushTimer !== null && isBrowser()) {
+    window.clearTimeout(metricFlushTimer);
+  }
+
+  metricFlushTimer = null;
+  hasPendingMetricChanges = false;
+
+  cancelInteractionFlush();
+
+  // Prevent entries already grouped before clearing from reappearing
+  // later when their delayed flush would otherwise run.
+  for (const interactionId of pendingInteractions.keys()) {
+    rememberCompletedInteraction(interactionId);
+  }
+
+  pendingInteractions.clear();
   cachedMetrics = [];
 
   if (isBrowser()) {
@@ -375,7 +611,7 @@ function isNewPerformanceEntry(
   seenEntrySignatures.add(signature);
   seenEntryOrder.push(signature);
 
-  if (seenEntryOrder.length > 1_500) {
+  if (seenEntryOrder.length > MAX_SEEN_ENTRIES) {
     const oldest = seenEntryOrder.shift();
 
     if (oldest) {
@@ -539,7 +775,6 @@ function classifyResource(
 }
 
 function addObserver(
-  type: string,
   options: PerformanceObserverInit,
   handler: (entry: PerformanceEntry) => void,
 ): void {
@@ -549,9 +784,8 @@ function addObserver(
 
   const observer = new PerformanceObserver((list) => {
     for (const entry of list.getEntries()) {
-      // Buffered observers can replay old entries. Keep them out
-      // of this collection session, even when the browser provides
-      // them immediately after observe() is called.
+      // Buffered observers can replay old entries. Exclude anything
+      // that began before the opt-in collection session.
       if (
         collectionStartedAt === null ||
         entry.startTime < collectionStartedAt
@@ -579,9 +813,14 @@ function addObserver(
   }
 }
 
+function handlePageHide(): void {
+  // Preserve the final pending measurements before a document unload.
+  flushPendingInteractions();
+  flushPendingMetrics();
+}
+
 function startObservers(): void {
   addObserver(
-    "resource",
     { type: "resource", buffered: true },
     (entry) => {
       const resource = entry as PerformanceResourceTiming;
@@ -604,32 +843,15 @@ function startObservers(): void {
   );
 
   addObserver(
-    "event",
     {
       type: "event",
       buffered: true,
-      durationThreshold: 16,
+      durationThreshold: EVENT_DURATION_THRESHOLD_MS,
     } as PerformanceObserverInit,
-    (entry) => {
-      if (entry.duration < 16) {
-        return;
-      }
-
-      const eventName = /^[a-z-]{1,24}$/i.test(entry.name)
-        ? entry.name
-        : "event";
-
-      recordAgorePerformanceMetric(
-        "interaction",
-        `Browser interaction: ${eventName}`,
-        entry.duration,
-        "ms",
-      );
-    },
+    collectInteractionEntry,
   );
 
   addObserver(
-    "longtask",
     { type: "longtask", buffered: true },
     (entry) => {
       recordAgorePerformanceMetric(
@@ -642,7 +864,6 @@ function startObservers(): void {
   );
 
   addObserver(
-    "paint",
     { type: "paint", buffered: true },
     (entry) => {
       if (
@@ -664,8 +885,10 @@ function startObservers(): void {
   );
 
   addObserver(
-    "largest-contentful-paint",
-    { type: "largest-contentful-paint", buffered: true },
+    {
+      type: "largest-contentful-paint",
+      buffered: true,
+    },
     (entry) => {
       recordAgorePerformanceMetric(
         "navigation",
@@ -677,7 +900,6 @@ function startObservers(): void {
   );
 
   addObserver(
-    "layout-shift",
     { type: "layout-shift", buffered: true },
     (entry) => {
       const shift = entry as PerformanceEntry & {
@@ -702,9 +924,8 @@ function startObservers(): void {
     },
   );
 
-  // A completed document navigation is historical if the user
-  // starts measuring after the page has loaded. Only capture these
-  // timings when the load event is still pending at session start.
+  // Don't present completed page-load timings as newly measured
+  // work when the user starts collecting after the load event.
   if (document.readyState !== "complete") {
     documentLoadHandler = () => {
       if (collectionStartedAt !== null) {
@@ -716,6 +937,9 @@ function startObservers(): void {
       once: true,
     });
   }
+
+  pageHideHandler = handlePageHide;
+  window.addEventListener("pagehide", pageHideHandler);
 }
 
 export function startAgorePerformanceCollection(): () => void {
@@ -741,6 +965,14 @@ export function startAgorePerformanceCollection(): () => void {
     }
 
     released = true;
+
+    // Flush while the collection is still active so the final
+    // interaction groups can become valid stored metrics.
+    if (collectionUsers === 1) {
+      flushPendingInteractions();
+      flushPendingMetrics();
+    }
+
     collectionUsers = Math.max(0, collectionUsers - 1);
 
     if (collectionUsers === 0) {
@@ -755,6 +987,11 @@ export function startAgorePerformanceCollection(): () => void {
         documentLoadHandler = null;
       }
 
+      if (pageHideHandler) {
+        window.removeEventListener("pagehide", pageHideHandler);
+        pageHideHandler = null;
+      }
+
       collectionStartedAt = null;
     }
   };
@@ -765,7 +1002,10 @@ function percentile95(values: number[]): number {
     return 0;
   }
 
-  const sorted = [...values].sort((left, right) => left - right);
+  const sorted = [...values].sort(
+    (left, right) => left - right,
+  );
+
   return sorted[Math.ceil(sorted.length * 0.95) - 1] ?? 0;
 }
 
@@ -776,7 +1016,10 @@ function buildFrameSample(
   targetFrameTimeMs: number,
 ): AgoreFrameSample {
   const frameCount = intervals.length;
-  const total = intervals.reduce((sum, value) => sum + value, 0);
+  const total = intervals.reduce(
+    (sum, value) => sum + value,
+    0,
+  );
 
   return {
     elapsedMs: roundValue(elapsedMs, "ms"),
@@ -800,11 +1043,10 @@ function buildFrameSample(
 
 /**
  * Starts frame sampling only when the user explicitly opens
- * the Live HUD. Stop the returned sampler when they close it.
+ * the Live HUD. Stop the returned sampler when it is closed.
  *
  * The default slow-frame threshold is the 60 Hz budget (16.7 ms).
- * This is a reference threshold, not a claim about the device's
- * actual display refresh rate.
+ * This is a reference threshold, not the device's measured refresh rate.
  */
 export function startAgoreFrameSampling(
   onSample: (sample: AgoreFrameSample) => void,
@@ -864,7 +1106,7 @@ export function startAgoreFrameSampling(
     const interval = timestamp - lastFrameAt;
     lastFrameAt = timestamp;
 
-    // Ignore large gaps which may represent browser suspension.
+    // Ignore large gaps that likely represent browser suspension.
     if (interval > 0 && interval <= 1_000) {
       windowIntervals.push(interval);
       totalActiveDuration += interval;
@@ -886,14 +1128,14 @@ export function startAgoreFrameSampling(
       sampleWindowStart !== null &&
       timestamp - sampleWindowStart >= 1_000
     ) {
-      const sample = buildFrameSample(
-        windowIntervals,
-        timestamp - sampleWindowStart,
-        windowSlowFrames,
-        targetFrameTimeMs,
+      onSample(
+        buildFrameSample(
+          windowIntervals,
+          timestamp - sampleWindowStart,
+          windowSlowFrames,
+          targetFrameTimeMs,
+        ),
       );
-
-      onSample(sample);
 
       windowIntervals = [];
       windowSlowFrames = 0;
@@ -903,7 +1145,10 @@ export function startAgoreFrameSampling(
     frameRequest = window.requestAnimationFrame(tick);
   }
 
-  document.addEventListener("visibilitychange", handleVisibility);
+  document.addEventListener(
+    "visibilitychange",
+    handleVisibility,
+  );
 
   frameRequest = window.requestAnimationFrame(tick);
 
@@ -913,7 +1158,9 @@ export function startAgoreFrameSampling(
     }
 
     active = false;
+
     window.cancelAnimationFrame(frameRequest);
+
     document.removeEventListener(
       "visibilitychange",
       handleVisibility,
@@ -923,8 +1170,6 @@ export function startAgoreFrameSampling(
       return null;
     }
 
-    // Calculate overall FPS from every valid sampled frame.
-    // The bounded buffer is used only for recent p95 frame time.
     const finalSample: AgoreFrameSample = {
       ...buildFrameSample(
         recentIntervals,
@@ -977,12 +1222,16 @@ export function startAgoreFrameSampling(
 }
 
 export function createAgoreDiagnosticReport(): string {
+  // Include recent entries that haven't reached their scheduled
+  // notification/persistence flush yet.
+  flushPendingInteractions();
+  flushPendingMetrics();
+
   const metrics = getAgorePerformanceMetrics().slice(0, 100);
 
-  const device =
-    isBrowser()
-      ? navigator.userAgent
-      : "Unavailable";
+  const device = isBrowser()
+    ? navigator.userAgent
+    : "Unavailable";
 
   const lines = [
     "AGORÉ PERFORMANCE REPORT",
