@@ -1,4 +1,3 @@
-
 "use client";
 
 import Link from "next/link";
@@ -24,7 +23,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 
@@ -32,14 +30,17 @@ import {
   clearAgorePerformanceMetrics,
   createAgoreDiagnosticReport,
   getAgorePerformanceMetrics,
-  recordAgorePerformanceMetric,
-  startAgoreFrameSampling,
-  startAgorePerformanceCollection,
   subscribeToAgorePerformanceMetrics,
 } from "@/lib/performance/monitor";
 
+import {
+  getAgorePerformanceSessionState,
+  startAgorePerformanceSession,
+  stopAgorePerformanceSession,
+  subscribeToAgorePerformanceSession,
+} from "@/lib/performance/session";
+
 import type {
-  AgoreFrameSample,
   AgoreMetricCategory,
   AgorePerformanceMetric,
 } from "@/lib/performance/monitor";
@@ -196,48 +197,45 @@ export default function PerformancePage() {
     AgorePerformanceMetric[]
   >([]);
 
-  const [isCollecting, setIsCollecting] = useState(false);
+  const [sessionState, setSessionState] = useState(
+    () => getAgorePerformanceSessionState(),
+  );
 
-  const [frameSample, setFrameSample] =
-    useState<AgoreFrameSample | null>(null);
+  const isCollecting = sessionState.active;
+  const frameSample = sessionState.frameSample;
 
   const [filter, setFilter] =
     useState<MetricFilter>("all");
 
-  const [sessionStartedAt, setSessionStartedAt] =
-    useState<number | null>(null);
-
-  const [sessionEndedAt, setSessionEndedAt] =
-    useState<number | null>(null);
+  const sessionStartedAt = sessionState.startedAt;
+  const sessionEndedAt = sessionState.endedAt;
 
   const [notice, setNotice] = useState("");
   const [copying, setCopying] = useState(false);
 
-  const collectionStopRef =
-    useRef<(() => void) | null>(null);
-
-  const frameStopRef =
-    useRef<(() => AgoreFrameSample | null) | null>(
-      null,
-    );
-
   useEffect(() => {
-    const refresh = () => {
+    const refreshMetrics = () => {
       setMetrics(getAgorePerformanceMetrics());
     };
 
-    refresh();
+    const refreshSession = () => {
+      setSessionState(getAgorePerformanceSessionState());
+    };
 
-    return subscribeToAgorePerformanceMetrics(refresh);
-  }, []);
+    refreshMetrics();
+    refreshSession();
 
-  useEffect(() => {
+    const unsubscribeMetrics =
+      subscribeToAgorePerformanceMetrics(refreshMetrics);
+
+    const unsubscribeSession =
+      subscribeToAgorePerformanceSession(refreshSession);
+
     return () => {
-      frameStopRef.current?.();
-      collectionStopRef.current?.();
+      unsubscribeMetrics();
+      unsubscribeSession();
 
-      frameStopRef.current = null;
-      collectionStopRef.current = null;
+      // Intentionally do not stop collection when this page unmounts.
     };
   }, []);
 
@@ -300,40 +298,21 @@ export default function PerformancePage() {
 
   const startSession = useCallback(() => {
     if (isCollecting) {
+      setNotice("A measurement session is already active.");
       return;
     }
 
-    if (
-      typeof window === "undefined" ||
-      typeof window.requestAnimationFrame !== "function"
-    ) {
+    const started = startAgorePerformanceSession();
+
+    if (!started) {
       setNotice(
         "Live frame sampling is unavailable in this browser.",
       );
       return;
     }
 
-    setNotice("");
-    setFrameSample(null);
-    setSessionEndedAt(null);
-    setSessionStartedAt(Date.now());
-
-    collectionStopRef.current =
-      startAgorePerformanceCollection();
-
-    frameStopRef.current = startAgoreFrameSampling(
-      (sample) => {
-        setFrameSample(sample);
-      },
-    );
-
-    setIsCollecting(true);
-
-    recordAgorePerformanceMetric(
-      "rendering",
-      "Performance measurement session started",
-      1,
-      "count",
+    setNotice(
+      "Measurement session started. You can navigate away; sampling will continue until you stop it.",
     );
   }, [isCollecting]);
 
@@ -342,28 +321,12 @@ export default function PerformancePage() {
       return;
     }
 
-    const finalFrameSample =
-      frameStopRef.current?.() ?? null;
+    stopAgorePerformanceSession();
+    setSessionState(getAgorePerformanceSessionState());
 
-    frameStopRef.current = null;
-
-    collectionStopRef.current?.();
-    collectionStopRef.current = null;
-
-    if (finalFrameSample) {
-      setFrameSample(finalFrameSample);
-    }
-
-    recordAgorePerformanceMetric(
-      "rendering",
-      "Performance measurement session stopped",
-      1,
-      "count",
+    setNotice(
+      "Measurement session ended. Results are available below.",
     );
-
-    setIsCollecting(false);
-    setSessionEndedAt(Date.now());
-    setNotice("Measurement session ended. Results are available below.");
   }, [isCollecting]);
 
   const copyReport = useCallback(async () => {
@@ -396,9 +359,6 @@ export default function PerformancePage() {
     clearAgorePerformanceMetrics();
 
     setMetrics([]);
-    setFrameSample(null);
-    setSessionStartedAt(null);
-    setSessionEndedAt(null);
     setNotice("Local measurement history cleared.");
   }, [isCollecting]);
 
@@ -451,6 +411,7 @@ export default function PerformancePage() {
               size={18}
               className="mt-0.5 shrink-0 text-[var(--accent)]"
             />
+
             <p className="min-w-0 flex-1 text-sm leading-6">
               {notice}
             </p>
@@ -510,9 +471,10 @@ export default function PerformancePage() {
           </div>
 
           <p className="mt-4 text-sm leading-6 text-[var(--muted)]">
-            Live sampling runs only while a session is active.
-            Keep Agoré in the foreground for representative frame
-            measurements. Results are retained in this browser
+            Start a session here, then navigate around Agoré to
+            measure real usage. Collection continues across routes
+            until you explicitly stop it from this page or the
+            Live Performance HUD. Results stay in this browser
             session and are not automatically uploaded.
           </p>
 
@@ -583,6 +545,7 @@ export default function PerformancePage() {
                 size={18}
                 className="text-[var(--accent)]"
               />
+
               <h2 className="font-semibold">
                 Frame sampling details
               </h2>
@@ -639,6 +602,7 @@ export default function PerformancePage() {
             <h2 className="text-xl font-semibold">
               Performance breakdown
             </h2>
+
             <p className="mt-1 text-sm leading-6 text-[var(--muted)]">
               Inspect measured operations and identify what still
               needs direct instrumentation.
@@ -658,9 +622,11 @@ export default function PerformancePage() {
                 <span className="block text-sm font-semibold">
                   Image loading
                 </span>
+
                 <span className="mt-1 block text-xs leading-5 text-[var(--muted)]">
                   Signing and browser resource durations
                 </span>
+
                 <span className="mt-2 block text-sm tabular-nums">
                   Latest: {formatMetricValue(latestImage)}
                 </span>
@@ -681,20 +647,17 @@ export default function PerformancePage() {
                 <p className="text-sm font-semibold">
                   Conversation loading
                 </p>
+
                 <p className="mt-1 text-xs leading-5 text-[var(--muted)]">
-                  Time until messages and controls are usable
+                  Readiness and browser-side API timing measurements.
                 </p>
 
                 <p className="mt-2 text-sm">
                   {conversationMeasurements.length > 0
-                    ? `${conversationMeasurements.length} measurements`
-                    : "Awaiting conversation-specific instrumentation"}
+                    ? `${conversationMeasurements.length} measurements recorded`
+                    : "No conversation measurements in this session yet."}
                 </p>
               </div>
-
-              <span className="rounded-full bg-[var(--surface-muted)] px-2.5 py-1 text-xs text-[var(--muted)]">
-                Next step
-              </span>
             </div>
 
             <div className="flex items-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
@@ -706,11 +669,10 @@ export default function PerformancePage() {
                 <p className="text-sm font-semibold">
                   Navigation readiness
                 </p>
+
                 <p className="mt-1 text-xs leading-5 text-[var(--muted)]">
-                  Time from route change until the page is usable
-                </p>
-                <p className="mt-2 text-sm text-[var(--muted)]">
-                  Route-specific measurement is not connected yet.
+                  Route-specific navigation readiness timing is not
+                  fully instrumented yet.
                 </p>
               </div>
             </div>
@@ -724,9 +686,11 @@ export default function PerformancePage() {
                 <p className="text-sm font-semibold">
                   Contentful paint
                 </p>
+
                 <p className="mt-1 text-xs text-[var(--muted)]">
                   First contentful paint
                 </p>
+
                 <p className="mt-2 text-sm tabular-nums">
                   {formatMetricValue(latestFcp)}
                 </p>
@@ -741,6 +705,7 @@ export default function PerformancePage() {
               <h2 className="text-xl font-semibold">
                 Measurements
               </h2>
+
               <p className="mt-1 text-sm text-[var(--muted)]">
                 {sessionMetrics.length} stored measurements
               </p>
