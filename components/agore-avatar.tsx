@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { SyntheticEvent } from "react";
 
 import { createClient } from "@/lib/supabase/browser";
+import { recordAgorePerformanceMetric } from "@/lib/performance/monitor";
 
 type AgoreAvatarProps = {
   avatarPath?: string | null;
@@ -19,6 +21,12 @@ type CachedAvatarUrl = {
   expiresAt: number;
 };
 
+type AvatarImageTiming = {
+  url: string | null;
+  urlReadyAt: number;
+  completed: boolean;
+};
+
 const supabase = createClient();
 const SIGNED_URL_LIFETIME_SECONDS = 60 * 60;
 const SIGNED_URL_CACHE_TTL_MS = 55 * 60 * 1000;
@@ -28,6 +36,7 @@ const signedAvatarUrlCache = new Map<
   string,
   CachedAvatarUrl
 >();
+
 const pendingAvatarUrlRequests = new Map<
   string,
   Promise<string | null>
@@ -55,11 +64,11 @@ async function getSignedAvatarUrl(
     avatarPath,
     refreshKey,
   );
+
   const now = Date.now();
   const cached = signedAvatarUrlCache.get(cacheKey);
 
   if (cached && cached.expiresAt > now) {
-    // Refresh insertion order so frequently reused avatars stay cached.
     signedAvatarUrlCache.delete(cacheKey);
     signedAvatarUrlCache.set(cacheKey, cached);
     return cached.url;
@@ -118,6 +127,7 @@ async function getSignedAvatarUrl(
     });
 
   pendingAvatarUrlRequests.set(cacheKey, request);
+
   return request;
 }
 
@@ -147,12 +157,15 @@ export default function AgoreAvatar({
   bucketName = "avatars",
   refreshKey,
 }: AgoreAvatarProps) {
-  const [
-    avatarUrl,
-    setAvatarUrl,
-  ] = useState<string | null>(
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(
     null,
   );
+
+  const imageTimingRef = useRef<AvatarImageTiming>({
+    url: null,
+    urlReadyAt: 0,
+    completed: false,
+  });
 
   useEffect(() => {
     let active = true;
@@ -160,8 +173,17 @@ export default function AgoreAvatar({
     async function loadAvatar() {
       if (!avatarPath) {
         setAvatarUrl(null);
+
+        imageTimingRef.current = {
+          url: null,
+          urlReadyAt: 0,
+          completed: false,
+        };
+
         return;
       }
+
+      const startedAt = performance.now();
 
       const url = await getSignedAvatarUrl(
         bucketName,
@@ -169,9 +191,27 @@ export default function AgoreAvatar({
         refreshKey,
       );
 
+      const resolvedAt = performance.now();
+
+      recordAgorePerformanceMetric(
+        "image",
+        "Avatar URL availability",
+        resolvedAt - startedAt,
+        "ms",
+        {
+          success: Boolean(url),
+        },
+      );
+
       if (!active) {
         return;
       }
+
+      imageTimingRef.current = {
+        url,
+        urlReadyAt: resolvedAt,
+        completed: false,
+      };
 
       setAvatarUrl(url);
     }
@@ -181,14 +221,136 @@ export default function AgoreAvatar({
     return () => {
       active = false;
     };
-  }, [
-    avatarPath,
-    bucketName,
-    refreshKey,
-  ]);
+  }, [avatarPath, bucketName, refreshKey]);
 
-  const initials =
-    getInitials(name);
+  async function handleAvatarLoad(
+    event: SyntheticEvent<HTMLImageElement>,
+  ) {
+    const image = event.currentTarget;
+    const timing = imageTimingRef.current;
+    const expectedUrl = timing.url;
+
+    if (
+      !expectedUrl ||
+      timing.completed ||
+      !timing.urlReadyAt
+    ) {
+      return;
+    }
+
+    // Ignore a late load event from an avatar that has since
+    // been replaced by another URL.
+    if (
+      image.currentSrc !== expectedUrl &&
+      image.src !== expectedUrl
+    ) {
+      return;
+    }
+
+    try {
+      if (typeof image.decode === "function") {
+        await image.decode();
+      }
+
+      const latestTiming = imageTimingRef.current;
+
+      if (
+        latestTiming.url !== expectedUrl ||
+        latestTiming.completed
+      ) {
+        return;
+      }
+
+      latestTiming.completed = true;
+
+      const resourceEntries = performance.getEntriesByName(
+        expectedUrl,
+        "resource",
+      );
+
+      const resource =
+        resourceEntries.length > 0
+          ? resourceEntries[
+              resourceEntries.length - 1
+            ] as PerformanceResourceTiming
+          : null;
+
+      recordAgorePerformanceMetric(
+        "image",
+        "Avatar image ready (load + decode)",
+        Math.max(
+          0,
+          performance.now() - latestTiming.urlReadyAt,
+        ),
+        "ms",
+        {
+          success: true,
+          resourceTimingAvailable: resource !== null,
+          resourceDurationMs: resource
+            ? resource.duration
+            : 0,
+          transferSizeBytes: resource
+            ? resource.transferSize
+            : 0,
+        },
+      );
+    } catch {
+      const latestTiming = imageTimingRef.current;
+
+      if (
+        latestTiming.url !== expectedUrl ||
+        latestTiming.completed
+      ) {
+        return;
+      }
+
+      latestTiming.completed = true;
+
+      recordAgorePerformanceMetric(
+        "image",
+        "Avatar image decode failed",
+        Math.max(
+          0,
+          performance.now() - latestTiming.urlReadyAt,
+        ),
+        "ms",
+        {
+          success: false,
+        },
+      );
+    }
+  }
+
+  function handleAvatarError(
+    failedUrl: string | null,
+  ) {
+    const timing = imageTimingRef.current;
+
+    if (
+      !failedUrl ||
+      timing.url !== failedUrl ||
+      timing.completed
+    ) {
+      return;
+    }
+
+    timing.completed = true;
+
+    recordAgorePerformanceMetric(
+      "image",
+      "Avatar image failed to load",
+      Math.max(
+        0,
+        performance.now() - timing.urlReadyAt,
+      ),
+      "ms",
+      {
+        success: false,
+      },
+    );
+  }
+
+  const initials = getInitials(name);
 
   return (
     <span
@@ -203,14 +365,14 @@ export default function AgoreAvatar({
               ? `${name}'s profile photo`
               : "Profile photo")
           }
+          onLoad={handleAvatarLoad}
+          onError={() => handleAvatarError(avatarUrl)}
           className="h-full w-full object-cover"
         />
       ) : (
         <span
           aria-hidden="true"
-          className={
-            textClassName
-          }
+          className={textClassName}
         >
           {initials}
         </span>
