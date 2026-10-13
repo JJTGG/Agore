@@ -5,6 +5,8 @@ import Link from "next/link";
 import {
   ArrowLeft,
   Check,
+  ChevronRight,
+  Gauge,
 } from "lucide-react";
 import {
   useEffect,
@@ -707,6 +709,29 @@ export default function SettingsPage() {
               updateUserSetting("theme", value)
             }
           />
+
+          <Link
+            href="/performance"
+            className="group flex items-center gap-4 rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-5 transition hover:border-[var(--accent)]/40 hover:bg-[var(--surface-soft)] sm:p-6"
+          >
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]">
+              <Gauge size={23} />
+            </span>
+
+            <span className="min-w-0 flex-1">
+              <span className="block text-base font-semibold">
+                Performance Center
+              </span>
+              <span className="mt-1 block text-sm leading-6 text-[var(--muted)]">
+                Measure rendering smoothness, loading time, and responsiveness on this device.
+              </span>
+            </span>
+
+            <ChevronRight
+              size={19}
+              className="shrink-0 text-[var(--muted)] transition group-hover:translate-x-0.5 group-hover:text-[var(--accent)]"
+            />
+          </Link>
 
           <SessionAboutSection
             accountEmail={accountEmail}
