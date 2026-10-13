@@ -1393,6 +1393,122 @@ export function AudioCallHost() {
     };
   }, [context?.conversationId]);
 
+  useEffect(() => {
+    let active = true;
+    let requestInFlight = false;
+    let lastDiscoveredCallId: string | null = null;
+
+    type IncomingCallCandidate = {
+      id: string;
+      conversation_id: string;
+      caller_id: string;
+      callee_id: string;
+      status: string;
+      created_at: string;
+      direction: string;
+      peer: {
+        id: string;
+        display_name: string | null;
+        username: string | null;
+      } | null;
+    };
+
+    async function discoverIncomingCall() {
+      if (
+        !active ||
+        requestInFlight ||
+        callActiveRef.current ||
+        document.visibilityState !== "visible"
+      ) {
+        return;
+      }
+
+      requestInFlight = true;
+
+      try {
+        const response = await fetch("/api/calls?limit=20", {
+          cache: "no-store",
+          headers: { Accept: "application/json" },
+        });
+
+        if (!active || !response.ok) {
+          return;
+        }
+
+        const body = (await response.json()) as {
+          calls?: IncomingCallCandidate[];
+        };
+
+        const now = Date.now();
+        const incoming = (Array.isArray(body.calls) ? body.calls : []).find(
+          (call) => {
+            const createdAt = new Date(call.created_at).getTime();
+            return (
+              call.status === "ringing" &&
+              call.direction === "incoming" &&
+              Boolean(call.conversation_id) &&
+              Boolean(call.caller_id) &&
+              Boolean(call.callee_id) &&
+              Number.isFinite(createdAt) &&
+              now >= createdAt &&
+              now - createdAt < 60_000
+            );
+          },
+        );
+
+        if (!active || !incoming || callActiveRef.current) {
+          return;
+        }
+
+        if (lastDiscoveredCallId === incoming.id) {
+          return;
+        }
+
+        const nextContext: AudioCallControlsProps = {
+          conversationId: incoming.conversation_id,
+          currentUserId: incoming.callee_id,
+          peerUserId: incoming.caller_id,
+          peerDisplayName:
+            incoming.peer?.display_name?.trim() ||
+            incoming.peer?.username?.trim() ||
+            "Agoré user",
+        };
+
+        if (
+          context?.conversationId === nextContext.conversationId &&
+          context?.currentUserId === nextContext.currentUserId &&
+          context?.peerUserId === nextContext.peerUserId
+        ) {
+          lastDiscoveredCallId = incoming.id;
+          return;
+        }
+
+        lastDiscoveredCallId = incoming.id;
+        setContext(nextContext);
+        setAutoStart(false);
+        setLaunchId((value) => value + 1);
+      } catch {
+        // The next polling attempt retries discovery without interrupting calls.
+      } finally {
+        requestInFlight = false;
+      }
+    }
+
+    void discoverIncomingCall();
+
+    const interval = window.setInterval(() => {
+      void discoverIncomingCall();
+    }, 4000);
+
+    window.addEventListener("focus", discoverIncomingCall);
+
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", discoverIncomingCall);
+    };
+  }, [context]);
+
   if (!context) {
     return null;
   }
