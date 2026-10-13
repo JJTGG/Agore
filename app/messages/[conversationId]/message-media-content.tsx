@@ -14,7 +14,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { SyntheticEvent } from "react";
+import type { CSSProperties, SyntheticEvent } from "react";
 
 import { createClient } from "@/lib/supabase/browser";
 import { recordAgorePerformanceMetric } from "@/lib/performance/monitor";
@@ -214,6 +214,35 @@ function isVideoMedia(item: MessageMedia) {
   );
 }
 
+/**
+ * Reserve a predictable frame before media URLs are ready.
+ * Prefer stored dimensions, with sensible fallbacks for older
+ * attachments that do not have dimensions recorded.
+ */
+function getVisualMediaStyle(
+  item: MessageMedia,
+): CSSProperties {
+  const width = item.width;
+  const height = item.height;
+
+  const hasValidDimensions =
+    typeof width === "number" &&
+    typeof height === "number" &&
+    Number.isFinite(width) &&
+    Number.isFinite(height) &&
+    width > 0 &&
+    height > 0;
+
+  return {
+    aspectRatio: hasValidDimensions
+      ? `${width} / ${height}`
+      : isVideoMedia(item)
+        ? "16 / 9"
+        : "4 / 3",
+    maxHeight: "26rem",
+  };
+}
+
 export default function MessageMediaContent({
   media,
   isOwn,
@@ -222,7 +251,7 @@ export default function MessageMediaContent({
     Record<string, string>
   >({});
 
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const [activeViewerId, setActiveViewerId] = useState<
     string | null
@@ -586,6 +615,53 @@ export default function MessageMediaContent({
 
           const isVideo = isVideoMedia(item);
 
+          // Keep an image or video frame mounted at its expected
+          // dimensions while signing is in progress or has failed.
+          if (!signedUrl && (isImage || isVideo)) {
+            return (
+              <div
+                key={item.id}
+                role="status"
+                aria-label={
+                  loading
+                    ? `Loading ${item.file_name}`
+                    : `${item.file_name} unavailable`
+                }
+                style={getVisualMediaStyle(item)}
+                className={`relative block w-full max-w-full overflow-hidden rounded-2xl border border-black/5 ${
+                  isVideo ? "bg-black" : "bg-black/5"
+                }`}
+              >
+                <div
+                  className={`absolute inset-0 flex flex-col items-center justify-center gap-2 ${
+                    isVideo
+                      ? "bg-black text-white/70"
+                      : isOwn
+                        ? "bg-white/10 text-white/70"
+                        : "bg-[var(--surface-muted)] text-[var(--muted)]"
+                  }`}
+                >
+                  {loading ? (
+                    <Loader2
+                      size={20}
+                      className="animate-spin"
+                    />
+                  ) : isVideo ? (
+                    <Film size={22} />
+                  ) : (
+                    <ImageIcon size={22} />
+                  )}
+
+                  <span className="px-3 text-center text-[11px]">
+                    {loading
+                      ? "Loading media…"
+                      : "Media unavailable"}
+                  </span>
+                </div>
+              </div>
+            );
+          }
+
           if (!signedUrl) {
             return (
               <div
@@ -608,10 +684,6 @@ export default function MessageMediaContent({
                       size={16}
                       className="animate-spin"
                     />
-                  ) : isImage ? (
-                    <ImageIcon size={18} />
-                  ) : isVideo ? (
-                    <Film size={18} />
                   ) : (
                     <FileText size={18} />
                   )}
@@ -654,7 +726,8 @@ export default function MessageMediaContent({
                 }
                 aria-label={`View ${item.file_name}`}
                 aria-haspopup="dialog"
-                className="group/media block max-w-full overflow-hidden rounded-2xl border border-black/5 bg-black/5 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+                style={getVisualMediaStyle(item)}
+                className="group/media relative block w-full max-w-full overflow-hidden rounded-2xl border border-black/5 bg-black/5 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
               >
                 <img
                   src={signedUrl}
@@ -667,7 +740,7 @@ export default function MessageMediaContent({
                   onError={() => {
                     recordImageLoadFailure(item.id, "load");
                   }}
-                  className="max-h-[26rem] w-auto max-w-full object-contain transition duration-200 group-hover/media:opacity-90"
+                  className="absolute inset-0 h-full w-full object-contain transition duration-200 group-hover/media:opacity-90"
                 />
               </button>
             );
@@ -675,18 +748,20 @@ export default function MessageMediaContent({
 
           if (isVideo) {
             return (
-              <div
-                key={item.id}
-                className="max-w-full overflow-hidden rounded-2xl border border-black/5 bg-black"
-              >
-                <video
-                  src={signedUrl}
-                  controls
-                  playsInline
-                  preload="metadata"
-                  className="max-h-[26rem] w-full bg-black object-contain"
-                  aria-label={`Play ${item.file_name}`}
-                />
+              <div key={item.id} className="w-full">
+                <div
+                  style={getVisualMediaStyle(item)}
+                  className="relative w-full max-w-full overflow-hidden rounded-2xl border border-black/5 bg-black"
+                >
+                  <video
+                    src={signedUrl}
+                    controls
+                    playsInline
+                    preload="metadata"
+                    aria-label={`Play ${item.file_name}`}
+                    className="absolute inset-0 h-full w-full bg-black object-contain"
+                  />
+                </div>
 
                 <div className="flex items-center gap-2 px-3 py-2">
                   <Film
