@@ -352,7 +352,7 @@ export default function PostInteractions({
       const [
         reactionsResult,
         repostsResult,
-        commentCountResponse,
+        commentCountResult,
       ] = await Promise.all([
         supabase
           .from("post_reactions")
@@ -364,10 +364,10 @@ export default function PostInteractions({
           .select("id, user_id")
           .eq("post_id", postId),
 
-        fetch(
-          `/api/posts/${encodeURIComponent(postId)}/comments?limit=1`,
-          { cache: "no-store" },
-        ),
+        supabase
+          .from("comments")
+          .select("id", { count: "exact", head: true })
+          .eq("post_id", postId),
       ]);
 
       if (reactionsResult.error) {
@@ -378,16 +378,8 @@ export default function PostInteractions({
         throw repostsResult.error;
       }
 
-      const commentCountData =
-        (await commentCountResponse.json().catch(() => null)) as
-          | CommentsResponse
-          | null;
-
-      if (!commentCountResponse.ok) {
-        throw new Error(
-          commentCountData?.error ??
-            "Unable to load comment count.",
-        );
+      if (commentCountResult.error) {
+        throw commentCountResult.error;
       }
 
       const nextCounts: Record<ReactionType, number> = {
@@ -420,11 +412,7 @@ export default function PostInteractions({
       setHasReposted(
         repostRows.some((repost) => repost.user_id === user.id),
       );
-      setCommentCount(
-        typeof commentCountData?.commentCount === "number"
-          ? commentCountData.commentCount
-          : 0,
-      );
+      setCommentCount(commentCountResult.count ?? 0);
     } catch (requestError) {
       console.error(
         "Failed to load Agore post interactions:",
