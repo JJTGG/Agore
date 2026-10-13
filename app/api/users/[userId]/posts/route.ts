@@ -1,4 +1,3 @@
-
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -82,6 +81,8 @@ export async function GET(
     );
   }
 
+  const { limit, offset } = parsedQuery.data;
+
   const {
     data: profile,
     error: profileError,
@@ -143,21 +144,98 @@ export async function GET(
     );
   }
 
-  const { limit, offset } = parsedQuery.data;
-
+  // Read the pin through the authenticated client so table RLS
+  // continues to control which profile pins the viewer can see.
   const {
-    data: posts,
-    error: postsError,
-    count,
+    data: pinRecord,
+    error: pinError,
   } = await supabase
+    .from("profile_pinned_posts")
+    .select("post_id")
+    .eq("user_id", targetUserId)
+    .maybeSingle();
+
+  if (pinError) {
+    console.error(
+      "Failed to load Agore profile pin:",
+      pinError,
+    );
+
+    return NextResponse.json(
+      { error: "Unable to load profile posts." },
+      { status: 500 },
+    );
+  }
+
+  // Validate that the pinned post still belongs to this profile
+  // and is not soft-deleted before moving it to the top.
+  let pinnedPost = null;
+
+  if (pinRecord?.post_id) {
+    const {
+      data: candidatePost,
+      error: pinnedPostError,
+    } = await supabase
+      .from("posts")
+      .select(postSelect)
+      .eq("id", pinRecord.post_id)
+      .eq("author_id", targetUserId)
+      .is("deleted_at", null)
+      .maybeSingle();
+
+    if (pinnedPostError) {
+      console.error(
+        "Failed to load Agore pinned post:",
+        pinnedPostError,
+      );
+
+      return NextResponse.json(
+        { error: "Unable to load profile posts." },
+        { status: 500 },
+      );
+    }
+
+    pinnedPost = candidatePost;
+  }
+
+  const pinnedPostId = pinnedPost?.id ?? null;
+
+  // The pin takes one displayed slot. Adjust the underlying
+  // post offset after the first page so pagination remains stable.
+  const databaseOffset =
+    pinnedPostId && offset > 0
+      ? offset - 1
+      : offset;
+
+  const remainingQuery = supabase
     .from("posts")
     .select(postSelect, { count: "exact" })
     .eq("author_id", targetUserId)
-    .is("deleted_at", null)
+    .is("deleted_at", null);
+
+  if (pinnedPostId) {
+    remainingQuery.neq("id", pinnedPostId);
+  }
+
+  const rangeStart = databaseOffset;
+
+  // Reserve one slot for the pin on the first page.
+  // For limit=1, fetching one remaining row still gives us
+  // an exact count; that row is not added to the response.
+  const rangeEnd =
+    pinnedPostId && offset === 0
+      ? Math.max(0, limit - 2)
+      : databaseOffset + limit - 1;
+
+  const {
+    data: remainingPosts,
+    error: postsError,
+    count,
+  } = await remainingQuery
     .order("created_at", {
       ascending: false,
     })
-    .range(offset, offset + limit - 1);
+    .range(rangeStart, rangeEnd);
 
   if (postsError) {
     console.error(
@@ -171,29 +249,63 @@ export async function GET(
     );
   }
 
-  const normalizedPosts = (posts ?? []).map((post) => ({
-    ...post,
-    post_media: Array.isArray(post.post_media)
-      ? [...post.post_media].sort((a, b) => {
-          if (a.sort_order !== b.sort_order) {
-            return a.sort_order - b.sort_order;
-          }
+  function normalizePostMedia<T extends {
+    post_media?: Array<{
+      sort_order: number | null;
+      created_at: string;
+    }> | null;
+  }>(post: T) {
+    return {
+      ...post,
+      post_media: Array.isArray(post.post_media)
+        ? [...post.post_media].sort((a, b) => {
+            if (a.sort_order !== b.sort_order) {
+              return (
+                (a.sort_order ?? 0) -
+                (b.sort_order ?? 0)
+              );
+            }
 
-          return (
-            new Date(a.created_at).getTime() -
-            new Date(b.created_at).getTime()
-          );
-        })
-      : [],
-  }));
+            return (
+              new Date(a.created_at).getTime() -
+              new Date(b.created_at).getTime()
+            );
+          })
+        : [],
+    };
+  }
 
-  const total = count ?? offset + normalizedPosts.length;
+  const normalizedRemainingPosts = (
+    remainingPosts ?? []
+  ).map(normalizePostMedia);
+
+  const normalizedPinnedPost = pinnedPost
+    ? normalizePostMedia(pinnedPost)
+    : null;
+
+  const pagePosts =
+    normalizedPinnedPost && offset === 0
+      ? [
+          normalizedPinnedPost,
+          ...normalizedRemainingPosts.slice(
+            0,
+            Math.max(0, limit - 1),
+          ),
+        ]
+      : normalizedRemainingPosts;
+
+  const remainingTotal =
+    count ?? databaseOffset + normalizedRemainingPosts.length;
+
+  const total =
+    remainingTotal + (normalizedPinnedPost ? 1 : 0);
 
   return NextResponse.json({
-    posts: normalizedPosts,
+    posts: pagePosts,
+    pinned_post_id: normalizedPinnedPost?.id ?? null,
     total,
     limit,
     offset,
-    has_more: offset + normalizedPosts.length < total,
+    has_more: offset + pagePosts.length < total,
   });
 }
