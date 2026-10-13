@@ -323,9 +323,10 @@ export default function PostInteractions({
 
     try {
       const {
-        data: { user },
+        data: { session },
         error: authError,
-      } = await supabase.auth.getUser();
+      } = await supabase.auth.getSession();
+      const user = session?.user ?? null;
 
       if (authError) {
         throw authError;
