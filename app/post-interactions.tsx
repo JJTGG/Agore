@@ -37,6 +37,30 @@ type ReactionType =
   | "sad"
   | "angry";
 
+export type PostInteractionSummary = {
+  viewerId: string;
+  reactionCounts: Record<ReactionType, number>;
+  myReaction: ReactionType | null;
+  repostCount: number;
+  hasReposted: boolean;
+  commentCount: number;
+};
+
+type PostInteractionSummaryRow = {
+  post_id: string;
+  like_count: number | string;
+  love_count: number | string;
+  laugh_count: number | string;
+  care_count: number | string;
+  wow_count: number | string;
+  sad_count: number | string;
+  angry_count: number | string;
+  my_reaction: string | null;
+  repost_count: number | string;
+  has_reposted: boolean;
+  comment_count: number | string;
+};
+
 type ReactionRow = {
   reaction_type: ReactionType;
   user_id: string;
@@ -103,6 +127,7 @@ type PostInteractionsProps = {
   initialContent: string;
   isOwner: boolean;
   commentsOpenByDefault?: boolean;
+  initialInteractionSummary?: PostInteractionSummary | null;
   onPostUpdated?: (
     postId: string,
     content: string,
@@ -205,29 +230,39 @@ export default function PostInteractions({
   initialContent,
   isOwner,
   commentsOpenByDefault = false,
+  initialInteractionSummary,
   onPostUpdated,
   onPostDeleted,
 }: PostInteractionsProps) {
-  const [viewerId, setViewerId] = useState<string | null>(null);
+  const [viewerId, setViewerId] = useState<string | null>(
+    initialInteractionSummary?.viewerId ?? null,
+  );
 
   const [reactionCounts, setReactionCounts] = useState<
     Record<ReactionType, number>
   >({
-    like: 0,
-    love: 0,
-    laugh: 0,
-    care: 0,
-    wow: 0,
-    sad: 0,
-    angry: 0,
+    like: initialInteractionSummary?.reactionCounts.like ?? 0,
+    love: initialInteractionSummary?.reactionCounts.love ?? 0,
+    laugh: initialInteractionSummary?.reactionCounts.laugh ?? 0,
+    care: initialInteractionSummary?.reactionCounts.care ?? 0,
+    wow: initialInteractionSummary?.reactionCounts.wow ?? 0,
+    sad: initialInteractionSummary?.reactionCounts.sad ?? 0,
+    angry: initialInteractionSummary?.reactionCounts.angry ?? 0,
   });
 
-  const [myReaction, setMyReaction] =
-    useState<ReactionType | null>(null);
+  const [myReaction, setMyReaction] = useState<ReactionType | null>(
+    initialInteractionSummary?.myReaction ?? null,
+  );
 
-  const [repostCount, setRepostCount] = useState(0);
-  const [hasReposted, setHasReposted] = useState(false);
-  const [commentCount, setCommentCount] = useState(0);
+  const [repostCount, setRepostCount] = useState(
+    initialInteractionSummary?.repostCount ?? 0,
+  );
+  const [hasReposted, setHasReposted] = useState(
+    initialInteractionSummary?.hasReposted ?? false,
+  );
+  const [commentCount, setCommentCount] = useState(
+    initialInteractionSummary?.commentCount ?? 0,
+  );
 
   const [reactionPickerOpen, setReactionPickerOpen] =
     useState(false);
@@ -326,100 +361,66 @@ export default function PostInteractions({
         data: { session },
         error: authError,
       } = await supabase.auth.getSession();
-      const user = session?.user ?? null;
 
       if (authError) {
         throw authError;
       }
 
+      const user = session?.user ?? null;
       setViewerId(user?.id ?? null);
 
       if (!user) {
         setReactionCounts({
-          like: 0,
-          love: 0,
-          laugh: 0,
-          care: 0,
-          wow: 0,
-          sad: 0,
-          angry: 0,
+          like: 0, love: 0, laugh: 0, care: 0, wow: 0, sad: 0, angry: 0,
         });
         setMyReaction(null);
         setRepostCount(0);
         setHasReposted(false);
+        setCommentCount(0);
         return;
       }
 
-      const [
-        reactionsResult,
-        repostsResult,
-        commentCountResult,
-      ] = await Promise.all([
-        supabase
-          .from("post_reactions")
-          .select("reaction_type, user_id")
-          .eq("post_id", postId),
-
-        supabase
-          .from("reposts")
-          .select("id, user_id")
-          .eq("post_id", postId),
-
-        supabase
-          .from("comments")
-          .select("id", { count: "exact", head: true })
-          .eq("post_id", postId),
-      ]);
-
-      if (reactionsResult.error) {
-        throw reactionsResult.error;
-      }
-
-      if (repostsResult.error) {
-        throw repostsResult.error;
-      }
-
-      if (commentCountResult.error) {
-        throw commentCountResult.error;
-      }
-
-      const nextCounts: Record<ReactionType, number> = {
-        like: 0,
-        love: 0,
-        laugh: 0,
-        care: 0,
-        wow: 0,
-        sad: 0,
-        angry: 0,
-      };
-
-      let nextMyReaction: ReactionType | null = null;
-
-      for (const reaction of (
-        reactionsResult.data ?? []
-      ) as ReactionRow[]) {
-        nextCounts[reaction.reaction_type] += 1;
-
-        if (reaction.user_id === user.id) {
-          nextMyReaction = reaction.reaction_type;
-        }
-      }
-
-      const repostRows = repostsResult.data ?? [];
-
-      setReactionCounts(nextCounts);
-      setMyReaction(nextMyReaction);
-      setRepostCount(repostRows.length);
-      setHasReposted(
-        repostRows.some((repost) => repost.user_id === user.id),
+      const { data, error } = await supabase.rpc(
+        "agore_post_interaction_summaries",
+        { p_post_ids: [postId] },
       );
-      setCommentCount(commentCountResult.count ?? 0);
+
+      if (error) {
+        throw error;
+      }
+
+      const rows = (data ?? []) as unknown as PostInteractionSummaryRow[];
+      const summary = rows.find((row) => row.post_id === postId);
+
+      if (!summary) {
+        setReactionCounts({
+          like: 0, love: 0, laugh: 0, care: 0, wow: 0, sad: 0, angry: 0,
+        });
+        setMyReaction(null);
+        setRepostCount(0);
+        setHasReposted(false);
+        setCommentCount(0);
+        return;
+      }
+
+      setReactionCounts({
+        like: Number(summary.like_count ?? 0),
+        love: Number(summary.love_count ?? 0),
+        laugh: Number(summary.laugh_count ?? 0),
+        care: Number(summary.care_count ?? 0),
+        wow: Number(summary.wow_count ?? 0),
+        sad: Number(summary.sad_count ?? 0),
+        angry: Number(summary.angry_count ?? 0),
+      });
+      setMyReaction(
+        REACTIONS.some((reaction) => reaction.type === summary.my_reaction)
+          ? (summary.my_reaction as ReactionType)
+          : null,
+      );
+      setRepostCount(Number(summary.repost_count ?? 0));
+      setHasReposted(Boolean(summary.has_reposted));
+      setCommentCount(Number(summary.comment_count ?? 0));
     } catch (requestError) {
-      console.error(
-        "Failed to load Agore post interactions:",
-        requestError,
-      );
-
       setError(
         requestError instanceof Error
           ? requestError.message
@@ -429,8 +430,19 @@ export default function PostInteractions({
   }, [postId]);
 
   useEffect(() => {
-    void loadInteractionState();
-  }, [loadInteractionState]);
+    if (!initialInteractionSummary) {
+      void loadInteractionState();
+      return;
+    }
+
+    setViewerId(initialInteractionSummary.viewerId);
+    setReactionCounts(initialInteractionSummary.reactionCounts);
+    setMyReaction(initialInteractionSummary.myReaction);
+    setRepostCount(initialInteractionSummary.repostCount);
+    setHasReposted(initialInteractionSummary.hasReposted);
+    setCommentCount(initialInteractionSummary.commentCount);
+    setError("");
+  }, [loadInteractionState, initialInteractionSummary]);
 
   useEffect(() => {
     let cancelled = false;
