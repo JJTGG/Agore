@@ -253,19 +253,39 @@ async function attachMessageMedia(
   }));
 }
 
+/**
+ * Fetch media and sender profiles concurrently.
+ *
+ * The media and profile queries are independent, so neither needs
+ * to wait for the other. We filter unusable messages after both
+ * queries complete, preserving the existing response behavior.
+ */
 async function buildMessages(
   admin: ReturnType<typeof createAdminClient>,
   messages: MessageRow[],
 ) {
-  const withMedia = await attachMessageMedia(admin, messages);
+  const [messagesWithMedia, messagesWithSenders] =
+    await Promise.all([
+      attachMessageMedia(admin, messages),
+      attachSenderProfiles(admin, messages),
+    ]);
 
-  const usableMessages = withMedia.filter(
-    (message) =>
-      Boolean(message.content?.trim()) ||
-      message.media.length > 0,
+  const senderByMessageId = new Map(
+    messagesWithSenders.map(
+      (message) => [message.id, message.sender] as const,
+    ),
   );
 
-  return attachSenderProfiles(admin, usableMessages);
+  return messagesWithMedia
+    .filter(
+      (message) =>
+        Boolean(message.content?.trim()) ||
+        message.media.length > 0,
+    )
+    .map((message) => ({
+      ...message,
+      sender: senderByMessageId.get(message.id) ?? null,
+    }));
 }
 
 async function notifyConversationMembers(
