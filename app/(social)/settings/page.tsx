@@ -1,4 +1,3 @@
-
 "use client";
 
 import Link from "next/link";
@@ -292,7 +291,8 @@ export default function SettingsPage() {
               : DEFAULT_NOTIFICATION_PREFERENCES.group_activity,
 
           mentions:
-            typeof storedNotifications?.mentions === "boolean"
+            typeof storedNotifications?.mentions ===
+            "boolean"
               ? storedNotifications.mentions
               : DEFAULT_NOTIFICATION_PREFERENCES.mentions,
         };
@@ -538,12 +538,12 @@ export default function SettingsPage() {
 
   if (loading) {
     return (
-      <main className="min-w-0 bg-[var(--background)] px-0 py-4 text-[var(--foreground)] sm:py-6">
+      <main className="min-w-0 bg-[var(--background)] px-0 py-6 text-[var(--foreground)] sm:py-8">
         <div className="mx-auto max-w-4xl">
-          <div className="animate-pulse space-y-6">
+          <div className="animate-pulse space-y-8 sm:space-y-10">
             <div className="h-10 w-24 rounded-full bg-[var(--surface-muted)]" />
 
-            <div className="space-y-3">
+            <div className="space-y-4">
               <div className="h-3 w-20 rounded-full bg-[var(--surface-muted)]" />
               <div className="h-10 w-56 rounded bg-[var(--surface-muted)]" />
               <div className="h-4 w-80 max-w-full rounded bg-[var(--surface-muted)]" />
@@ -567,24 +567,24 @@ export default function SettingsPage() {
       !notificationPreferences)
   ) {
     return (
-      <main className="min-w-0 bg-[var(--background)] px-0 py-4 text-[var(--foreground)] sm:py-6">
+      <main className="min-w-0 bg-[var(--background)] px-0 py-6 text-[var(--foreground)] sm:py-8">
         <div className="mx-auto max-w-2xl">
           <Link
             href="/home"
-            className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm font-medium"
+            className="inline-flex min-h-11 items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm font-medium"
           >
             <ArrowLeft size={16} />
             Back to home
           </Link>
 
-          <section className="mt-8 rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-6 sm:p-8">
+          <section className="mt-10 rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-6 sm:p-9">
             <h1 className="text-xl font-semibold">
               Settings unavailable
             </h1>
 
             <p
               role="alert"
-              className="mt-3 text-sm leading-6 text-[var(--danger)]"
+              className="mt-4 text-sm leading-7 text-[var(--danger)]"
             >
               {error}
             </p>
@@ -592,7 +592,7 @@ export default function SettingsPage() {
             <button
               type="button"
               onClick={() => window.location.reload()}
-              className="mt-5 rounded-full bg-[var(--accent)] px-5 py-2.5 text-sm font-semibold text-white"
+              className="mt-7 min-h-11 rounded-full bg-[var(--accent)] px-5 py-2.5 text-sm font-semibold text-white"
             >
               Retry
             </button>
@@ -613,26 +613,26 @@ export default function SettingsPage() {
 
   return (
     <main className="min-w-0 bg-[var(--background)] text-[var(--foreground)]">
-      <div className="mx-auto w-full max-w-4xl px-0 pb-10">
-        <section className="py-9 sm:py-12">
-          <div className="flex items-start justify-between gap-6">
-            <div>
+      <div className="mx-auto w-full max-w-4xl px-0 pb-12 sm:pb-16">
+        <section className="py-12 sm:py-16">
+          <div className="flex items-start justify-between gap-5 sm:gap-8">
+            <div className="min-w-0">
               <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--accent)]">
                 Control your space
               </p>
 
-              <h1 className="mt-3 text-4xl font-semibold tracking-[-0.055em] sm:text-5xl">
+              <h1 className="mt-4 text-4xl font-semibold tracking-[-0.055em] sm:text-5xl">
                 Settings
               </h1>
 
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--muted)] sm:text-base sm:leading-7">
+              <p className="mt-4 max-w-xl text-sm leading-7 text-[var(--muted)] sm:text-base sm:leading-8">
                 Manage your account, protect your privacy,
                 choose your appearance, and decide which
                 supported activities deserve your attention.
               </p>
             </div>
 
-            <div className="hidden items-center gap-3 sm:flex">
+            <div className="hidden shrink-0 items-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-3 sm:flex">
               <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--accent-soft)] text-sm font-bold text-[var(--accent)]">
                 {initials}
               </span>
@@ -642,7 +642,7 @@ export default function SettingsPage() {
                   {profile?.display_name ?? "Agoré user"}
                 </p>
 
-                <p className="mt-0.5 max-w-44 truncate text-xs text-[var(--muted)]">
+                <p className="mt-1 max-w-44 truncate text-xs text-[var(--muted)]">
                   @{profile?.username ?? "unknown"}
                 </p>
               </div>
@@ -652,9 +652,9 @@ export default function SettingsPage() {
           {error ? (
             <div
               role="alert"
-              className="mt-6 rounded-2xl border border-[var(--danger)]/30 bg-[var(--danger-soft)] px-4 py-3"
+              className="mt-8 rounded-2xl border border-[var(--danger)]/30 bg-[var(--danger-soft)] px-5 py-4"
             >
-              <p className="text-sm leading-6 text-[var(--danger)]">
+              <p className="text-sm leading-7 text-[var(--danger)]">
                 {error}
               </p>
             </div>
@@ -663,18 +663,18 @@ export default function SettingsPage() {
           {success ? (
             <div
               role="status"
-              className="mt-6 flex items-start gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm leading-6"
+              className="mt-8 flex items-start gap-3 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-5 py-4 text-sm leading-7"
             >
               <Check
-                size={16}
-                className="mt-0.5 shrink-0 text-[var(--accent)]"
+                size={17}
+                className="mt-1 shrink-0 text-[var(--accent)]"
               />
               <p>{success}</p>
             </div>
           ) : null}
         </section>
 
-        <div className="space-y-5 sm:space-y-6">
+        <div className="space-y-8 sm:space-y-10 lg:space-y-12">
           <AccountProfileSection
             profile={profile}
             accountEmail={accountEmail}
@@ -710,28 +710,36 @@ export default function SettingsPage() {
             }
           />
 
-          <Link
-            href="/performance"
-            className="group flex items-center gap-4 rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-5 transition hover:border-[var(--accent)]/40 hover:bg-[var(--surface-soft)] sm:p-6"
-          >
-            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]">
-              <Gauge size={23} />
-            </span>
+          <section className="border-t border-[var(--border)] pt-8 sm:pt-10">
+            <p className="mb-4 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+              Diagnostics
+            </p>
 
-            <span className="min-w-0 flex-1">
-              <span className="block text-base font-semibold">
-                Performance Center
+            <Link
+              href="/performance"
+              className="group flex items-center gap-4 rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-5 transition hover:border-[var(--accent)]/40 hover:bg-[var(--surface-soft)] sm:gap-5 sm:p-7"
+            >
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)] sm:h-14 sm:w-14">
+                <Gauge size={24} />
               </span>
-              <span className="mt-1 block text-sm leading-6 text-[var(--muted)]">
-                Measure rendering smoothness, loading time, and responsiveness on this device.
-              </span>
-            </span>
 
-            <ChevronRight
-              size={19}
-              className="shrink-0 text-[var(--muted)] transition group-hover:translate-x-0.5 group-hover:text-[var(--accent)]"
-            />
-          </Link>
+              <span className="min-w-0 flex-1">
+                <span className="block text-base font-semibold sm:text-lg">
+                  Performance Center
+                </span>
+
+                <span className="mt-2 block text-sm leading-7 text-[var(--muted)]">
+                  Measure rendering smoothness, loading time,
+                  and responsiveness on this device.
+                </span>
+              </span>
+
+              <ChevronRight
+                size={20}
+                className="shrink-0 text-[var(--muted)] transition group-hover:translate-x-0.5 group-hover:text-[var(--accent)]"
+              />
+            </Link>
+          </section>
 
           <SessionAboutSection
             accountEmail={accountEmail}
@@ -739,7 +747,7 @@ export default function SettingsPage() {
           />
         </div>
 
-        <footer className="mt-10 flex flex-col gap-2 border-t border-[var(--border)] py-6 text-xs text-[var(--muted)] sm:flex-row sm:items-center sm:justify-between">
+        <footer className="mt-14 flex flex-col gap-3 border-t border-[var(--border)] py-8 text-xs text-[var(--muted)] sm:mt-16 sm:flex-row sm:items-center sm:justify-between">
           <p>Agoré · Your social space.</p>
 
           <Link
