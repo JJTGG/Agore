@@ -1,4 +1,3 @@
-
 "use client";
 
 export type AgoreMetricCategory =
@@ -80,6 +79,7 @@ const recordedDocumentTimings = new Set<string>();
 const recordedPaintNames = new Set<string>();
 
 let collectionUsers = 0;
+let collectionStartedAt: number | null = null;
 let documentLoadHandler: (() => void) | null = null;
 
 function isBrowser(): boolean {
@@ -549,6 +549,16 @@ function addObserver(
 
   const observer = new PerformanceObserver((list) => {
     for (const entry of list.getEntries()) {
+      // Buffered observers can replay old entries. Keep them out
+      // of this collection session, even when the browser provides
+      // them immediately after observe() is called.
+      if (
+        collectionStartedAt === null ||
+        entry.startTime < collectionStartedAt
+      ) {
+        continue;
+      }
+
       if (!isNewPerformanceEntry(entry)) {
         continue;
       }
@@ -692,10 +702,15 @@ function startObservers(): void {
     },
   );
 
-  recordDocumentTimings();
-
+  // A completed document navigation is historical if the user
+  // starts measuring after the page has loaded. Only capture these
+  // timings when the load event is still pending at session start.
   if (document.readyState !== "complete") {
-    documentLoadHandler = recordDocumentTimings;
+    documentLoadHandler = () => {
+      if (collectionStartedAt !== null) {
+        recordDocumentTimings();
+      }
+    };
 
     window.addEventListener("load", documentLoadHandler, {
       once: true,
@@ -706,6 +721,10 @@ function startObservers(): void {
 export function startAgorePerformanceCollection(): () => void {
   if (!isBrowser()) {
     return () => undefined;
+  }
+
+  if (collectionUsers === 0) {
+    collectionStartedAt = performance.now();
   }
 
   collectionUsers += 1;
@@ -735,6 +754,8 @@ export function startAgorePerformanceCollection(): () => void {
         window.removeEventListener("load", documentLoadHandler);
         documentLoadHandler = null;
       }
+
+      collectionStartedAt = null;
     }
   };
 }
