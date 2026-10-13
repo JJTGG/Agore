@@ -95,7 +95,7 @@ export function useUnreadIndicators() {
 
     const interval = window.setInterval(
       refreshWhenVisible,
-      30_000,
+      60_000,
     );
 
     window.addEventListener("focus", refreshWhenVisible);
