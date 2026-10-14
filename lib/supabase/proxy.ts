@@ -1,3 +1,4 @@
+
 import { createServerClient } from "@supabase/ssr";
 import {
   NextResponse,
@@ -90,6 +91,98 @@ export async function updateSession(
     "string"
       ? claimsData.claims.sub
       : null;
+
+  const pathname = request.nextUrl.pathname;
+  const isApiRequest =
+    pathname.startsWith("/api/");
+  const isAuthApiRequest =
+    pathname === "/api/auth" ||
+    pathname.startsWith("/api/auth/");
+
+  /*
+   * Restrict API access for accounts that are not active.
+   * Auth endpoints remain available for authentication
+   * and account recovery flows.
+   *
+   * A missing profile is not treated as a restricted
+   * account because new users may still need onboarding.
+   */
+  if (
+    userId &&
+    isApiRequest &&
+    !isAuthApiRequest
+  ) {
+    const {
+      data: profile,
+      error: profileError,
+    } = await supabase
+      .from("profiles")
+      .select("account_status")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (profileError) {
+      console.error(
+        "Unable to verify Agore API account status:",
+        profileError,
+      );
+
+      const headers = new Headers(
+        response.headers,
+      );
+
+      headers.set(
+        "content-type",
+        "application/json",
+      );
+      headers.set(
+        "cache-control",
+        "no-store",
+      );
+
+      return new NextResponse(
+        JSON.stringify({
+          error:
+            "Account access could not be verified. Please try again.",
+          code: "ACCOUNT_STATUS_UNAVAILABLE",
+        }),
+        {
+          status: 503,
+          headers,
+        },
+      );
+    }
+
+    if (
+      profile &&
+      profile.account_status !== "active"
+    ) {
+      const headers = new Headers(
+        response.headers,
+      );
+
+      headers.set(
+        "content-type",
+        "application/json",
+      );
+      headers.set(
+        "cache-control",
+        "no-store",
+      );
+
+      return new NextResponse(
+        JSON.stringify({
+          error:
+            "This account cannot currently access Agoré.",
+          code: "ACCOUNT_RESTRICTED",
+        }),
+        {
+          status: 403,
+          headers,
+        },
+      );
+    }
+  }
 
   const bucket =
     getAgoreRateLimitBucket(
