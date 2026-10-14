@@ -1,3 +1,4 @@
+
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -33,12 +34,16 @@ export default async function SocialLayout({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("display_name, username, avatar_path")
+    .select("display_name, username, avatar_path, account_status")
     .eq("id", user.id)
     .maybeSingle();
 
   if (!profile) {
     redirect("/onboarding");
+  }
+
+  if (profile.account_status !== "active") {
+    redirect("/account-disabled");
   }
 
   let hasAdminAccess = false;
