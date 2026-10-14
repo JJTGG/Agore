@@ -1,3 +1,4 @@
+
 {
   "name": "agore",
   "version": "0.1.0",
@@ -7,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "tsc --ignoreConfig --target ES2022 --module Node16 --moduleResolution Node16 --types node --esModuleInterop --strict --skipLibCheck --rootDir . --outDir node_modules/.agore-tests tests/activity-visibility.test.ts tests/rate-limit.test.ts lib/activity/visibility.ts lib/security/rate-limit.ts && node --test node_modules/.agore-tests/tests/activity-visibility.test.js node_modules/.agore-tests/tests/rate-limit.test.js"
+    "test": "tsc --ignoreConfig --target ES2022 --module Node16 --moduleResolution Node16 --types node --esModuleInterop --strict --skipLibCheck --rootDir . --outDir node_modules/.agore-tests tests/activity-visibility.test.ts tests/rate-limit.test.ts lib/activity/visibility.ts lib/security/rate-limit.ts && node --test \"node_modules/.agore-tests/tests/*.test.js\""
   },
   "dependencies": {
     "@supabase/ssr": "0.12.7",
