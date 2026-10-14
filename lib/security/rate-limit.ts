@@ -1,3 +1,4 @@
+
 import type { NextRequest } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -32,7 +33,10 @@ export function getAgoreRateLimitBucket(
     return null;
   }
 
-  if (pathname.startsWith("/api/auth/")) {
+  if (
+    pathname === "/api/auth" ||
+    pathname.startsWith("/api/auth/")
+  ) {
     return null;
   }
 
