@@ -1,3 +1,4 @@
+
 "use client";
 
 import {
@@ -14,6 +15,8 @@ import {
   MessageCircle,
   FileText,
   Clock3,
+  Pin,
+  PinOff,
 } from "lucide-react";
 
 import AgoreAvatar from "@/components/agore-avatar";
@@ -64,6 +67,7 @@ type ProfilePostsProps = {
 
 type PostsResponse = {
   posts?: ProfilePost[];
+  pinned_post_id?: string | null;
   error?: string;
   total?: number;
   limit?: number;
@@ -155,7 +159,8 @@ const PROFILE_REACTION_TYPES = [
   "angry",
 ] as const;
 
-type ProfileReactionType = (typeof PROFILE_REACTION_TYPES)[number];
+type ProfileReactionType =
+  (typeof PROFILE_REACTION_TYPES)[number];
 
 function createEmptyInteractionSummary(
   viewerId: string,
@@ -209,13 +214,24 @@ function mapInteractionSummary(
 function PostCard({
   post,
   viewerId,
+  profileUserId,
+  pinnedPostId,
+  pinLoadingPostId,
   interactionSummary,
+  onTogglePin,
   onPostUpdated,
   onPostDeleted,
 }: {
   post: ProfilePost;
   viewerId: string | null;
-  interactionSummary: PostInteractionSummary | null | undefined;
+  profileUserId: string;
+  pinnedPostId: string | null;
+  pinLoadingPostId: string | null;
+  interactionSummary:
+    | PostInteractionSummary
+    | null
+    | undefined;
+  onTogglePin: (postId: string) => void;
   onPostUpdated: (
     postId: string,
     updatedContent: string,
@@ -226,6 +242,15 @@ function PostCard({
     viewerId !== null &&
     viewerId === post.author_id;
 
+  const canManagePin =
+    viewerId !== null &&
+    viewerId === profileUserId &&
+    isOwner;
+
+  const isPinned = pinnedPostId === post.id;
+  const isPinActionLoading =
+    pinLoadingPostId === post.id;
+
   const displayName =
     post.profiles?.display_name ?? "Agoré user";
 
@@ -234,6 +259,17 @@ function PostCard({
 
   return (
     <article className="px-4 py-5 transition sm:px-6 sm:py-6">
+      {isPinned ? (
+        <div className="mb-3 flex items-center gap-2 text-xs font-semibold text-[var(--muted-strong)]">
+          <Pin
+            size={14}
+            aria-hidden="true"
+            className="shrink-0 text-[var(--accent)]"
+          />
+          <span>Pinned to profile</span>
+        </div>
+      ) : null}
+
       <div className="flex items-start gap-3">
         <Link
           href={`/profile/${encodeURIComponent(post.author_id)}`}
@@ -283,6 +319,47 @@ function PostCard({
             </Link>
           </div>
 
+          {canManagePin ? (
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={() => onTogglePin(post.id)}
+                disabled={pinLoadingPostId !== null}
+                aria-label={
+                  isPinned
+                    ? "Unpin post from profile"
+                    : "Pin post to profile"
+                }
+                aria-busy={isPinActionLoading}
+                className="inline-flex min-h-9 items-center justify-center gap-2 rounded-full border border-[var(--border)] px-3.5 py-2 text-xs font-semibold text-[var(--foreground)] transition hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isPinActionLoading ? (
+                  <Loader2
+                    size={14}
+                    className="animate-spin"
+                    aria-hidden="true"
+                  />
+                ) : isPinned ? (
+                  <PinOff
+                    size={14}
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <Pin
+                    size={14}
+                    aria-hidden="true"
+                  />
+                )}
+
+                {isPinActionLoading
+                  ? "Updating…"
+                  : isPinned
+                    ? "Unpin from profile"
+                    : "Pin to profile"}
+              </button>
+            </div>
+          ) : null}
+
           <PostMedia media={post.post_media} />
 
           {interactionSummary === undefined ? (
@@ -323,7 +400,10 @@ function RepostCard({
   repost: RepostPost;
   viewerId: string | null;
   profileId: string;
-  interactionSummary: PostInteractionSummary | null | undefined;
+  interactionSummary:
+    | PostInteractionSummary
+    | null
+    | undefined;
   onPostUpdated: (
     postId: string,
     updatedContent: string,
@@ -434,6 +514,9 @@ export default function ProfilePosts({
   const [reposts, setReposts] = useState<RepostPost[]>([]);
   const [mediaPosts, setMediaPosts] = useState<MediaPost[]>([]);
   const [viewerId, setViewerId] = useState<string | null>(null);
+  const [pinnedPostId, setPinnedPostId] = useState<string | null>(null);
+  const [pinLoadingPostId, setPinLoadingPostId] = useState<string | null>(null);
+  const [pinError, setPinError] = useState("");
   const [interactionSummaries, setInteractionSummaries] = useState<
     Partial<Record<string, PostInteractionSummary | null>>
   >({});
@@ -467,6 +550,9 @@ export default function ProfilePosts({
     setPosts([]);
     setReposts([]);
     setMediaPosts([]);
+    setPinnedPostId(null);
+    setPinLoadingPostId(null);
+    setPinError("");
     setInteractionSummaries({});
     requestedInteractionSummaryIdsRef.current.clear();
     setError("");
@@ -627,13 +713,17 @@ export default function ProfilePosts({
       const normalizedPosts = normalizeProfilePosts(data.posts);
 
       setPosts(normalizedPosts);
+      setPinnedPostId(data.pinned_post_id ?? null);
+
       void loadInteractionSummaries(
         normalizedPosts.map((post) => post.id),
         requestUserId,
       );
+
       setPostsNextOffset(
         (data.offset ?? 0) + normalizedPosts.length,
       );
+
       setPostsHasMore(
         data.has_more ??
           (normalizedPosts.length >= PROFILE_POSTS_PAGE_SIZE),
@@ -649,6 +739,7 @@ export default function ProfilePosts({
           : "Unable to load posts.",
       );
       setPosts([]);
+      setPinnedPostId(null);
       setPostsHasMore(false);
       setPostsNextOffset(0);
     } finally {
@@ -693,6 +784,8 @@ export default function ProfilePosts({
       }
 
       const nextPosts = normalizeProfilePosts(data.posts);
+
+      setPinnedPostId(data.pinned_post_id ?? null);
 
       void loadInteractionSummaries(
         nextPosts.map((post) => post.id),
@@ -783,6 +876,7 @@ export default function ProfilePosts({
         : [];
 
       setReposts(normalizedReposts);
+
       void loadInteractionSummaries(
         normalizedReposts.map((repost) => repost.id),
         requestUserId,
@@ -875,6 +969,75 @@ export default function ProfilePosts({
     }
   }, [activeTab, loadMedia, loadReposts]);
 
+  async function handleTogglePin(postId: string) {
+    if (
+      !userId ||
+      viewerId !== userId ||
+      pinLoadingPostId !== null
+    ) {
+      return;
+    }
+
+    const wasPinned = pinnedPostId === postId;
+
+    setPinLoadingPostId(postId);
+    setPinError("");
+
+    try {
+      const response = await fetch(
+        `/api/users/${encodeURIComponent(userId)}/pinned-post`,
+        {
+          method: wasPinned ? "DELETE" : "POST",
+          ...(wasPinned
+            ? {}
+            : {
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ postId }),
+              }),
+        },
+      );
+
+      const data = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        pinned_post_id?: string | null;
+      };
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ??
+            (wasPinned
+              ? "Unable to unpin this post."
+              : "Unable to pin this post."),
+        );
+      }
+
+      setPinnedPostId(
+        wasPinned
+          ? null
+          : data.pinned_post_id ?? postId,
+      );
+
+      // Reload the first page after a pin change so the displayed
+      // order and subsequent page offsets match the server.
+      await loadPosts();
+    } catch (requestError) {
+      console.error(
+        "Failed to update Agore profile pin:",
+        requestError,
+      );
+
+      setPinError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Unable to update the profile pin.",
+      );
+    } finally {
+      setPinLoadingPostId(null);
+    }
+  }
+
   function handlePostUpdated(
     postId: string,
     updatedContent: string,
@@ -934,6 +1097,10 @@ export default function ProfilePosts({
       currentMediaPosts.filter((post) => post.id !== postId),
     );
 
+    if (pinnedPostId === postId) {
+      setPinnedPostId(null);
+    }
+
     if (wasInProfilePosts) {
       setPostsNextOffset((currentOffset) =>
         Math.max(0, currentOffset - 1),
@@ -952,6 +1119,7 @@ export default function ProfilePosts({
     setError("");
     setMediaError("");
     setMorePostsError("");
+    setPinError("");
     setActiveTab(tab);
   }
 
@@ -1092,6 +1260,17 @@ export default function ProfilePosts({
           </button>
         </div>
 
+        {activeTab === "posts" && pinError ? (
+          <div className="border-b border-[var(--border)] px-4 py-3 sm:px-6">
+            <p
+              role="alert"
+              className="text-sm font-medium text-[var(--danger)]"
+            >
+              {pinError}
+            </p>
+          </div>
+        ) : null}
+
         {activeTab === "reposts" && repostsLoading ? (
           <div className="flex min-h-52 items-center justify-center px-6">
             <div className="flex items-center gap-2 text-sm text-[var(--muted)]">
@@ -1176,7 +1355,11 @@ export default function ProfilePosts({
                     key={post.id}
                     post={post}
                     viewerId={viewerId}
+                    profileUserId={userId}
+                    pinnedPostId={pinnedPostId}
+                    pinLoadingPostId={pinLoadingPostId}
                     interactionSummary={interactionSummaries[post.id]}
+                    onTogglePin={handleTogglePin}
                     onPostUpdated={handlePostUpdated}
                     onPostDeleted={handlePostDeleted}
                   />
