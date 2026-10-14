@@ -1,9 +1,10 @@
+
 # Agoré — Architecture
 
 **Document ID:** AG-ARCH-003  
-**Version:** 0.2  
+**Version:** 0.3  
 **Status:** Working technical reference  
-**Last reviewed:** 11 October 2026
+**Last reviewed:** 14 October 2026
 
 ## 1. Purpose
 
@@ -165,7 +166,7 @@ Reusable access-control rules should be centralised where appropriate. Security-
 
 Supabase Auth is the identity foundation.
 
-The current implementation uses cookie-aware Supabase clients and a root-level `proxy.ts` that delegates session handling to `lib/supabase/proxy.ts`.
+The implementation uses cookie-aware Supabase clients and a root-level `proxy.ts` that delegates session handling to `lib/supabase/proxy.ts`.
 
 The application must distinguish between:
 
@@ -175,19 +176,20 @@ The application must distinguish between:
 - **Account status:** determining whether the account is permitted to use the application.
 - **Registration policy:** defining the authentication methods available to new users.
 
-### 6.1 Public registration and supported methods
+### 6.1 Public registration and V1 authentication scope
 
 Agoré is transitioning from invite-only access to public registration. New users should not need a development entry code or invitation assertion to create an account.
 
-The intended authentication methods are:
+The V1 authentication scope is limited to:
 
 1. Email and password.
 2. Google OAuth.
-3. Sign in with Apple.
 
-The authentication interface supports these methods, subject to their required configuration and end-to-end verification.
+**Sign in with Apple is deferred and is not part of V1.** It must not be treated as a launch requirement or introduced through this scope without a separate, explicit decision.
 
-Email registration and sign-in, email verification, password recovery, OAuth callbacks, and onboarding must operate as a coherent account lifecycle.
+The authentication methods in scope still require end-to-end verification. Listing a method here does not establish that registration, sign-in, verification, recovery, or callbacks are fully production-ready.
+
+Email registration and sign-in, email verification, password recovery, Google OAuth callbacks, and onboarding must operate as a coherent account lifecycle.
 
 Authentication callbacks must validate the authentication result, establish a valid session, handle errors safely, and restrict redirect destinations to approved internal paths.
 
@@ -199,7 +201,7 @@ The account lifecycle must distinguish between the following states and operatio
 
 - Registration and identity creation.
 - Email verification where required by the configured authentication policy.
-- Provider-based authentication.
+- Email/password and Google-based authentication.
 - Session creation, refresh, and termination.
 - Password recovery and password updates.
 - Initial profile and account-preference creation.
@@ -355,23 +357,37 @@ These requirements describe the intended security posture; they do not assert th
 
 Database schema and policy changes must be reviewable, repeatable, and safe to deploy.
 
-The repository currently contains migration files in both:
+The canonical location for **new** migration files is:
 
-- `supabase/migrations/`
-- `app/supabase/migrations/`
+`supabase/migrations/`
 
-This split is a known documentation and workflow concern. Before creating or applying further migrations, the project should establish one canonical migration directory and document the history-reconciliation process.
+An existing support-workflow migration remains in:
 
-Until that is resolved:
+`app/supabase/migrations/20261010150000_agore_support_staff_workflow_v0.sql`
 
-- Do not assume every migration is automatically applied by the deployment pipeline.
-- Do not blindly execute every SQL file in both directories.
-- Inspect migration contents and ordering before applying changes.
+This historical discrepancy has been documented but must not be considered reconciled until the selected database's actual schema and migration history have been checked.
+
+Do not move, duplicate, apply, or delete this migration solely to make the repository directory structure appear consistent.
+
+Before resolving the discrepancy:
+
+- Identify the exact Supabase project being examined.
+- Inspect its migration history and actual schema.
+- Determine whether the migration's SQL has already been applied.
+- Review dependencies and compare the repository with the database.
+- Document the resolution before changing migration history or file placement.
+
+The repository now contains `docs/database-and-migrations.md`, which defines the intended workflow, development validation, production safeguards, and historical migration-reconciliation process.
+
+Until reconciliation is verified:
+
+- Do not assume that every migration is automatically applied.
+- Do not blindly execute SQL files from both directories.
 - Test schema, policy, and data changes against a separate development project.
 - Verify the resulting database state before deploying application code that depends on it.
-- Document any manual production changes so they can be reconciled with migration history.
+- Document manual production changes so they can be reconciled with migration history.
 
-The dedicated database and migration guide should define the approved workflow.
+The presence of a migration file is not proof that its changes exist in the live database.
 
 ## 11. Environment configuration
 
@@ -428,7 +444,7 @@ Prioritise end-to-end verification of:
 
 - Public registration and email verification.
 - Email/password sign-in and sign-out.
-- Google and Apple authentication.
+- Google OAuth sign-in, callback handling, and sign-out.
 - Password recovery and password updates.
 - Onboarding and profile creation.
 - Profile editing and avatar retrieval.
@@ -438,6 +454,8 @@ Prioritise end-to-end verification of:
 - Notifications and push subscriptions.
 - Reporting and support-case workflows.
 - Settings, account status, and permissions.
+
+Apple sign-in is deferred from V1 and is not a V1 acceptance criterion.
 
 ### Security tests
 
@@ -452,21 +470,22 @@ Verify that:
 - Registration does not depend on an invitation code or legacy invitation assertion.
 - Invalid, expired, or failed authentication callbacks do not create an authenticated application session.
 - Callback redirects cannot send users to unapproved external destinations.
+- Accounts marked disabled or deleted cannot continue normal social operations through protected pages and API routes.
 
-Record whether each check is automated, manually verified, or still outstanding.
+Record whether each check is automated, manually verified, or still outstanding. Do not describe tests as passed unless their results have been observed.
 
 ## 14. Architectural risks and open decisions
 
 The following items require continuing attention:
 
-1. **Migration standardisation:** Establish one authoritative migration workflow and reconcile the two existing directories.
+1. **Migration reconciliation:** Establish one authoritative migration workflow and reconcile the existing directories with the selected database's actual state.
 2. **Privileged-client usage:** Audit every service-role operation for explicit access checks.
 3. **Feature completeness:** Validate end-to-end behaviour instead of treating route existence as proof of readiness.
 4. **Media access:** Confirm upload, metadata, storage policy, signing, and rendering paths work together.
 5. **Notification delivery:** Test event creation, in-app retrieval, subscriptions, and actual push delivery independently.
 6. **Abuse resistance:** Review rate-limit coverage and resource-intensive endpoints, especially now that registration is public.
 7. **Operational readiness:** Establish appropriate backups, incident procedures, monitoring, and recovery verification.
-8. **Authentication readiness:** Complete configuration and end-to-end verification for each intended sign-in method.
+8. **V1 authentication readiness:** Verify email/password and Google OAuth configuration and end-to-end account flows. Apple sign-in remains deferred.
 9. **Legacy access cleanup:** Confirm retired invitation endpoints and unused invitation logic are no longer part of active registration or onboarding.
 
 Open decisions must be resolved through explicit engineering decisions rather than undocumented assumptions.
@@ -489,7 +508,7 @@ New capabilities should extend the existing architecture where practical. Introd
 - `README.md` — project overview and local setup.
 - `LICENSE` — proprietary software notice.
 - `SECURITY.md` — vulnerability reporting and responsible testing.
-- `docs/database-and-migrations.md` — planned database and migration guide.
+- `docs/database-and-migrations.md` — database migration workflow and historical reconciliation requirements.
 
 Other product, policy, quality, and operational documentation should be maintained as those documents are created and reviewed.
 
