@@ -1,10 +1,11 @@
+
 # Agoré
 
 **People first. Conversation at the center.**
 
 Agoré is a social platform built around people, content, and communication. Designed for a global audience, Agoré brings meaningful connections, public conversations, and private communication into one connected space.
 
-> **Development status:** Agoré is transitioning to public registration and remains under active development. The planned authentication methods are email and password, Google, and Apple. Features, integrations, and configuration may be incomplete or change as development continues.
+> **Development status:** Agoré V1 is under active development. The V1 authentication scope is email and password plus Google OAuth. Sign in with Apple is deferred and is not part of V1. Features, integrations, and configuration may remain incomplete until verified.
 
 ## Product direction
 
@@ -83,9 +84,13 @@ Configure the VAPID values when working with web-push functionality.
 
 ### Database setup
 
-The application requires the appropriate Supabase schema, policies, and storage configuration. SQL migration files currently exist in more than one repository directory, so review the relevant migrations before applying them.
+The canonical location for new SQL migrations is `supabase/migrations/`.
 
-Use a separate development Supabase project. Do not blindly apply migrations to production.
+One historical support-workflow migration remains under `app/supabase/migrations/`. The repository and database migration histories must be reconciled before that file is moved, duplicated, or applied. Do not assume the files in Git prove that the live database has the corresponding changes.
+
+Follow [the database and migration guide](./docs/database-and-migrations.md) before making schema or policy changes.
+
+Use a separate development Supabase project. Do not blindly apply migrations to production, reset a remote production database, or alter migration history just to clear a discrepancy.
 
 ### Start development
 
@@ -102,14 +107,14 @@ npm run typecheck
 npm run build
 ```
 
-Run these after configuring the required environment variables. A successful build does not, by itself, verify authentication, database permissions, uploads, messaging, or push notifications end to end.
+Run these after configuring the required environment variables. A successful type check or build does not, by itself, verify authentication, database permissions, uploads, messaging, or push notifications end to end.
 
 ## Security
 
 - Never commit `.env.local`, service-role keys, VAPID private keys, or other secrets.
 - Keep privileged Supabase operations on the server.
 - Never expose `SUPABASE_SERVICE_ROLE_KEY` through a `NEXT_PUBLIC_*` variable.
-- Keep authentication, authorisation, and database access controls in place as registration becomes public.
+- Keep authentication, authorisation, account-status checks, and database access controls in place as registration becomes public.
 - Test database and configuration changes in development before applying them to production.
 - Treat this as pre-release software; do not assume that all features or safeguards are complete.
 
