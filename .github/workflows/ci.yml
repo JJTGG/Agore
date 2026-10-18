@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   checks:
-    name: Tests and typecheck
+    name: Tests, typecheck, and production build
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -41,3 +41,10 @@ jobs:
 
       - name: Check TypeScript
         run: npm run typecheck
+
+      - name: Build production application
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ci-placeholder-not-a-real-key
+          SUPABASE_SERVICE_ROLE_KEY: ci-placeholder-not-a-real-service-role-key
