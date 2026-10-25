@@ -1,13 +1,16 @@
-
 name: Agoré CI
 
 on:
   push:
     branches:
       - main
+      - JJTGG-patch-1
+      - JJTGG-patch-2
   pull_request:
     branches:
       - main
+      - JJTGG-patch-1
+      - JJTGG-patch-2
   workflow_dispatch:
 
 permissions:
