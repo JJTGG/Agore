@@ -15,10 +15,6 @@ const TRACKABLE_PUBLIC_PATHS = new Set([
   "/privacy",
 ]);
 
-function isTrackablePublicPath(pathname: string) {
-  return TRACKABLE_PUBLIC_PATHS.has(pathname);
-}
-
 function readAnalyticsConsent(): ConsentChoice {
   try {
     const value = window.localStorage.getItem(CONSENT_KEY);
@@ -27,7 +23,7 @@ function readAnalyticsConsent(): ConsentChoice {
       return value;
     }
   } catch {
-    // Treat inaccessible browser storage as no consent.
+    // Inaccessible storage means no stored consent.
   }
 
   return null;
@@ -39,7 +35,24 @@ function clearOptionalAnalyticsStorage() {
     window.sessionStorage.removeItem("agore_analytics_session_id");
     window.sessionStorage.removeItem("agore_analytics_referrer_host");
   } catch {
-    // A storage restriction must not break the application.
+    // Storage restrictions must not break the application.
+  }
+}
+
+function isTrackableEventUrl(rawUrl: string | undefined) {
+  if (!rawUrl) {
+    return false;
+  }
+
+  try {
+    const eventUrl = new URL(rawUrl, window.location.origin);
+
+    return (
+      eventUrl.origin === window.location.origin &&
+      TRACKABLE_PUBLIC_PATHS.has(eventUrl.pathname)
+    );
+  } catch {
+    return false;
   }
 }
 
@@ -57,7 +70,7 @@ export default function AnalyticsPrivacyControls() {
     try {
       window.localStorage.setItem(CONSENT_KEY, nextChoice);
     } catch {
-      // Without persistent consent, analytics remains disabled on reload.
+      // The explicit choice applies to this session only if storage fails.
     }
 
     if (nextChoice === "rejected") {
@@ -71,30 +84,21 @@ export default function AnalyticsPrivacyControls() {
 
   return (
     <>
-      <Analytics
-        beforeSend={(event) => {
-          if (readAnalyticsConsent() !== "accepted") {
-            return null;
-          }
-
-          if (event.url) {
-            try {
-              const pathname = new URL(
-                event.url,
-                window.location.origin,
-              ).pathname;
-
-              if (!isTrackablePublicPath(pathname)) {
-                return null;
-              }
-            } catch {
+      {ready && consent === "accepted" ? (
+        <Analytics
+          beforeSend={(event) => {
+            if (readAnalyticsConsent() !== "accepted") {
               return null;
             }
-          }
 
-          return event;
-        }}
-      />
+            if (!isTrackableEventUrl(event.url)) {
+              return null;
+            }
+
+            return event;
+          }}
+        />
+      ) : null}
 
       {!ready ? null : consent === null || settingsOpen ? (
         <aside
@@ -110,7 +114,7 @@ export default function AnalyticsPrivacyControls() {
               <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
                 Agoré can use optional analytics to understand visits to the
                 public site and improve it. Optional analytics stays off unless
-                you allow it. Your choice can be changed later.
+                you allow it. You can change your choice later.
               </p>
 
               <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
@@ -126,7 +130,7 @@ export default function AnalyticsPrivacyControls() {
               </p>
             </div>
 
-            {consent !== null && (
+            {consent !== null ? (
               <button
                 type="button"
                 onClick={() => setSettingsOpen(false)}
@@ -135,7 +139,7 @@ export default function AnalyticsPrivacyControls() {
               >
                 Close
               </button>
-            )}
+            ) : null}
           </div>
 
           <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
@@ -162,7 +166,7 @@ export default function AnalyticsPrivacyControls() {
           onClick={() => setSettingsOpen(true)}
           className="fixed bottom-3 right-3 z-[100] rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs font-medium text-[var(--muted-strong)] shadow-lg transition hover:border-[var(--accent)] hover:text-[var(--foreground)] sm:bottom-5 sm:right-5"
         >
-          Privacy & analytics settings
+          Privacy &amp; analytics settings
         </button>
       )}
     </>
