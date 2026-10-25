@@ -36,11 +36,70 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Refresh lockfile for security patch commit
-        if: github.event_name == 'push' && github.event.head_commit.message == 'fix: patch Next.js and React security vulnerabilities'
+      - name: Check whether manifest and lockfile are in sync
+        id: lockfile
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+
+          const manifest = JSON.parse(
+            fs.readFileSync("package.json", "utf8"),
+          );
+
+          const lock = JSON.parse(
+            fs.readFileSync("package-lock.json", "utf8"),
+          );
+
+          const lockRoot = lock.packages?.[""];
+
+          if (!lockRoot) {
+            console.error(
+              "package-lock.json has no root package entry.",
+            );
+            process.exit(2);
+          }
+
+          const sections = [
+            "dependencies",
+            "devDependencies",
+            "optionalDependencies",
+          ];
+
+          const normalize = (value) =>
+            JSON.stringify(
+              Object.fromEntries(
+                Object.entries(value ?? {}).sort(
+                  ([left], [right]) =>
+                    left.localeCompare(right),
+                ),
+              ),
+            );
+
+          const mismatches = sections.filter(
+            (section) =>
+              normalize(manifest[section]) !==
+              normalize(lockRoot[section]),
+          );
+
+          const needsRefresh = mismatches.length > 0;
+
+          console.log(
+            needsRefresh
+              ? `Lockfile refresh required: ${mismatches.join(", ")}`
+              : "Manifest and lockfile root dependencies match.",
+          );
+
+          fs.appendFileSync(
+            process.env.GITHUB_OUTPUT,
+            `needs-refresh=${needsRefresh}\n`,
+          );
+          NODE
+
+      - name: Refresh lockfile when required
+        if: steps.lockfile.outputs.needs-refresh == 'true'
         run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
 
-      - name: Install dependencies
+      - name: Install dependencies from lockfile
         run: npm ci --no-audit --no-fund
 
       - name: Run regression tests
@@ -60,7 +119,7 @@ jobs:
         if: always()
         run: npm audit --json > npm-audit.json || true
 
-      - name: Upload generated lockfile and audit report
+      - name: Upload dependency security results
         if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -80,7 +139,9 @@ jobs:
           const reportPath = "npm-audit.json";
 
           if (!fs.existsSync(reportPath)) {
-            console.error("Dependency audit report was not generated.");
+            console.error(
+              "Dependency audit report was not generated.",
+            );
             process.exit(2);
           }
 
@@ -91,14 +152,18 @@ jobs:
               fs.readFileSync(reportPath, "utf8"),
             );
           } catch (error) {
-            console.error("Dependency audit report is invalid JSON.");
+            console.error(
+              "Dependency audit report is invalid JSON.",
+            );
             console.error(error);
             process.exit(2);
           }
 
           if (report.error) {
             console.error("npm audit could not complete:");
-            console.error(JSON.stringify(report.error, null, 2));
+            console.error(
+              JSON.stringify(report.error, null, 2),
+            );
             process.exit(2);
           }
 
@@ -106,7 +171,7 @@ jobs:
 
           if (!counts) {
             console.error(
-              "Dependency audit report has no vulnerability totals.",
+              "Audit report has no vulnerability totals.",
             );
             process.exit(2);
           }
@@ -115,8 +180,9 @@ jobs:
           const critical = counts.critical ?? 0;
 
           console.log(
-            `npm audit totals: critical=${critical}, ` +
-            `high=${high}, moderate=${counts.moderate ?? 0}, ` +
+            `Audit totals: critical=${critical}, ` +
+            `high=${high}, ` +
+            `moderate=${counts.moderate ?? 0}, ` +
             `low=${counts.low ?? 0}`,
           );
 
@@ -139,7 +205,7 @@ jobs:
 
           if (high > 0 || critical > 0) {
             console.error(
-              "High or critical dependency vulnerabilities remain.",
+              "High or critical vulnerabilities remain.",
             );
             process.exit(1);
           }
