@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { readBoundedJsonBody } from "@/lib/security/bounded-json";
 import {
   createLegalConsentToken,
   LEGAL_CONSENT_COOKIE,
-  type LegalConsentMode,
 } from "@/lib/legal-consent-server";
+
+const MAX_REQUEST_BODY_BYTES = 2048;
 
 const requestSchema = z.object({
   mode: z.enum(["email", "oauth"]),
@@ -14,43 +16,71 @@ const requestSchema = z.object({
   legalAccepted: z.literal(true),
 }).strict();
 
+function jsonNoStore(
+  body: Record<string, unknown>,
+  status = 200,
+) {
+  return NextResponse.json(body, {
+    status,
+    headers: {
+      "Cache-Control": "no-store, max-age=0",
+      Pragma: "no-cache",
+    },
+  });
+}
+
 export async function POST(request: Request) {
   const requestUrl = new URL(request.url);
   const origin = request.headers.get("origin");
 
   if (!origin || origin !== requestUrl.origin) {
-    return NextResponse.json(
+    return jsonNoStore(
       { error: "The request origin could not be verified." },
-      { status: 403 },
+      403,
     );
   }
 
-  const body: unknown = await request.json().catch(() => null);
-  const parsed = requestSchema.safeParse(body);
+  const boundedBody = await readBoundedJsonBody(
+    request,
+    MAX_REQUEST_BODY_BYTES,
+  );
+
+  if (!boundedBody.ok) {
+    return jsonNoStore(
+      {
+        error:
+          boundedBody.reason === "too_large"
+            ? "The request body is too large."
+            : "The request body must be valid JSON.",
+      },
+      boundedBody.reason === "too_large" ? 413 : 400,
+    );
+  }
+
+  const parsed = requestSchema.safeParse(boundedBody.value);
 
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: "Confirm the age requirement and signup agreements first." },
-      { status: 400 },
+    return jsonNoStore(
+      {
+        error:
+          "Confirm the age requirement and signup agreements first.",
+      },
+      400,
     );
   }
 
   const { mode, email } = parsed.data;
 
   if (mode === "email" && !email) {
-    return NextResponse.json(
+    return jsonNoStore(
       { error: "An email address is required." },
-      { status: 400 },
+      400,
     );
   }
 
   try {
-    const token = createLegalConsentToken(
-      mode as LegalConsentMode,
-      email,
-    );
-
-    const response = NextResponse.json({ token });
+    const token = createLegalConsentToken(mode, email);
+    const response = jsonNoStore({ token });
 
     if (mode === "oauth") {
       response.cookies.set({
@@ -71,9 +101,12 @@ export async function POST(request: Request) {
       error instanceof Error ? error.message : "Unknown error",
     );
 
-    return NextResponse.json(
-      { error: "The signup acknowledgement could not be prepared. Please retry." },
-      { status: 500 },
+    return jsonNoStore(
+      {
+        error:
+          "The signup acknowledgement could not be prepared. Please retry.",
+      },
+      500,
     );
   }
 }
