@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   checks:
-    name: Tests, typecheck, and production build
+    name: Tests, typecheck, build, and dependency audit
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -36,8 +36,12 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Refresh lockfile for security patch commit
+        if: github.event_name == 'push' && github.event.head_commit.message == 'fix: patch Next.js and React security vulnerabilities'
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --no-audit --no-fund
 
       - name: Run regression tests
         run: npm test
@@ -51,3 +55,96 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ci-placeholder-not-a-real-key
           SUPABASE_SERVICE_ROLE_KEY: ci-placeholder-not-a-real-service-role-key
+
+      - name: Capture dependency audit report
+        if: always()
+        run: npm audit --json > npm-audit.json || true
+
+      - name: Upload generated lockfile and audit report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: agore-dependency-security-results
+          path: |
+            package-lock.json
+            npm-audit.json
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Enforce high and critical vulnerability threshold
+        if: always()
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+
+          const reportPath = "npm-audit.json";
+
+          if (!fs.existsSync(reportPath)) {
+            console.error("Dependency audit report was not generated.");
+            process.exit(2);
+          }
+
+          let report;
+
+          try {
+            report = JSON.parse(
+              fs.readFileSync(reportPath, "utf8"),
+            );
+          } catch (error) {
+            console.error("Dependency audit report is invalid JSON.");
+            console.error(error);
+            process.exit(2);
+          }
+
+          if (report.error) {
+            console.error("npm audit could not complete:");
+            console.error(JSON.stringify(report.error, null, 2));
+            process.exit(2);
+          }
+
+          const counts = report.metadata?.vulnerabilities;
+
+          if (!counts) {
+            console.error(
+              "Dependency audit report has no vulnerability totals.",
+            );
+            process.exit(2);
+          }
+
+          const high = counts.high ?? 0;
+          const critical = counts.critical ?? 0;
+
+          console.log(
+            `npm audit totals: critical=${critical}, ` +
+            `high=${high}, moderate=${counts.moderate ?? 0}, ` +
+            `low=${counts.low ?? 0}`,
+          );
+
+          for (const [name, vulnerability] of Object.entries(
+            report.vulnerabilities ?? {},
+          )) {
+            if (
+              vulnerability.severity === "high" ||
+              vulnerability.severity === "critical"
+            ) {
+              console.error(
+                `${name}: ${vulnerability.severity}; ` +
+                `range=${vulnerability.range}; ` +
+                `fixAvailable=${JSON.stringify(
+                  vulnerability.fixAvailable ?? false,
+                )}`,
+              );
+            }
+          }
+
+          if (high > 0 || critical > 0) {
+            console.error(
+              "High or critical dependency vulnerabilities remain.",
+            );
+            process.exit(1);
+          }
+
+          console.log(
+            "Dependency audit passed the high/critical threshold.",
+          );
+          NODE
