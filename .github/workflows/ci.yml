@@ -1,3 +1,4 @@
+
 name: Agoré CI
 
 on:
@@ -17,7 +18,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: agore-ci-${{ github.workflow }}-${{ github.ref }}
+  group: agore-ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
@@ -214,3 +215,175 @@ jobs:
             "Dependency audit passed the high/critical threshold.",
           );
           NODE
+
+  sync-lockfile:
+    name: Synchronize dependency lockfile
+    runs-on: ubuntu-latest
+    needs: checks
+    if: github.event_name == 'push' && github.ref_name == 'JJTGG-patch-2' && needs.checks.result == 'success'
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: write
+
+    steps:
+      - name: Check out the triggering commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Check whether manifest and lockfile are in sync
+        id: lockfile
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+
+          const manifest = JSON.parse(
+            fs.readFileSync("package.json", "utf8"),
+          );
+          const lock = JSON.parse(
+            fs.readFileSync("package-lock.json", "utf8"),
+          );
+          const lockRoot = lock.packages?.[""];
+
+          if (!lockRoot) {
+            console.error(
+              "package-lock.json has no root package entry.",
+            );
+            process.exit(2);
+          }
+
+          const sections = [
+            "dependencies",
+            "devDependencies",
+            "optionalDependencies",
+          ];
+          const normalize = (value) =>
+            JSON.stringify(
+              Object.fromEntries(
+                Object.entries(value ?? {}).sort(
+                  ([left], [right]) =>
+                    left.localeCompare(right),
+                ),
+              ),
+            );
+          const mismatches = sections.filter(
+            (section) =>
+              normalize(manifest[section]) !==
+              normalize(lockRoot[section]),
+          );
+          const needsRefresh = mismatches.length > 0;
+
+          console.log(
+            needsRefresh
+              ? `Lockfile refresh required: ${mismatches.join(", ")}`
+              : "Manifest and lockfile root dependencies match.",
+          );
+          fs.appendFileSync(
+            process.env.GITHUB_OUTPUT,
+            `needs-refresh=${needsRefresh}\n`,
+          );
+          NODE
+
+      - name: Refresh lockfile without running package scripts
+        if: steps.lockfile.outputs.needs-refresh == 'true'
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
+      - name: Validate manifest and lockfile synchronization
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+
+          const manifest = JSON.parse(
+            fs.readFileSync("package.json", "utf8"),
+          );
+          const lock = JSON.parse(
+            fs.readFileSync("package-lock.json", "utf8"),
+          );
+          const lockRoot = lock.packages?.[""];
+
+          if (!lockRoot) {
+            console.error(
+              "package-lock.json has no root package entry.",
+            );
+            process.exit(2);
+          }
+
+          const sections = [
+            "dependencies",
+            "devDependencies",
+            "optionalDependencies",
+          ];
+          const normalize = (value) =>
+            JSON.stringify(
+              Object.fromEntries(
+                Object.entries(value ?? {}).sort(
+                  ([left], [right]) =>
+                    left.localeCompare(right),
+                ),
+              ),
+            );
+          const mismatches = sections.filter(
+            (section) =>
+              normalize(manifest[section]) !==
+              normalize(lockRoot[section]),
+          );
+
+          if (mismatches.length > 0) {
+            console.error(
+              `Manifest and lockfile still differ: ${mismatches.join(", ")}`,
+            );
+            process.exit(1);
+          }
+
+          console.log(
+            "Manifest and lockfile root dependency sections match.",
+          );
+          NODE
+
+      - name: Commit lockfile change when needed
+        id: commit-lockfile
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet -- package-lock.json; then
+            echo "No package-lock.json change is required."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git add -- package-lock.json
+          git diff --cached --check
+
+          git fetch --no-tags origin "refs/heads/${GITHUB_REF_NAME}"
+          remote_sha="$(git rev-parse FETCH_HEAD)"
+
+          if [[ "$remote_sha" != "$GITHUB_SHA" ]]; then
+            echo "Branch advanced while CI was running; refusing to commit a stale lockfile."
+            echo "The newer branch head is left untouched."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -m "chore: sync package lockfile"
+
+          git push origin "HEAD:refs/heads/${GITHUB_REF_NAME}"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch verification run for the bot commit
+        if: steps.commit-lockfile.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api \
+            --method POST \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/dispatches" \
+            -f "ref=${GITHUB_REF_NAME}"
