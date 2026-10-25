@@ -14,6 +14,10 @@ import { createClient } from "@/lib/supabase/browser";
 type Mode = "signin" | "signup" | "recovery";
 type OAuthProvider = "google";
 
+const LEGAL_DOCUMENT_VERSION = "2026-10-25";
+const SIGNUP_LEGAL_ERROR =
+  "To create an account, confirm that you are at least 18 and accept the Terms of Service. You must also acknowledge the Privacy Policy and Community Guidelines.";
+
 type AgoreNativeWindow = Window & {
   __AGORE_NATIVE_OAUTH_CALLBACK?: string;
 };
@@ -49,6 +53,8 @@ export default function AuthPage() {
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [ageConfirmed, setAgeConfirmed] = useState(false);
+  const [legalAccepted, setLegalAccepted] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [callbackError, setCallbackError] =
@@ -181,6 +187,31 @@ export default function AuthPage() {
           );
         }
 
+        const legalVersionsMatch =
+          callbackUrl.searchParams.get("agore_age_confirmed") === "true" &&
+          callbackUrl.searchParams.get("agore_terms_version") === LEGAL_DOCUMENT_VERSION &&
+          callbackUrl.searchParams.get("agore_privacy_version") === LEGAL_DOCUMENT_VERSION &&
+          callbackUrl.searchParams.get("agore_guidelines_version") === LEGAL_DOCUMENT_VERSION;
+
+        if (legalVersionsMatch) {
+          const { error: legalRecordError } = await supabase.auth.updateUser({
+            data: {
+              agore_age_confirmed: true,
+              agore_age_confirmation_method: "self_attestation",
+              agore_terms_accepted_version: LEGAL_DOCUMENT_VERSION,
+              agore_privacy_acknowledged_version: LEGAL_DOCUMENT_VERSION,
+              agore_guidelines_acknowledged_version: LEGAL_DOCUMENT_VERSION,
+            },
+          });
+
+          if (legalRecordError) {
+            console.error(
+              "Agoré signup acknowledgement metadata could not be saved:",
+              legalRecordError.message,
+            );
+          }
+        }
+
         if (!active) {
           return;
         }
@@ -271,6 +302,13 @@ export default function AuthPage() {
       url.searchParams.set("next", nextPath);
     }
 
+    if (mode === "signup" && ageConfirmed && legalAccepted) {
+      url.searchParams.set("agore_age_confirmed", "true");
+      url.searchParams.set("agore_terms_version", LEGAL_DOCUMENT_VERSION);
+      url.searchParams.set("agore_privacy_version", LEGAL_DOCUMENT_VERSION);
+      url.searchParams.set("agore_guidelines_version", LEGAL_DOCUMENT_VERSION);
+    }
+
     return url.toString();
   }
 
@@ -278,7 +316,16 @@ export default function AuthPage() {
     if (
       window.navigator.userAgent.includes("AgoreAndroid")
     ) {
-      return NATIVE_OAUTH_CALLBACK_URL;
+      const url = new URL(NATIVE_OAUTH_CALLBACK_URL);
+
+      if (mode === "signup" && ageConfirmed && legalAccepted) {
+        url.searchParams.set("agore_age_confirmed", "true");
+        url.searchParams.set("agore_terms_version", LEGAL_DOCUMENT_VERSION);
+        url.searchParams.set("agore_privacy_version", LEGAL_DOCUMENT_VERSION);
+        url.searchParams.set("agore_guidelines_version", LEGAL_DOCUMENT_VERSION);
+      }
+
+      return url.toString();
     }
 
     return getCallbackUrl();
@@ -289,6 +336,12 @@ export default function AuthPage() {
   ) {
     event.preventDefault();
     clearFeedback();
+
+    if (mode === "signup" && (!ageConfirmed || !legalAccepted)) {
+      setError(SIGNUP_LEGAL_ERROR);
+      return;
+    }
+
     setLoading(true);
 
     const normalizedEmail = email.trim();
@@ -324,6 +377,13 @@ export default function AuthPage() {
           email: normalizedEmail,
           password,
           options: {
+            data: {
+              agore_age_confirmed: true,
+              agore_age_confirmation_method: "self_attestation",
+              agore_terms_accepted_version: LEGAL_DOCUMENT_VERSION,
+              agore_privacy_acknowledged_version: LEGAL_DOCUMENT_VERSION,
+              agore_guidelines_acknowledged_version: LEGAL_DOCUMENT_VERSION,
+            },
             emailRedirectTo: getCallbackUrl(),
           },
         });
@@ -371,6 +431,12 @@ export default function AuthPage() {
   }
 
   async function handleOAuth(provider: OAuthProvider) {
+    if (mode === "signup" && (!ageConfirmed || !legalAccepted)) {
+      clearFeedback();
+      setError(SIGNUP_LEGAL_ERROR);
+      return;
+    }
+
     clearFeedback();
     setOauthProvider(provider);
 
@@ -437,6 +503,8 @@ export default function AuthPage() {
 
   function switchMode(nextMode: Mode) {
     setMode(nextMode);
+    setAgeConfirmed(false);
+    setLegalAccepted(false);
     clearFeedback();
   }
 
@@ -564,6 +632,57 @@ export default function AuthPage() {
               </div>
             )}
 
+            {mode === "signup" && (
+              <div className="space-y-3 rounded-xl border border-[var(--border)] bg-[var(--background)] p-4">
+                <label className="flex items-start gap-3 text-sm leading-5">
+                  <input
+                    type="checkbox"
+                    required
+                    checked={ageConfirmed}
+                    onChange={(event) => setAgeConfirmed(event.target.checked)}
+                    className="mt-1 accent-[var(--accent)]"
+                  />
+                  <span>
+                    I confirm that I am at least 18 years old.
+                  </span>
+                </label>
+
+                <label className="flex items-start gap-3 text-sm leading-5">
+                  <input
+                    type="checkbox"
+                    required
+                    checked={legalAccepted}
+                    onChange={(event) => setLegalAccepted(event.target.checked)}
+                    className="mt-1 accent-[var(--accent)]"
+                  />
+                  <span>
+                    I agree to Agoré’s{" "}
+                    <Link
+                      href="/terms"
+                      className="font-semibold text-[var(--accent)] hover:underline"
+                    >
+                      Terms of Service
+                    </Link>
+                    , and acknowledge the{" "}
+                    <Link
+                      href="/privacy"
+                      className="font-semibold text-[var(--accent)] hover:underline"
+                    >
+                      Privacy Policy
+                    </Link>
+                    {" "}and{" "}
+                    <Link
+                      href="/guidelines"
+                      className="font-semibold text-[var(--accent)] hover:underline"
+                    >
+                      Community Guidelines
+                    </Link>
+                    .
+                  </span>
+                </label>
+              </div>
+            )}
+
             {error && (
               <p
                 role="alert"
@@ -650,6 +769,17 @@ export default function AuthPage() {
 
         <p className="mt-5 text-center text-xs leading-5 text-[var(--muted)]">
           Agoré · A place to gather.
+          <span className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1">
+            <Link href="/guidelines" className="hover:underline">
+              Guidelines
+            </Link>
+            <Link href="/terms" className="hover:underline">
+              Terms
+            </Link>
+            <Link href="/privacy" className="hover:underline">
+              Privacy
+            </Link>
+          </span>
         </p>
       </div>
     </main>
