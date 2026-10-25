@@ -3,15 +3,8 @@ import { test } from "node:test";
 
 import { GET } from "../app/api/public/posts/[postId]/route";
 
-const postId = "11111111-1111-4111-8111-111111111111";
-
 test("public post endpoint remains closed and returns no post data", async () => {
-  const response = await GET(
-    new Request(`https://agore.test/api/public/posts/${postId}`),
-    {
-      params: Promise.resolve({ postId }),
-    },
-  );
+  const response = await GET();
 
   assert.equal(response.status, 404);
 
