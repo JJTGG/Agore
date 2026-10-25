@@ -19,30 +19,6 @@ const onboardingSchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    let body: unknown;
-
-    try {
-      body = await request.json();
-    } catch {
-      return NextResponse.json(
-        { error: "Invalid request body." },
-        { status: 400 },
-      );
-    }
-
-    const parsed = onboardingSchema.safeParse(body);
-
-    if (!parsed.success) {
-      return NextResponse.json(
-        {
-          error:
-            parsed.error.issues[0]?.message ??
-            "Invalid profile details.",
-        },
-        { status: 400 },
-      );
-    }
-
     const supabase = await createClient();
 
     const {
@@ -102,40 +78,91 @@ export async function POST(request: Request) {
       );
     }
 
-    if (existingProfile) {
-      return NextResponse.json({
-        completed: true,
-      });
-    }
+    if (!existingProfile) {
+      let body: unknown;
 
-    const { error: profileError } = await admin
-      .from("profiles")
-      .insert({
-        id: authoritativeUser.id,
-        display_name: parsed.data.displayName,
-        username: parsed.data.username,
-        bio: parsed.data.bio || null,
-      });
-
-    if (profileError) {
-      if (profileError.code === "23505") {
+      try {
+        body = await request.json();
+      } catch {
         return NextResponse.json(
-          { error: "That username is already taken." },
-          { status: 409 },
+          { error: "Invalid request body." },
+          { status: 400 },
         );
       }
 
-      console.error(
-        "Agore profile creation failed:",
-        profileError,
-      );
+      const parsed = onboardingSchema.safeParse(body);
 
-      return NextResponse.json(
-        { error: "Unable to create your profile." },
-        { status: 500 },
-      );
+      if (!parsed.success) {
+        return NextResponse.json(
+          {
+            error:
+              parsed.error.issues[0]?.message ??
+              "Invalid profile details.",
+          },
+          { status: 400 },
+        );
+      }
+
+      const { error: profileError } = await admin
+        .from("profiles")
+        .insert({
+          id: authoritativeUser.id,
+          display_name: parsed.data.displayName,
+          username: parsed.data.username,
+          bio: parsed.data.bio || null,
+        });
+
+      if (profileError) {
+        if (profileError.code !== "23505") {
+          console.error(
+            "Agore profile creation failed:",
+            profileError,
+          );
+
+          return NextResponse.json(
+            { error: "Unable to create your profile." },
+            { status: 500 },
+          );
+        }
+
+        // A concurrent request may have created this user's profile
+        // after the initial lookup. Distinguish that case from a
+        // username collision belonging to another account.
+        const {
+          data: concurrentProfile,
+          error: concurrentProfileLookupError,
+        } = await admin
+          .from("profiles")
+          .select("id")
+          .eq("id", authoritativeUser.id)
+          .maybeSingle();
+
+        if (concurrentProfileLookupError) {
+          console.error(
+            "Failed to verify profile after creation conflict:",
+            concurrentProfileLookupError,
+          );
+
+          return NextResponse.json(
+            { error: "Unable to verify your profile." },
+            { status: 500 },
+          );
+        }
+
+        if (!concurrentProfile) {
+          return NextResponse.json(
+            { error: "That username is already taken." },
+            { status: 409 },
+          );
+        }
+      }
     }
 
+    // Always initialize these records, including when the profile
+    // already exists. This makes retries recover from partial failure.
+    //
+    // Only user_id is supplied. Existing preference values are not
+    // intentionally replaced; missing rows use database defaults.
     const [
       { error: preferencesError },
       { error: settingsError },
@@ -167,7 +194,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            "Profile created, but account preferences could not be initialized.",
+            "Your profile exists, but account preferences could not be initialized. Please try again.",
         },
         { status: 500 },
       );

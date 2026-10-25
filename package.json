@@ -7,18 +7,18 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "tsc --ignoreConfig --target ES2022 --module Node16 --moduleResolution Node16 --types node --esModuleInterop --strict --skipLibCheck --rootDir . --outDir agore-test-build tests/activity-visibility.test.ts tests/rate-limit.test.ts lib/activity/visibility.ts lib/security/rate-limit.ts && node --test \"agore-test-build/tests/*.test.js\""
+    "test": "tsc --ignoreConfig --target ES2022 --module Node16 --moduleResolution Node16 --types node --esModuleInterop --strict --skipLibCheck --rootDir . --outDir agore-test-build tests/activity-visibility.test.ts tests/rate-limit.test.ts tests/public-post-endpoint.test.ts tests/bounded-json.test.ts lib/activity/visibility.ts lib/security/rate-limit.ts lib/security/bounded-json.ts \"app/api/public/posts/[postId]/route.ts\" && node --test agore-test-build/tests/activity-visibility.test.js agore-test-build/tests/rate-limit.test.js agore-test-build/tests/public-post-endpoint.test.js agore-test-build/tests/bounded-json.test.js"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.7",
     "@supabase/supabase-js": "2.117.2",
     "@vercel/analytics": "^2.0.1",
     "lucide-react": "1.52.0",
-    "next": "16.3.8",
-    "react": "19.3.0",
-    "react-dom": "19.3.0",
+    "next": "16.4.3",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
     "web-push": "3.6.7",
-    "zod": "4.6.5"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.3.3",

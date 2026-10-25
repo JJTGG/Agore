@@ -73,7 +73,7 @@ export default function Home() {
 
             <div className="mt-9 flex flex-col gap-3 sm:flex-row">
               <Link
-                href="/auth"
+                href="/auth?mode=signup"
                 className="inline-flex items-center justify-center rounded-full bg-[var(--accent)] px-6 py-3 font-medium text-white transition hover:bg-[var(--accent-strong)]"
               >
                 Join Agoré

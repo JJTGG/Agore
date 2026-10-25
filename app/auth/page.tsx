@@ -65,6 +65,13 @@ export default function AuthPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const currentError = params.get("error");
+    const requestedMode = params.get("mode");
+
+    if (requestedMode === "signup") {
+      setMode("signup");
+    } else if (requestedMode === "signin") {
+      setMode("signin");
+    }
 
     setCallbackError(currentError);
 
