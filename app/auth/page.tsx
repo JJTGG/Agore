@@ -13,8 +13,8 @@ import { createClient } from "@/lib/supabase/browser";
 
 type Mode = "signin" | "signup" | "recovery";
 type OAuthProvider = "google";
+type ConsentMode = "email" | "oauth";
 
-const LEGAL_DOCUMENT_VERSION = "2026-10-25";
 const SIGNUP_LEGAL_ERROR =
   "To create an account, confirm that you are at least 18 and accept the Terms of Service. You must also acknowledge the Privacy Policy and Community Guidelines.";
 
@@ -24,6 +24,74 @@ type AgoreNativeWindow = Window & {
 
 const NATIVE_OAUTH_CALLBACK_URL =
   "com.jayjaytgg.agore://auth-callback";
+
+async function requestLegalConsentToken(
+  mode: ConsentMode,
+  email?: string,
+) {
+  const response = await fetch("/api/legal/consent-token", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      mode,
+      email,
+      ageConfirmed: true,
+      legalAccepted: true,
+    }),
+  });
+
+  const body: unknown = await response
+    .json()
+    .catch(() => null);
+
+  const token =
+    typeof body === "object" &&
+    body !== null &&
+    "token" in body &&
+    typeof body.token === "string"
+      ? body.token
+      : null;
+
+  if (!response.ok || !token) {
+    const message =
+      typeof body === "object" &&
+      body !== null &&
+      "error" in body &&
+      typeof body.error === "string"
+        ? body.error
+        : "The signup acknowledgement could not be prepared. Please try again.";
+
+    throw new Error(message);
+  }
+
+  return token;
+}
+
+async function recordEmailSignupConsent(
+  token: string,
+  accessToken: string,
+) {
+  const response = await fetch("/api/legal/record", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({ token }),
+  });
+
+  if (!response.ok) {
+    await createClient().auth.signOut();
+
+    throw new Error(
+      "Your signup agreements could not be recorded securely. Please try again.",
+    );
+  }
+}
 
 function AgoreBrandLogo() {
   return (
@@ -73,7 +141,7 @@ export default function AuthPage() {
     const currentError = params.get("error");
     const requestedMode = params.get("mode");
 
-    if (requestedMode === "signup") {
+    if (requestedMode === "signup" || currentError === "legal") {
       setMode("signup");
     } else if (requestedMode === "signin") {
       setMode("signin");
@@ -89,6 +157,10 @@ export default function AuthPage() {
     } else if (currentError === "oauth") {
       setError(
         "Sign-in could not be completed. Please try again or choose another sign-in method.",
+      );
+    } else if (currentError === "legal") {
+      setError(
+        "The signup acknowledgement could not be verified. Review the signup agreements and try again. If the problem continues, contact Agoré Support.",
       );
     }
   }, []);
@@ -147,8 +219,7 @@ export default function AuthPage() {
 
       if (callbackError) {
         setError(
-          callbackError ||
-            "Google sign-in was cancelled or could not be completed.",
+          "Google sign-in was cancelled or could not be completed. Please try again.",
         );
         setOauthProvider(null);
         setLoading(false);
@@ -187,27 +258,30 @@ export default function AuthPage() {
           );
         }
 
-        const legalVersionsMatch =
-          callbackUrl.searchParams.get("agore_age_confirmed") === "true" &&
-          callbackUrl.searchParams.get("agore_terms_version") === LEGAL_DOCUMENT_VERSION &&
-          callbackUrl.searchParams.get("agore_privacy_version") === LEGAL_DOCUMENT_VERSION &&
-          callbackUrl.searchParams.get("agore_guidelines_version") === LEGAL_DOCUMENT_VERSION;
+        const consentToken =
+          callbackUrl.searchParams.get("legal_consent");
 
-        if (legalVersionsMatch) {
-          const { error: legalRecordError } = await supabase.auth.updateUser({
-            data: {
-              agore_age_confirmed: true,
-              agore_age_confirmation_method: "self_attestation",
-              agore_terms_accepted_version: LEGAL_DOCUMENT_VERSION,
-              agore_privacy_acknowledged_version: LEGAL_DOCUMENT_VERSION,
-              agore_guidelines_acknowledged_version: LEGAL_DOCUMENT_VERSION,
+        if (consentToken) {
+          const recordResponse = await fetch(
+            "/api/legal/record",
+            {
+              method: "POST",
+              credentials: "same-origin",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${data.session.access_token}`,
+              },
+              body: JSON.stringify({
+                token: consentToken,
+              }),
             },
-          });
+          );
 
-          if (legalRecordError) {
-            console.error(
-              "Agoré signup acknowledgement metadata could not be saved:",
-              legalRecordError.message,
+          if (!recordResponse.ok) {
+            await supabase.auth.signOut();
+
+            throw new Error(
+              "The signup agreements could not be verified and recorded. Please retry signup.",
             );
           }
         }
@@ -262,8 +336,6 @@ export default function AuthPage() {
       handleNativeOAuthEvent,
     );
 
-    // The native activity might deliver the callback before
-    // this page's React effect has mounted. Check the saved value.
     const nativeWindow =
       window as AgoreNativeWindow;
 
@@ -292,7 +364,10 @@ export default function AuthPage() {
     setMessage("");
   }
 
-  function getCallbackUrl(nextPath?: string) {
+  function getCallbackUrl(
+    nextPath?: string,
+    consentToken?: string,
+  ) {
     const url = new URL(
       "/auth/callback",
       window.location.origin,
@@ -302,33 +377,27 @@ export default function AuthPage() {
       url.searchParams.set("next", nextPath);
     }
 
-    if (mode === "signup" && ageConfirmed && legalAccepted) {
-      url.searchParams.set("agore_age_confirmed", "true");
-      url.searchParams.set("agore_terms_version", LEGAL_DOCUMENT_VERSION);
-      url.searchParams.set("agore_privacy_version", LEGAL_DOCUMENT_VERSION);
-      url.searchParams.set("agore_guidelines_version", LEGAL_DOCUMENT_VERSION);
+    if (consentToken) {
+      url.searchParams.set("legal_consent", consentToken);
     }
 
     return url.toString();
   }
 
-  function getOAuthRedirectUrl() {
+  function getOAuthRedirectUrl(consentToken?: string) {
     if (
       window.navigator.userAgent.includes("AgoreAndroid")
     ) {
       const url = new URL(NATIVE_OAUTH_CALLBACK_URL);
 
-      if (mode === "signup" && ageConfirmed && legalAccepted) {
-        url.searchParams.set("agore_age_confirmed", "true");
-        url.searchParams.set("agore_terms_version", LEGAL_DOCUMENT_VERSION);
-        url.searchParams.set("agore_privacy_version", LEGAL_DOCUMENT_VERSION);
-        url.searchParams.set("agore_guidelines_version", LEGAL_DOCUMENT_VERSION);
+      if (consentToken) {
+        url.searchParams.set("legal_consent", consentToken);
       }
 
       return url.toString();
     }
 
-    return getCallbackUrl();
+    return getCallbackUrl(undefined, consentToken);
   }
 
   async function handleSubmit(
@@ -370,6 +439,12 @@ export default function AuthPage() {
       }
 
       if (mode === "signup") {
+        const consentToken =
+          await requestLegalConsentToken(
+            "email",
+            normalizedEmail,
+          );
+
         const {
           data,
           error: signupError,
@@ -377,14 +452,10 @@ export default function AuthPage() {
           email: normalizedEmail,
           password,
           options: {
-            data: {
-              agore_age_confirmed: true,
-              agore_age_confirmation_method: "self_attestation",
-              agore_terms_accepted_version: LEGAL_DOCUMENT_VERSION,
-              agore_privacy_acknowledged_version: LEGAL_DOCUMENT_VERSION,
-              agore_guidelines_acknowledged_version: LEGAL_DOCUMENT_VERSION,
-            },
-            emailRedirectTo: getCallbackUrl(),
+            emailRedirectTo: getCallbackUrl(
+              undefined,
+              consentToken,
+            ),
           },
         });
 
@@ -393,6 +464,11 @@ export default function AuthPage() {
         }
 
         if (data.session) {
+          await recordEmailSignupConsent(
+            consentToken,
+            data.session.access_token,
+          );
+
           router.replace("/home");
           router.refresh();
           return;
@@ -441,11 +517,16 @@ export default function AuthPage() {
     setOauthProvider(provider);
 
     try {
+      const consentToken =
+        mode === "signup"
+          ? await requestLegalConsentToken("oauth")
+          : undefined;
+
       const { error: oauthError } =
         await supabase.auth.signInWithOAuth({
           provider,
           options: {
-            redirectTo: getOAuthRedirectUrl(),
+            redirectTo: getOAuthRedirectUrl(consentToken),
           },
         });
 
@@ -473,12 +554,28 @@ export default function AuthPage() {
     setResending(true);
 
     try {
+      let consentToken: string | undefined;
+
+      if (
+        mode === "signup" &&
+        ageConfirmed &&
+        legalAccepted
+      ) {
+        consentToken = await requestLegalConsentToken(
+          "email",
+          email.trim(),
+        );
+      }
+
       const { error: resendError } =
         await supabase.auth.resend({
           type: "signup",
           email: email.trim(),
           options: {
-            emailRedirectTo: getCallbackUrl(),
+            emailRedirectTo: getCallbackUrl(
+              undefined,
+              consentToken,
+            ),
           },
         });
 
