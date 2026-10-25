@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
+const LEGAL_DOCUMENT_VERSION = "2026-10-25";
+
 function clearLegacyInviteCookie(response: NextResponse) {
   response.cookies.set({
     name: "agore_invite_assertion",
@@ -38,6 +40,15 @@ function getSafeNextPath(requestUrl: URL) {
     : "/home";
 }
 
+function hasCurrentLegalAcknowledgement(requestUrl: URL) {
+  return (
+    requestUrl.searchParams.get("agore_age_confirmed") === "true" &&
+    requestUrl.searchParams.get("agore_terms_version") === LEGAL_DOCUMENT_VERSION &&
+    requestUrl.searchParams.get("agore_privacy_version") === LEGAL_DOCUMENT_VERSION &&
+    requestUrl.searchParams.get("agore_guidelines_version") === LEGAL_DOCUMENT_VERSION
+  );
+}
+
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
 
@@ -73,6 +84,26 @@ export async function GET(request: Request) {
   if (userError || !user) {
     await supabase.auth.signOut();
     return redirectToAuth(requestUrl, "verification");
+  }
+
+  if (hasCurrentLegalAcknowledgement(requestUrl)) {
+    const { error: legalRecordError } =
+      await supabase.auth.updateUser({
+        data: {
+          agore_age_confirmed: true,
+          agore_age_confirmation_method: "self_attestation",
+          agore_terms_accepted_version: LEGAL_DOCUMENT_VERSION,
+          agore_privacy_acknowledged_version: LEGAL_DOCUMENT_VERSION,
+          agore_guidelines_acknowledged_version: LEGAL_DOCUMENT_VERSION,
+        },
+      });
+
+    if (legalRecordError) {
+      console.error(
+        "Agoré signup acknowledgement metadata could not be saved:",
+        legalRecordError.message,
+      );
+    }
   }
 
   const destination = new URL(
