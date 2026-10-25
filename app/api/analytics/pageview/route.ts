@@ -1,11 +1,13 @@
-
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { readBoundedJsonBody } from "@/lib/security/bounded-json";
 
 export const dynamic = "force-dynamic";
+
+const MAX_PAGEVIEW_BODY_BYTES = 2048;
 
 const eventSchema = z
   .object({
@@ -41,21 +43,19 @@ function response(status = 202, accepted = true) {
 }
 
 export async function POST(request: Request) {
-  let body: unknown;
+  const boundedBody = await readBoundedJsonBody(
+    request,
+    MAX_PAGEVIEW_BODY_BYTES,
+  );
 
-  try {
-    const rawBody = await request.text();
-
-    if (rawBody.length > 2048) {
-      return response(413, false);
-    }
-
-    body = JSON.parse(rawBody);
-  } catch {
-    return response(400, false);
+  if (!boundedBody.ok) {
+    return response(
+      boundedBody.reason === "too_large" ? 413 : 400,
+      false,
+    );
   }
 
-  const parsed = eventSchema.safeParse(body);
+  const parsed = eventSchema.safeParse(boundedBody.value);
 
   if (!parsed.success) {
     return response(400, false);
@@ -63,13 +63,14 @@ export async function POST(request: Request) {
 
   try {
     const supabase = await createClient();
+
     const {
       data: { user },
       error: authError,
     } = await supabase.auth.getUser();
 
-    // Anonymous page views are valid. A failed session lookup must never
-    // cause a client-supplied user ID to be trusted.
+    // Anonymous page views are valid. A failed session lookup must
+    // never cause a client-supplied user ID to be trusted.
     const actorId = authError ? null : user?.id ?? null;
 
     const rawCountry = request.headers
