@@ -1,7 +1,6 @@
-
 import { notFound, redirect } from "next/navigation";
 
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -17,9 +16,18 @@ export default async function UsernameProfileRedirect({
     notFound();
   }
 
-  const admin = createAdminClient();
+  const supabase = await createClient();
 
-  const { data: profile, error } = await admin
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+
+  if (authError || !user) {
+    redirect("/auth");
+  }
+
+  const { data: profile, error } = await supabase
     .from("profiles")
     .select("id, account_status")
     .eq("username", username)
@@ -27,9 +35,10 @@ export default async function UsernameProfileRedirect({
 
   if (error) {
     console.error(
-      "Unable to resolve Agoré mention profile:",
+      "Unable to resolve Agore username for authenticated user:",
       error,
     );
+
     notFound();
   }
 
