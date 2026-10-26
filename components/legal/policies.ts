@@ -261,7 +261,7 @@ export const policyDocuments: Record<string, PolicyDocument> = {
         heading: "7. Retention",
         paragraphs: [
           "Agoré retains information for as long as reasonably necessary to provide the service, maintain security, resolve reports and disputes, meet applicable legal obligations, and maintain required operational records.",
-          "Analytics page-view records are intended to be removed when they are older than 180 days by a scheduled database cleanup. This retention rule must not be treated as active until the cleanup job has been deployed and verified. It applies only to the agore_analytics_pageviews dataset and does not establish retention periods for account data, posts, messages, reports, support cases, authentication or provider logs, consent-history metadata, or backups.",
+          "Analytics page-view records are subject to a scheduled daily database cleanup configured to delete records from the agore_analytics_pageviews dataset when they are older than 180 days. The cleanup job is configured and verified as active. This rule applies only to that analytics dataset and does not establish retention periods for account data, posts, messages, reports, support cases, authentication or provider logs, consent-history metadata, or backups.",
           "Information may remain in backups for a limited period after a deletion request, or be retained where permitted or required for security, legal compliance, or dispute resolution.",
           "Agoré must document and periodically review retention criteria for the remaining categories of information before broad public launch.",
         ],
