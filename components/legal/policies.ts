@@ -215,6 +215,7 @@ export const policyDocuments: Record<string, PolicyDocument> = {
         ],
         bullets: [
           "Account and authentication information, such as email address, username, display name, account identifiers, sign-in provider information, session information, and account status.",
+          "Signup agreement records, including the policy versions acknowledged, age self-attestation, signup method, and issue and recording timestamps. These records are stored in account authentication metadata.",
           "Profile information you provide, such as an avatar, biography, profile links, or optional location details.",
           "Content and activity, such as posts, images, replies, reactions, reposts, follows, blocks, messages, group membership, attachments, and timestamps associated with activity.",
           "Reports and support information, including what you submit, relevant account or content identifiers, messages with support, and case status or assignment information.",
@@ -251,7 +252,7 @@ export const policyDocuments: Record<string, PolicyDocument> = {
         heading: "6. Service providers and disclosures",
         paragraphs: [
           "Agoré relies on providers to operate the service. Depending on the feature, these may include Supabase for authentication, database and related backend services; Vercel for hosting, deployment and Web Analytics; Google when Google sign-in is used; and browser or push infrastructure when web-push notifications are enabled.",
-          "Providers may process information under their own terms and privacy practices and under applicable service agreements. The exact production regions, data-processing terms, and international-transfer arrangements must be verified against the configured accounts before broad public launch.",
+          "The Agoré Supabase database project is configured in London, United Kingdom (eu-west-2). This identifies the database region only; it does not establish where Supabase authentication and ancillary services, Vercel hosting and logs, Google sign-in, push infrastructure, or other providers process or store information. Those provider configurations, data-processing terms, and applicable international-transfer safeguards must be verified before broad public launch.",
           "Agoré does not currently operate a behavioural-advertising programme or intentionally sell personal information as a standalone product. This statement must be revisited if the product's commercial or data-sharing practices change.",
           "Information may also be disclosed where required by law or where reasonably necessary to respond to valid legal process, protect users, investigate a serious security incident, establish or defend legal claims, or protect the rights and safety of people or the service.",
         ],
@@ -260,8 +261,9 @@ export const policyDocuments: Record<string, PolicyDocument> = {
         heading: "7. Retention",
         paragraphs: [
           "Agoré retains information for as long as reasonably necessary to provide the service, maintain security, resolve reports and disputes, meet applicable legal obligations, and maintain required operational records.",
-          "Account data, user content, messages, reports, support cases, analytics records, logs, and backups may have different retention needs. Agoré has not yet published fixed retention periods for every category. Those periods and criteria must be documented and periodically reviewed.",
+          "Analytics page-view records are intended to be removed when they are older than 180 days by a scheduled database cleanup. This retention rule must not be treated as active until the cleanup job has been deployed and verified. It applies only to the agore_analytics_pageviews dataset and does not establish retention periods for account data, posts, messages, reports, support cases, authentication or provider logs, consent-history metadata, or backups.",
           "Information may remain in backups for a limited period after a deletion request, or be retained where permitted or required for security, legal compliance, or dispute resolution.",
+          "Agoré must document and periodically review retention criteria for the remaining categories of information before broad public launch.",
         ],
       },
       {
@@ -291,7 +293,7 @@ export const policyDocuments: Record<string, PolicyDocument> = {
         heading: "11. International processing",
         paragraphs: [
           "Agoré is designed for a global audience and relies on providers that may process information in countries other than your own. The relevant locations and safeguards depend on the configured regions and provider agreements.",
-          "The production data regions and applicable international-transfer arrangements must be verified and disclosed more specifically before broad public launch.",
+          "The Agoré Supabase database project is configured in London, United Kingdom (eu-west-2). This is the database region only and should not be read as a statement that all providers or processing remain within the United Kingdom. Hosting, authentication, logs, backups, push delivery, and other provider locations and applicable international-transfer safeguards still need to be verified and disclosed before broad public launch.",
         ],
       },
       {
