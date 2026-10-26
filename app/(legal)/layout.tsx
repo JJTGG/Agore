@@ -53,7 +53,7 @@ export default function LegalLayout({
         <footer className="border-t border-[var(--border)] py-6 text-sm text-[var(--muted)]">
           <p className="leading-6">
             Agoré is built around people, conversation, and safer participation.
-            These pages explain the rules and practices that apply to the service.
+            These pages describe the rules and practices that apply to the service.
           </p>
 
           <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2">

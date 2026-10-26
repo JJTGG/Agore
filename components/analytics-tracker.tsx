@@ -1,4 +1,3 @@
-
 "use client";
 
 import { usePathname } from "next/navigation";
@@ -11,12 +10,22 @@ type PendingView = {
   pageviewId: string;
 };
 
-const VISITOR_KEY = "agore_analytics_visitor_id";
-const SESSION_KEY = "agore_analytics_session_id";
-const REFERRER_KEY = "agore_analytics_referrer_host";
+const CONSENT_KEY = "agore_analytics_consent";
 
-const UUID_SEGMENT =
-  /\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+const TRACKABLE_PUBLIC_PATHS = new Set([
+  "/",
+  "/guidelines",
+  "/terms",
+  "/privacy",
+]);
+
+function hasAnalyticsConsent() {
+  try {
+    return window.localStorage.getItem(CONSENT_KEY) === "accepted";
+  } catch {
+    return false;
+  }
+}
 
 function getStoredId(key: string, persistent: boolean) {
   try {
@@ -52,30 +61,18 @@ function getStoredId(key: string, persistent: boolean) {
   }
 }
 
-function normalizePath(pathname: string) {
-  return pathname.replace(UUID_SEGMENT, "/:id").slice(0, 200) || "/";
+function shouldTrack(pathname: string) {
+  return TRACKABLE_PUBLIC_PATHS.has(pathname);
 }
 
-function shouldTrack(pathname: string) {
-  const excludedPrefixes = [
-    "/api",
-    "/admin",
-    "/staff",
-    "/support",
-    "/auth/callback",
-    "/auth/update-password",
-  ];
-
-  return !excludedPrefixes.some(
-    (prefix) =>
-      pathname === prefix || pathname.startsWith(`${prefix}/`),
-  );
+function normalizePath(pathname: string) {
+  return pathname.slice(0, 200) || "/";
 }
 
 function getReferrerHost() {
   try {
     const storage = window.sessionStorage;
-    const saved = storage.getItem(REFERRER_KEY);
+    const saved = storage.getItem("agore_analytics_referrer_host");
 
     if (saved) {
       return saved;
@@ -95,7 +92,7 @@ function getReferrerHost() {
       }
     }
 
-    storage.setItem(REFERRER_KEY, host);
+    storage.setItem("agore_analytics_referrer_host", host);
     return host;
   } catch {
     return "direct";
@@ -125,39 +122,71 @@ export default function AnalyticsTracker() {
   const pendingView = useRef<PendingView | null>(null);
 
   useEffect(() => {
-    if (!pathname || !shouldTrack(pathname)) {
-      return;
-    }
+    function recordPageView() {
+      if (
+        !pathname ||
+        !shouldTrack(pathname) ||
+        !hasAnalyticsConsent()
+      ) {
+        return;
+      }
 
-    // Reusing the same ID through React's development effect replay
-    // prevents a single navigation from being counted twice.
-    if (pendingView.current?.pathname !== pathname) {
-      pendingView.current = {
-        pathname,
-        pageviewId: crypto.randomUUID(),
+      // Reusing the ID through React effect replay prevents a duplicate
+      // page-view event for the same navigation.
+      if (pendingView.current?.pathname !== pathname) {
+        pendingView.current = {
+          pathname,
+          pageviewId: crypto.randomUUID(),
+        };
+      }
+
+      const payload = {
+        pageviewId: pendingView.current.pageviewId,
+        visitorId: getStoredId(
+          "agore_analytics_visitor_id",
+          true,
+        ),
+        sessionId: getStoredId(
+          "agore_analytics_session_id",
+          false,
+        ),
+        path: normalizePath(pathname),
+        referrerHost: getReferrerHost(),
+        deviceType: getDeviceType(),
       };
+
+      void fetch("/api/analytics/pageview", {
+        method: "POST",
+        credentials: "same-origin",
+        keepalive: true,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      }).catch(() => {
+        // Analytics is best-effort and must not block navigation.
+      });
     }
 
-    const payload = {
-      pageviewId: pendingView.current.pageviewId,
-      visitorId: getStoredId(VISITOR_KEY, true),
-      sessionId: getStoredId(SESSION_KEY, false),
-      path: normalizePath(pathname),
-      referrerHost: getReferrerHost(),
-      deviceType: getDeviceType(),
-    };
+    function handleConsentChange() {
+      // Re-consenting should create a fresh page-view event ID.
+      pendingView.current = null;
+      recordPageView();
+    }
 
-    void fetch("/api/analytics/pageview", {
-      method: "POST",
-      credentials: "same-origin",
-      keepalive: true,
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    }).catch(() => {
-      // Analytics is best-effort; tracking failures must not block navigation.
-    });
+    recordPageView();
+
+    window.addEventListener(
+      "agore-analytics-consent-change",
+      handleConsentChange,
+    );
+
+    return () => {
+      window.removeEventListener(
+        "agore-analytics-consent-change",
+        handleConsentChange,
+      );
+    };
   }, [pathname]);
 
   return null;
