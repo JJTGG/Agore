@@ -1,11 +1,11 @@
 # Agoré Privacy Policy
 
 **Document ID:** AG-POL-012  
-**Version:** 0.1  
+**Version:** 0.2  
 **Status:** Draft for internal review — not approved for publication  
-**Last reviewed:** 10 October 2026
+**Last reviewed:** 25 October 2026
 
-> IMPORTANT: This draft contains matters that must be verified before it is published as Agoré's official Privacy Policy. In particular, confirm the legal identity of the operator, the minimum age for users, the actual data-retention periods, applicable international data-transfer arrangements, and the procedures for handling privacy requests.
+> IMPORTANT: This draft is not approved for publication. The operator's formal legal identity, actual retention and deletion practices, other provider processing regions, applicable international-transfer arrangements, and the operational procedures for privacy requests must be verified before it becomes Agoré's official Privacy Policy. The primary Supabase database region has been confirmed as London, United Kingdom (eu-west-2); this does not establish where every provider processes information.
 
 ## 1. Introduction
 
@@ -46,10 +46,13 @@ When an account is created or used, Agoré may process:
 - Internal account and profile identifiers.
 - Authentication and session-related information.
 - Account status and relevant account-verification state.
+- Signup agreement records, including the policy versions acknowledged, age self-attestation, signup method, and issue and recording timestamps. These records are stored in account authentication metadata.
 - Authentication-provider information where an external sign-in provider is used.
 - Information needed to complete onboarding and account setup.
 
 Authentication credentials are handled through the configured authentication system. Agoré does not require users to provide their account passwords to support staff.
+
+The signup acknowledgement records the version of the policy bundle presented by the signup flow. It does not independently verify a person's age or prove that a human physically clicked the checkbox.
 
 ### 3.2 Profile information
 
@@ -181,7 +184,7 @@ We use relevant information to respond to account problems, resolve technical is
 
 We may use appropriate operational information to diagnose errors, investigate reliability problems, understand whether features are functioning correctly, and improve the service.
 
-Any additional analytics or product-measurement practices must be assessed and disclosed appropriately before implementation.
+Optional analytics must be subject to the analytics choice described in this Policy. Other tracking or product-measurement practices must be assessed and disclosed appropriately before implementation.
 
 ### 4.5 Meeting legal obligations
 
@@ -228,12 +231,13 @@ These technologies may be used to:
 - Support verification, authentication callbacks, and password-recovery flows.
 - Maintain relevant application functionality.
 - Support notification features where enabled.
+- Store the user's choice about optional analytics in the browser.
 
 Browsers and infrastructure providers may also process technical information as part of normal service operation.
 
 The current V0 product is not intended to use personal information for behavioural advertising. This statement must be verified against actual application code, provider settings, and operational practices before publication.
 
-If Agoré introduces optional analytics, advertising, or other non-essential tracking technologies, it will assess the applicable consent and disclosure requirements and update its practices accordingly.
+Optional analytics is designed to remain off until the user accepts it. If Agoré introduces other non-essential tracking technologies, it will assess the applicable consent and disclosure requirements and update its practices accordingly.
 
 Users can manage relevant browser settings, although disabling necessary session or storage functionality may prevent some features from working correctly.
 
@@ -257,6 +261,8 @@ Depending on the service and feature, providers may process relevant information
 - **Vercel:** application hosting, deployment, and associated operational services.
 - **Authentication providers:** where Google, Apple, or another external provider is enabled for sign-in.
 - **Browser and push infrastructure:** where web-push notifications are enabled.
+
+The Agoré Supabase database project is configured in London, United Kingdom (eu-west-2). This confirms the configured database region only. It does not establish where all Supabase services, Vercel services, authentication providers, push infrastructure, or other providers process or store information.
 
 The providers involved, data they process, applicable contractual terms, and relevant data-processing arrangements must be reviewed before public launch.
 
@@ -288,33 +294,36 @@ Agoré is designed for a global audience and uses third-party infrastructure.
 
 Personal information may therefore be processed or stored in countries other than the country where a user lives, depending on the configuration and location of the relevant providers.
 
+The Agoré Supabase database project is configured in London, United Kingdom (eu-west-2). This confirms the database region only; it does not establish where Supabase authentication or ancillary services, Vercel hosting and logs, Google sign-in, browser push infrastructure, or other providers process or store information.
+
 Before publication, Agoré must confirm:
 
-- The configured data regions for its production infrastructure.
+- The configured regions and relevant processing locations for hosting, authentication, storage, backups, logs, notifications, and other providers.
 - The countries in which relevant providers may process data.
-- The applicable contractual and legal arrangements for international transfers.
+- The applicable provider agreements and contractual and legal arrangements for international transfers.
 - Any additional notices, safeguards, or transfer mechanisms required by applicable law.
 
-We will provide further information about relevant international transfers where required by law.
+The Policy must be updated with verified information rather than treating the database region as the location for every processing activity.
 
 ## 11. Data retention
 
 Agoré retains personal information for as long as reasonably necessary for the purposes described in this Policy, subject to applicable legal requirements.
 
-Retention may depend on the type of information and why it was collected.
+Analytics page-view records are intended to be removed once they are older than 180 days by a scheduled database cleanup. This retention rule must not be treated as active until the cleanup job has been deployed and verified. It applies only to analytics page-view records and does not establish retention periods for account data, posts, messages, reports, support cases, authentication or provider logs, consent-history metadata, or backups.
 
-Examples include:
+Retention may depend on the type of information and why it was collected. Examples include:
 
-- Account and profile information needed to provide an active account.
+- Account and profile information needed to provide an active account, subject to the account-closure and deletion process.
 - Posts, comments, and media retained to provide the features users request.
 - Conversation records retained to support message history and associated functionality.
 - Support and reporting records retained to address requests, investigate incidents, and maintain appropriate operational records.
-- Security and diagnostic records retained for an appropriate period to detect abuse and maintain service reliability.
-- Backups retained according to the applicable backup and recovery schedule.
+- Security and diagnostic records retained for a defined period that must be confirmed against actual application and provider settings.
+- Consent-history metadata stored in account authentication metadata, whose retention and deletion handling must be documented.
+- Backups retained according to the actual backup and recovery schedule, which must be verified.
 
 Some information may need to be retained for a longer period when required by law, necessary to establish or defend legal claims, or needed for a legitimate security purpose.
 
-Before publication, Agoré must define and document actual retention periods or meaningful retention criteria for the major categories of information.
+Before publication, Agoré must define and document actual retention periods or defensible retention criteria for the remaining major categories of information, including account deletion, support records, consent-history metadata, provider logs, and backups.
 
 ## 12. Account closure and deletion requests
 
@@ -403,6 +412,8 @@ The final version must explain:
 - How users or guardians can report an account that may belong to an underage person.
 - How Agoré handles personal information collected from an account that is not permitted to use the service.
 
+The current beta signup flow asks users to confirm that they are at least 18. This is a self-attestation, not independent or high-assurance age verification. The final Policy must describe the implemented controls accurately and assess whether additional measures are required under applicable law.
+
 Until these rules are formally established, this section is incomplete and must not be treated as a final statement of Agoré's age policy.
 
 ## 16. Automated processing and recommendations
@@ -455,10 +466,12 @@ This section is for the Agoré team and must be removed from the public-facing v
 - [ ] Confirm the minimum age and underage-account procedure.
 - [ ] Inventory the personal information actually collected by the application and providers.
 - [ ] Confirm whether any analytics, error tracking, advertising, or other tracking services are enabled.
-- [ ] Verify authentication, session, cookie, and browser-storage behaviour.
+- [ ] Verify authentication, session, cookie, consent-token, and browser-storage behaviour.
 - [ ] Verify whether Google and Apple sign-in are enabled and the information each provider receives.
-- [ ] Identify production Supabase and Vercel regions and review international data-transfer arrangements.
-- [ ] Document actual retention periods or defensible retention criteria.
+- [x] Confirm the primary Supabase database region (London, United Kingdom; eu-west-2).
+- [ ] Verify other provider processing and storage regions, provider terms, and applicable international-transfer safeguards.
+- [ ] Document retention periods or defensible criteria for account, content, messages, reports, support records, consent metadata, provider logs, and backups.
+- [ ] Deploy and verify the scheduled 180-day cleanup for analytics page-view records before making that retention commitment in the public Policy.
 - [ ] Verify the account-deletion process, backup retention, and treatment of content associated with deleted accounts.
 - [ ] Verify privacy-request identity checks, response ownership, and legal response timelines.
 - [ ] Confirm support-staff access boundaries and reporting-related access to private content.
