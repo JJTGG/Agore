@@ -3,7 +3,7 @@
 **Document ID:** AG-POL-012  
 **Version:** 0.2  
 **Status:** Draft for internal review — not approved for publication  
-**Last reviewed:** 25 October 2026
+**Last reviewed:** 26 October 2026
 
 > IMPORTANT: This draft is not approved for publication. The operator's formal legal identity, actual retention and deletion practices, other provider processing regions, applicable international-transfer arrangements, and the operational procedures for privacy requests must be verified before it becomes Agoré's official Privacy Policy. The primary Supabase database region has been confirmed as London, United Kingdom (eu-west-2); this does not establish where every provider processes information.
 
@@ -309,7 +309,7 @@ The Policy must be updated with verified information rather than treating the da
 
 Agoré retains personal information for as long as reasonably necessary for the purposes described in this Policy, subject to applicable legal requirements.
 
-Analytics page-view records are intended to be removed once they are older than 180 days by a scheduled database cleanup. This retention rule must not be treated as active until the cleanup job has been deployed and verified. It applies only to analytics page-view records and does not establish retention periods for account data, posts, messages, reports, support cases, authentication or provider logs, consent-history metadata, or backups.
+Analytics page-view records are subject to a scheduled daily database cleanup configured to delete records from the `agore_analytics_pageviews` dataset when they are older than 180 days. The cleanup job is configured and verified as active. This rule applies only to that analytics dataset and does not establish retention periods for account data, posts, messages, reports, support cases, authentication or provider logs, consent-history metadata, or backups.
 
 Retention may depend on the type of information and why it was collected. Examples include:
 
@@ -471,7 +471,8 @@ This section is for the Agoré team and must be removed from the public-facing v
 - [x] Confirm the primary Supabase database region (London, United Kingdom; eu-west-2).
 - [ ] Verify other provider processing and storage regions, provider terms, and applicable international-transfer safeguards.
 - [ ] Document retention periods or defensible criteria for account, content, messages, reports, support records, consent metadata, provider logs, and backups.
-- [ ] Deploy and verify the scheduled 180-day cleanup for analytics page-view records before making that retention commitment in the public Policy.
+- [x] Deploy and verify that the scheduled 180-day cleanup job for analytics page-view records is configured and active.
+- [ ] Confirm the first scheduled cleanup execution completed successfully and continue monitoring scheduled runs.
 - [ ] Verify the account-deletion process, backup retention, and treatment of content associated with deleted accounts.
 - [ ] Verify privacy-request identity checks, response ownership, and legal response timelines.
 - [ ] Confirm support-staff access boundaries and reporting-related access to private content.
