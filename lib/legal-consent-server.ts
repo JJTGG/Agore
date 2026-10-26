@@ -9,7 +9,7 @@ import {
 
 import { createAdminClient } from "@/lib/supabase/admin";
 
-export const LEGAL_DOCUMENT_VERSION = "2026-10-25";
+export const LEGAL_DOCUMENT_VERSION = "2026-10-25-r1";
 export const LEGAL_CONSENT_COOKIE = "agore_legal_consent";
 
 export type LegalConsentMode = "email" | "oauth";
@@ -64,7 +64,9 @@ export function createLegalConsentToken(
   email?: string,
 ) {
   if (mode === "email" && !email?.trim()) {
-    throw new Error("An email address is required for email signup consent.");
+    throw new Error(
+      "An email address is required for email signup consent.",
+    );
   }
 
   const issuedAt = Math.floor(Date.now() / 1000);
@@ -107,8 +109,14 @@ export function verifyLegalConsentToken(
 
     const [encodedPayload, suppliedSignature] = parts;
     const expectedSignature = signPayload(encodedPayload);
-    const suppliedBuffer = Buffer.from(suppliedSignature, "base64url");
-    const expectedBuffer = Buffer.from(expectedSignature, "base64url");
+    const suppliedBuffer = Buffer.from(
+      suppliedSignature,
+      "base64url",
+    );
+    const expectedBuffer = Buffer.from(
+      expectedSignature,
+      "base64url",
+    );
 
     if (
       suppliedBuffer.length !== expectedBuffer.length ||
@@ -197,7 +205,8 @@ export async function recordLegalConsentForUser({
     return {
       ok: false,
       status: 403,
-      reason: "The Google signup acknowledgement does not match this browser's signup flow.",
+      reason:
+        "The Google signup acknowledgement does not match this browser's signup flow.",
     };
   }
 
@@ -212,12 +221,14 @@ export async function recordLegalConsentForUser({
     return {
       ok: false,
       status: 500,
-      reason: "The account's legal acknowledgement could not be retrieved.",
+      reason:
+        "The account's legal acknowledgement could not be retrieved.",
     };
   }
 
   const appMetadata = user.app_metadata ?? {};
   const storedHistory = appMetadata.agore_legal_acceptance_history;
+
   const history: Array<Record<string, unknown>> =
     Array.isArray(storedHistory)
       ? storedHistory.filter(
@@ -232,7 +243,9 @@ export async function recordLegalConsentForUser({
 
   const acceptance = {
     token_id: claims.nonce,
-    accepted_at: new Date(claims.issuedAt * 1000).toISOString(),
+    accepted_at: new Date(
+      claims.issuedAt * 1000,
+    ).toISOString(),
     recorded_at: new Date().toISOString(),
     age_confirmed: true,
     age_confirmation_method: "self_attestation",
@@ -267,7 +280,8 @@ export async function recordLegalConsentForUser({
     return {
       ok: false,
       status: 500,
-      reason: "The signup acknowledgement could not be saved.",
+      reason:
+        "The signup acknowledgement could not be saved.",
     };
   }
 
