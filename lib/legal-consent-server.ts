@@ -9,7 +9,7 @@ import {
 
 import { createAdminClient } from "@/lib/supabase/admin";
 
-export const LEGAL_DOCUMENT_VERSION = "2026-10-25-r1";
+export const LEGAL_DOCUMENT_VERSION = "2026-10-26-r2";
 export const LEGAL_CONSENT_COOKIE = "agore_legal_consent";
 
 export type LegalConsentMode = "email" | "oauth";
