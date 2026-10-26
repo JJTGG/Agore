@@ -34,8 +34,10 @@ export async function generateMetadata({
 
 function PolicyContent({
   policy,
+  lastUpdated,
 }: {
   policy: PolicyDocument;
+  lastUpdated: string;
 }) {
   return (
     <article>
@@ -48,7 +50,7 @@ function PolicyContent({
       </h1>
 
       <p className="mt-4 text-sm text-[var(--muted)]">
-        Last updated: 25 October 2026
+        Last updated: {lastUpdated}
       </p>
 
       <p className="mt-7 max-w-3xl text-base leading-7 text-[var(--muted-strong)]">
@@ -114,5 +116,8 @@ export default async function PolicyDocumentPage({
     notFound();
   }
 
-  return <PolicyContent policy={policy} />;
+  const lastUpdated =
+    document === "privacy" ? "26 October 2026" : "25 October 2026";
+
+  return <PolicyContent policy={policy} lastUpdated={lastUpdated} />;
 }
