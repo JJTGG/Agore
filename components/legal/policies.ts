@@ -204,8 +204,8 @@ export const policyDocuments: Record<string, PolicyDocument> = {
       {
         heading: "1. Who operates Agoré and how to contact us",
         paragraphs: [
-          "Agoré is currently operated by the team responsible for the Agoré project. For privacy questions, access or correction requests, deletion requests, or other privacy concerns, email agore.support@gmail.com with the subject line “Agoré Privacy Request”.",
-          "The operator's formal legal identity and required business contact details must be confirmed before broad public launch. This notice must be updated if applicable law requires additional identity or address information.",
+          "Agoré is a product within the TGG HUB ecosystem and is currently operated by an independent individual based in Nigeria. For privacy questions, access or correction requests, deletion requests, or other privacy concerns, email agore.support@gmail.com with the subject line “Agoré Privacy Request”.",
+          "TGG HUB's CAC registration is pending, and this notice does not currently identify TGG HUB as a separate legal person or data controller. The operator's full legal identity and residence or place of business are not stated in this interim notice. Applicable laws may require those details before personal data is collected directly; this notice remains incomplete for any jurisdiction requiring them until accurate details are added.",
         ],
       },
       {
@@ -229,6 +229,7 @@ export const policyDocuments: Record<string, PolicyDocument> = {
         paragraphs: [
           "Agoré uses information to create and secure accounts, provide profiles and social features, deliver messages and notifications, store and display content, maintain settings, handle reports and support requests, investigate abuse, protect the service, troubleshoot errors, and comply with applicable law.",
           "Optional analytics is used to understand site usage and improve the reliability and usability of the service. The app's optional page-view analytics and Vercel Web Analytics are gated behind the analytics choice described below.",
+          "Depending on the activity and applicable law, Agoré relies on a lawful basis such as providing the account and features requested by a user, legitimate interests in operating and securing the service and preventing abuse, consent for optional analytics or other processing where consent is required or used, or compliance with a legal obligation. The specific basis depends on the purpose and jurisdiction. Where processing relies on consent, users may withdraw it for future processing, subject to applicable law; withdrawing consent does not affect processing that was lawful before withdrawal.",
         ],
       },
       {
@@ -283,27 +284,35 @@ export const policyDocuments: Record<string, PolicyDocument> = {
         ],
       },
       {
-        heading: "10. Security",
+        heading: "10. Automated processing and decisions",
+        paragraphs: [
+          "Agoré may use automated processes to operate service features, including feed and notification delivery, rate limiting, security checks, and abuse prevention. These processes may affect the order in which some content or notifications are presented, whether a request is temporarily rate-limited, or whether activity is flagged for review.",
+          "Agoré does not currently intend to make decisions based solely on automated processing that produce legal effects or similarly significant effects on users. If you believe an automated restriction or result is incorrect, contact agore.support@gmail.com with the subject line “Automated Processing Review” and describe the affected account or feature. Requests will be assessed in light of the feature, available information, and applicable law.",
+          "If Agoré introduces automated decision-making or profiling with legal or similarly significant effects, this policy must be updated to explain its purpose, logic at an appropriate level, likely consequences, and applicable rights before that processing begins.",
+        ],
+      },
+      {
+        heading: "11. Security",
         paragraphs: [
           "Agoré uses technical and organisational controls intended to protect information, including authentication, server-side authorisation, database access controls, input validation, rate limiting, and restricted access to privileged operations.",
           "No online service can guarantee absolute security. Protect your credentials and contact Agoré promptly if you suspect that your account or information has been compromised.",
         ],
       },
       {
-        heading: "11. International processing",
+        heading: "12. International processing",
         paragraphs: [
           "Agoré is designed for a global audience and relies on providers that may process information in countries other than your own. The relevant locations and safeguards depend on the configured regions and provider agreements.",
           "The Agoré Supabase database project is configured in London, United Kingdom (eu-west-2). This is the database region only and should not be read as a statement that all providers or processing remain within the United Kingdom. Hosting, authentication, logs, backups, push delivery, and other provider locations and applicable international-transfer safeguards still need to be verified and disclosed before broad public launch.",
         ],
       },
       {
-        heading: "12. Changes to this policy",
+        heading: "13. Changes to this policy",
         paragraphs: [
           "This policy may be updated to reflect changes to the service, technology, legal requirements, or information practices. The page will display the latest update date. Where required, Agoré will provide notice or obtain consent before a material change takes effect.",
         ],
       },
       {
-        heading: "13. Contact",
+        heading: "14. Contact",
         paragraphs: [
           "For privacy requests and privacy questions, email agore.support@gmail.com with the subject line “Agoré Privacy Request”. For ordinary account help or product feedback, contact the same address with a clear description of the issue.",
         ],
