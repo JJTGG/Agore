@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import AnalyticsSettingsLink from "@/components/legal/analytics-settings-link";
+
 const pillars = [
   {
     title: "People",
@@ -106,21 +108,34 @@ export default function Home() {
             </p>
 
             <nav
-              aria-label="Agoré policies"
+              aria-label="Agoré policies and preferences"
               className="flex flex-wrap gap-x-4 gap-y-2 text-sm text-[var(--muted)]"
             >
-              <Link href="/guidelines" className="hover:text-[var(--accent)] hover:underline">
+              <Link
+                href="/guidelines"
+                className="hover:text-[var(--accent)] hover:underline"
+              >
                 Community Guidelines
               </Link>
-              <Link href="/terms" className="hover:text-[var(--accent)] hover:underline">
+              <Link
+                href="/terms"
+                className="hover:text-[var(--accent)] hover:underline"
+              >
                 Terms of Service
               </Link>
-              <Link href="/privacy" className="hover:text-[var(--accent)] hover:underline">
+              <Link
+                href="/privacy"
+                className="hover:text-[var(--accent)] hover:underline"
+              >
                 Privacy Policy
               </Link>
-              <Link href="/support" className="hover:text-[var(--accent)] hover:underline">
+              <Link
+                href="/support"
+                className="hover:text-[var(--accent)] hover:underline"
+              >
                 Support
               </Link>
+              <AnalyticsSettingsLink className="hover:text-[var(--accent)] hover:underline" />
             </nav>
           </div>
         </footer>
