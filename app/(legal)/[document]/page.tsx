@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
+import AnalyticsSettingsLink from "@/components/legal/analytics-settings-link";
 import {
   policyDocuments,
   type PolicyDocument,
@@ -35,9 +36,11 @@ export async function generateMetadata({
 function PolicyContent({
   policy,
   lastUpdated,
+  showAnalyticsSettings,
 }: {
   policy: PolicyDocument;
   lastUpdated: string;
+  showAnalyticsSettings: boolean;
 }) {
   return (
     <article>
@@ -87,7 +90,23 @@ function PolicyContent({
         ))}
       </div>
 
-      <div className="mt-12 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5">
+      {showAnalyticsSettings ? (
+        <section className="mt-12 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5">
+          <h2 className="font-semibold">
+            Privacy and analytics preferences
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
+            You can change your choice about optional analytics at any time.
+            Necessary sign-in and application storage is separate from
+            optional analytics.
+          </p>
+          <div className="mt-3">
+            <AnalyticsSettingsLink className="text-sm font-medium text-[var(--accent)] hover:underline" />
+          </div>
+        </section>
+      ) : null}
+
+      <div className="mt-8 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5">
         <h2 className="font-semibold">Need help?</h2>
         <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
           Contact Agoré Support at{" "}
@@ -119,5 +138,11 @@ export default async function PolicyDocumentPage({
   const lastUpdated =
     document === "privacy" ? "26 October 2026" : "25 October 2026";
 
-  return <PolicyContent policy={policy} lastUpdated={lastUpdated} />;
+  return (
+    <PolicyContent
+      policy={policy}
+      lastUpdated={lastUpdated}
+      showAnalyticsSettings={document === "privacy"}
+    />
+  );
 }

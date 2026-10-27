@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import AnalyticsSettingsLink from "@/components/legal/analytics-settings-link";
+
 export default function LegalLayout({
   children,
 }: Readonly<{
@@ -69,6 +71,7 @@ export default function LegalLayout({
             <Link href="/" className="hover:underline">
               Agoré home
             </Link>
+            <AnalyticsSettingsLink />
           </div>
 
           <p className="mt-4">

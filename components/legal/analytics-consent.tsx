@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 type ConsentChoice = "accepted" | "rejected" | null;
 
 const CONSENT_KEY = "agore_analytics_consent";
+const OPEN_SETTINGS_EVENT = "agore-open-analytics-settings";
 
 const TRACKABLE_PUBLIC_PATHS = new Set([
   "/",
@@ -66,6 +67,29 @@ export default function AnalyticsPrivacyControls() {
     setReady(true);
   }, []);
 
+  useEffect(() => {
+    function handleOpenSettings() {
+      const savedChoice = readAnalyticsConsent();
+
+      if (savedChoice !== null) {
+        setConsent(savedChoice);
+        setSettingsOpen(true);
+      }
+    }
+
+    window.addEventListener(
+      OPEN_SETTINGS_EVENT,
+      handleOpenSettings,
+    );
+
+    return () => {
+      window.removeEventListener(
+        OPEN_SETTINGS_EVENT,
+        handleOpenSettings,
+      );
+    };
+  }, []);
+
   function chooseConsent(nextChoice: Exclude<ConsentChoice, null>) {
     try {
       window.localStorage.setItem(CONSENT_KEY, nextChoice);
@@ -81,6 +105,9 @@ export default function AnalyticsPrivacyControls() {
     setSettingsOpen(false);
     window.dispatchEvent(new Event("agore-analytics-consent-change"));
   }
+
+  const panelVisible =
+    consent === null || settingsOpen;
 
   return (
     <>
@@ -100,8 +127,9 @@ export default function AnalyticsPrivacyControls() {
         />
       ) : null}
 
-      {!ready ? null : consent === null || settingsOpen ? (
+      {!ready || !panelVisible ? null : (
         <aside
+          id="analytics-privacy-controls"
           aria-label="Privacy and analytics choices"
           className="fixed inset-x-3 bottom-3 z-[100] mx-auto max-w-2xl rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 text-[var(--foreground)] shadow-xl sm:inset-x-6 sm:bottom-6 sm:p-5"
         >
@@ -116,6 +144,18 @@ export default function AnalyticsPrivacyControls() {
                 public site and improve it. Optional analytics stays off unless
                 you allow it. You can change your choice later.
               </p>
+
+              {consent !== null ? (
+                <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
+                  Your current choice:{" "}
+                  <strong>
+                    {consent === "accepted"
+                      ? "Optional analytics allowed"
+                      : "Optional analytics rejected"}
+                  </strong>
+                  .
+                </p>
+              ) : null}
 
               <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
                 Necessary sign-in and application storage is separate from
@@ -160,14 +200,6 @@ export default function AnalyticsPrivacyControls() {
             </button>
           </div>
         </aside>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setSettingsOpen(true)}
-          className="fixed bottom-3 right-3 z-[100] rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs font-medium text-[var(--muted-strong)] shadow-lg transition hover:border-[var(--accent)] hover:text-[var(--foreground)] sm:bottom-5 sm:right-5"
-        >
-          Privacy &amp; analytics settings
-        </button>
       )}
     </>
   );
