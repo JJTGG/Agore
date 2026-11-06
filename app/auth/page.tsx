@@ -13,6 +13,10 @@ import { createClient } from "@/lib/supabase/browser";
 
 type Mode = "signin" | "signup" | "recovery";
 type OAuthProvider = "google";
+type ConsentMode = "email" | "oauth";
+
+const SIGNUP_LEGAL_ERROR =
+  "To create an account, confirm that you are at least 18 and accept the Terms of Service. You must also acknowledge the Privacy Policy and Community Guidelines.";
 
 type AgoreNativeWindow = Window & {
   __AGORE_NATIVE_OAUTH_CALLBACK?: string;
@@ -20,6 +24,74 @@ type AgoreNativeWindow = Window & {
 
 const NATIVE_OAUTH_CALLBACK_URL =
   "com.jayjaytgg.agore://auth-callback";
+
+async function requestLegalConsentToken(
+  mode: ConsentMode,
+  email?: string,
+) {
+  const response = await fetch("/api/legal/consent-token", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      mode,
+      email,
+      ageConfirmed: true,
+      legalAccepted: true,
+    }),
+  });
+
+  const body: unknown = await response
+    .json()
+    .catch(() => null);
+
+  const token =
+    typeof body === "object" &&
+    body !== null &&
+    "token" in body &&
+    typeof body.token === "string"
+      ? body.token
+      : null;
+
+  if (!response.ok || !token) {
+    const message =
+      typeof body === "object" &&
+      body !== null &&
+      "error" in body &&
+      typeof body.error === "string"
+        ? body.error
+        : "The signup acknowledgement could not be prepared. Please try again.";
+
+    throw new Error(message);
+  }
+
+  return token;
+}
+
+async function recordEmailSignupConsent(
+  token: string,
+  accessToken: string,
+) {
+  const response = await fetch("/api/legal/record", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({ token }),
+  });
+
+  if (!response.ok) {
+    await createClient().auth.signOut();
+
+    throw new Error(
+      "Your signup agreements could not be recorded securely. Please try again.",
+    );
+  }
+}
 
 function AgoreBrandLogo() {
   return (
@@ -49,6 +121,8 @@ export default function AuthPage() {
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [ageConfirmed, setAgeConfirmed] = useState(false);
+  const [legalAccepted, setLegalAccepted] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [callbackError, setCallbackError] =
@@ -67,7 +141,7 @@ export default function AuthPage() {
     const currentError = params.get("error");
     const requestedMode = params.get("mode");
 
-    if (requestedMode === "signup") {
+    if (requestedMode === "signup" || currentError === "legal") {
       setMode("signup");
     } else if (requestedMode === "signin") {
       setMode("signin");
@@ -83,6 +157,10 @@ export default function AuthPage() {
     } else if (currentError === "oauth") {
       setError(
         "Sign-in could not be completed. Please try again or choose another sign-in method.",
+      );
+    } else if (currentError === "legal") {
+      setError(
+        "The signup acknowledgement could not be verified. Review the signup agreements and try again. If the problem continues, contact Agoré Support.",
       );
     }
   }, []);
@@ -141,8 +219,7 @@ export default function AuthPage() {
 
       if (callbackError) {
         setError(
-          callbackError ||
-            "Google sign-in was cancelled or could not be completed.",
+          "Google sign-in was cancelled or could not be completed. Please try again.",
         );
         setOauthProvider(null);
         setLoading(false);
@@ -179,6 +256,34 @@ export default function AuthPage() {
           throw new Error(
             "Google sign-in finished without an active session.",
           );
+        }
+
+        const consentToken =
+          callbackUrl.searchParams.get("legal_consent");
+
+        if (consentToken) {
+          const recordResponse = await fetch(
+            "/api/legal/record",
+            {
+              method: "POST",
+              credentials: "same-origin",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${data.session.access_token}`,
+              },
+              body: JSON.stringify({
+                token: consentToken,
+              }),
+            },
+          );
+
+          if (!recordResponse.ok) {
+            await supabase.auth.signOut();
+
+            throw new Error(
+              "The signup agreements could not be verified and recorded. Please retry signup.",
+            );
+          }
         }
 
         if (!active) {
@@ -231,8 +336,6 @@ export default function AuthPage() {
       handleNativeOAuthEvent,
     );
 
-    // The native activity might deliver the callback before
-    // this page's React effect has mounted. Check the saved value.
     const nativeWindow =
       window as AgoreNativeWindow;
 
@@ -261,7 +364,10 @@ export default function AuthPage() {
     setMessage("");
   }
 
-  function getCallbackUrl(nextPath?: string) {
+  function getCallbackUrl(
+    nextPath?: string,
+    consentToken?: string,
+  ) {
     const url = new URL(
       "/auth/callback",
       window.location.origin,
@@ -271,17 +377,27 @@ export default function AuthPage() {
       url.searchParams.set("next", nextPath);
     }
 
+    if (consentToken) {
+      url.searchParams.set("legal_consent", consentToken);
+    }
+
     return url.toString();
   }
 
-  function getOAuthRedirectUrl() {
+  function getOAuthRedirectUrl(consentToken?: string) {
     if (
       window.navigator.userAgent.includes("AgoreAndroid")
     ) {
-      return NATIVE_OAUTH_CALLBACK_URL;
+      const url = new URL(NATIVE_OAUTH_CALLBACK_URL);
+
+      if (consentToken) {
+        url.searchParams.set("legal_consent", consentToken);
+      }
+
+      return url.toString();
     }
 
-    return getCallbackUrl();
+    return getCallbackUrl(undefined, consentToken);
   }
 
   async function handleSubmit(
@@ -289,6 +405,12 @@ export default function AuthPage() {
   ) {
     event.preventDefault();
     clearFeedback();
+
+    if (mode === "signup" && (!ageConfirmed || !legalAccepted)) {
+      setError(SIGNUP_LEGAL_ERROR);
+      return;
+    }
+
     setLoading(true);
 
     const normalizedEmail = email.trim();
@@ -317,6 +439,12 @@ export default function AuthPage() {
       }
 
       if (mode === "signup") {
+        const consentToken =
+          await requestLegalConsentToken(
+            "email",
+            normalizedEmail,
+          );
+
         const {
           data,
           error: signupError,
@@ -324,7 +452,10 @@ export default function AuthPage() {
           email: normalizedEmail,
           password,
           options: {
-            emailRedirectTo: getCallbackUrl(),
+            emailRedirectTo: getCallbackUrl(
+              undefined,
+              consentToken,
+            ),
           },
         });
 
@@ -333,6 +464,11 @@ export default function AuthPage() {
         }
 
         if (data.session) {
+          await recordEmailSignupConsent(
+            consentToken,
+            data.session.access_token,
+          );
+
           router.replace("/home");
           router.refresh();
           return;
@@ -371,15 +507,26 @@ export default function AuthPage() {
   }
 
   async function handleOAuth(provider: OAuthProvider) {
+    if (mode === "signup" && (!ageConfirmed || !legalAccepted)) {
+      clearFeedback();
+      setError(SIGNUP_LEGAL_ERROR);
+      return;
+    }
+
     clearFeedback();
     setOauthProvider(provider);
 
     try {
+      const consentToken =
+        mode === "signup"
+          ? await requestLegalConsentToken("oauth")
+          : undefined;
+
       const { error: oauthError } =
         await supabase.auth.signInWithOAuth({
           provider,
           options: {
-            redirectTo: getOAuthRedirectUrl(),
+            redirectTo: getOAuthRedirectUrl(consentToken),
           },
         });
 
@@ -407,12 +554,28 @@ export default function AuthPage() {
     setResending(true);
 
     try {
+      let consentToken: string | undefined;
+
+      if (
+        mode === "signup" &&
+        ageConfirmed &&
+        legalAccepted
+      ) {
+        consentToken = await requestLegalConsentToken(
+          "email",
+          email.trim(),
+        );
+      }
+
       const { error: resendError } =
         await supabase.auth.resend({
           type: "signup",
           email: email.trim(),
           options: {
-            emailRedirectTo: getCallbackUrl(),
+            emailRedirectTo: getCallbackUrl(
+              undefined,
+              consentToken,
+            ),
           },
         });
 
@@ -437,6 +600,8 @@ export default function AuthPage() {
 
   function switchMode(nextMode: Mode) {
     setMode(nextMode);
+    setAgeConfirmed(false);
+    setLegalAccepted(false);
     clearFeedback();
   }
 
@@ -564,6 +729,57 @@ export default function AuthPage() {
               </div>
             )}
 
+            {mode === "signup" && (
+              <div className="space-y-3 rounded-xl border border-[var(--border)] bg-[var(--background)] p-4">
+                <label className="flex items-start gap-3 text-sm leading-5">
+                  <input
+                    type="checkbox"
+                    required
+                    checked={ageConfirmed}
+                    onChange={(event) => setAgeConfirmed(event.target.checked)}
+                    className="mt-1 accent-[var(--accent)]"
+                  />
+                  <span>
+                    I confirm that I am at least 18 years old.
+                  </span>
+                </label>
+
+                <label className="flex items-start gap-3 text-sm leading-5">
+                  <input
+                    type="checkbox"
+                    required
+                    checked={legalAccepted}
+                    onChange={(event) => setLegalAccepted(event.target.checked)}
+                    className="mt-1 accent-[var(--accent)]"
+                  />
+                  <span>
+                    I agree to Agoré’s{" "}
+                    <Link
+                      href="/terms"
+                      className="font-semibold text-[var(--accent)] hover:underline"
+                    >
+                      Terms of Service
+                    </Link>
+                    , and acknowledge the{" "}
+                    <Link
+                      href="/privacy"
+                      className="font-semibold text-[var(--accent)] hover:underline"
+                    >
+                      Privacy Policy
+                    </Link>
+                    {" "}and{" "}
+                    <Link
+                      href="/guidelines"
+                      className="font-semibold text-[var(--accent)] hover:underline"
+                    >
+                      Community Guidelines
+                    </Link>
+                    .
+                  </span>
+                </label>
+              </div>
+            )}
+
             {error && (
               <p
                 role="alert"
@@ -650,6 +866,17 @@ export default function AuthPage() {
 
         <p className="mt-5 text-center text-xs leading-5 text-[var(--muted)]">
           Agoré · A place to gather.
+          <span className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1">
+            <Link href="/guidelines" className="hover:underline">
+              Guidelines
+            </Link>
+            <Link href="/terms" className="hover:underline">
+              Terms
+            </Link>
+            <Link href="/privacy" className="hover:underline">
+              Privacy
+            </Link>
+          </span>
         </p>
       </div>
     </main>

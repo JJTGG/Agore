@@ -1,10 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { Suspense } from "react";
-import { Analytics } from "@vercel/analytics/next";
 
 import "./globals.css";
 import AnalyticsTracker from "@/components/analytics-tracker";
-import AgorePerformanceHud from "@/components/performance/live-hud";
+import AnalyticsPrivacyControls from "@/components/legal/analytics-consent";
 import ConversationReadinessTracker from "@/components/performance/conversation-readiness";
 import { AudioCallHost } from "./messages/[conversationId]/audio-call-controls";
 import { createClient } from "@/lib/supabase/server";
@@ -118,12 +117,7 @@ export default async function RootLayout({
       <body>
         {children}
 
-        {user ? (
-          <>
-            <AgorePerformanceHud />
-            <ConversationReadinessTracker />
-          </>
-        ) : null}
+        {user ? <ConversationReadinessTracker /> : null}
 
         <AudioCallHost />
 
@@ -131,7 +125,7 @@ export default async function RootLayout({
           <AnalyticsTracker />
         </Suspense>
 
-        <Analytics />
+        <AnalyticsPrivacyControls />
       </body>
     </html>
   );

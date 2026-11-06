@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import AnalyticsSettingsLink from "@/components/legal/analytics-settings-link";
+
 const pillars = [
   {
     title: "People",
@@ -80,7 +82,7 @@ export default function Home() {
               </Link>
 
               <p className="flex items-center justify-center px-2 text-sm text-[var(--muted)] sm:justify-start">
-                Open to everyone. Find your place in the conversation.
+                For adults aged 18 and older. Find your place in the conversation.
               </p>
             </div>
           </div>
@@ -98,6 +100,45 @@ export default function Home() {
             </div>
           ))}
         </div>
+
+        <footer className="border-t border-[var(--border)] py-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-[var(--muted)]">
+              Agoré · People first. Conversation at the center.
+            </p>
+
+            <nav
+              aria-label="Agoré policies and preferences"
+              className="flex flex-wrap gap-x-4 gap-y-2 text-sm text-[var(--muted)]"
+            >
+              <Link
+                href="/guidelines"
+                className="hover:text-[var(--accent)] hover:underline"
+              >
+                Community Guidelines
+              </Link>
+              <Link
+                href="/terms"
+                className="hover:text-[var(--accent)] hover:underline"
+              >
+                Terms of Service
+              </Link>
+              <Link
+                href="/privacy"
+                className="hover:text-[var(--accent)] hover:underline"
+              >
+                Privacy Policy
+              </Link>
+              <Link
+                href="/support"
+                className="hover:text-[var(--accent)] hover:underline"
+              >
+                Support
+              </Link>
+              <AnalyticsSettingsLink className="hover:text-[var(--accent)] hover:underline" />
+            </nav>
+          </div>
+        </footer>
       </section>
     </main>
   );

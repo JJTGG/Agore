@@ -1,4 +1,3 @@
-
 name: Agoré CI
 
 on:
@@ -7,6 +6,7 @@ on:
       - main
       - JJTGG-patch-1
       - JJTGG-patch-2
+      - JJTGG-patch-3
   pull_request:
     branches:
       - main

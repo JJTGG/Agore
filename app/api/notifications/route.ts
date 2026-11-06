@@ -3,6 +3,10 @@ import { z } from "zod";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import {
+  filterNotificationsByVisibility,
+  type NotificationVisibilityItem,
+} from "@/lib/notification-visibility";
 
 const patchSchema = z
   .object({
@@ -39,57 +43,30 @@ async function getAuthenticatedUser() {
   return user;
 }
 
-async function filterNotificationVisibility(
-  notifications: Array<{
-    actor_id: string | null;
-    actor:
-      | {
-          id: string;
-          username: string;
-          display_name: string;
-          account_status: string;
-        }
-      | null;
-  }>,
+async function filterNotificationVisibility<
+  T extends NotificationVisibilityItem,
+>(
+  notifications: T[],
   userId: string,
-) {
+): Promise<T[] | null> {
   const actorIds = [
     ...new Set(
       notifications
-        .map(
-          (notification) =>
-            notification.actor_id,
-        )
-        .filter(
-          (
-            id,
-          ): id is string =>
-            Boolean(id),
-        ),
+        .map((notification) => notification.actor_id)
+        .filter((id): id is string => Boolean(id)),
     ),
   ];
 
-  if (
-    actorIds.length === 0
-  ) {
+  if (actorIds.length === 0) {
     return notifications;
   }
 
-  const admin =
-    createAdminClient();
+  const admin = createAdminClient();
 
-  const {
-    data: blocks,
-    error: blockError,
-  } =
-    await admin
-      .from("blocks")
-      .select(
-        "blocker_id, blocked_id",
-      )
-      .or(
-        `blocker_id.eq.${userId},blocked_id.eq.${userId}`,
-      );
+  const { data: blocks, error: blockError } = await admin
+    .from("blocks")
+    .select("blocker_id, blocked_id")
+    .or(`blocker_id.eq.${userId},blocked_id.eq.${userId}`);
 
   if (blockError) {
     console.error(
@@ -97,46 +74,15 @@ async function filterNotificationVisibility(
       blockError,
     );
 
-    return notifications.filter(
-      (notification) =>
-        !notification.actor_id ||
-        notification.actor?.account_status ===
-          "active",
-    );
+    // Do not return actor notifications when block visibility is unknown.
+    // The caller must fail the request so the client can retry.
+    return null;
   }
 
-  const blockedIds =
-    new Set<string>();
-
-  for (const block of blocks ??
-    []) {
-    if (
-      block.blocker_id === userId
-    ) {
-      blockedIds.add(
-        block.blocked_id,
-      );
-    }
-
-    if (
-      block.blocked_id === userId
-    ) {
-      blockedIds.add(
-        block.blocker_id,
-      );
-    }
-  }
-
-  return notifications.filter(
-    (notification) =>
-      !notification.actor_id ||
-      (
-        notification.actor?.account_status ===
-          "active" &&
-        !blockedIds.has(
-          notification.actor_id,
-        )
-      ),
+  return filterNotificationsByVisibility(
+    notifications,
+    userId,
+    blocks ?? [],
   );
 }
 
@@ -350,6 +296,18 @@ export async function GET(
         user.id,
       );
 
+    if (!visible) {
+      return NextResponse.json(
+        {
+          error:
+            "Unable to verify notification visibility. Please try again.",
+        },
+        {
+          status: 503,
+        },
+      );
+    }
+
     return NextResponse.json({
       notifications:
         visible,
@@ -391,6 +349,18 @@ export async function GET(
         []) as never,
       user.id,
     );
+
+  if (!visible) {
+    return NextResponse.json(
+      {
+        error:
+          "Unable to verify notification visibility. Please try again.",
+      },
+      {
+        status: 503,
+      },
+    );
+  }
 
   return NextResponse.json({
     notifications:
